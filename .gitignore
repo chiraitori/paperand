@@ -2,6 +2,9 @@
 
 # dependencies
 node_modules/
+paperback-extensions-gh-pages/
+xonlyfadi-extensions-gh-pages/
+TruyenViet-0.8-gh-pages/
 
 # Expo
 .expo/

@@ -1,0 +1,45 @@
+import React from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { useTheme } from '../context/ThemeContext';
+import { BottomTabNavigator } from './BottomTabNavigator';
+import { MangaDetailScreen, ReaderScreen, GeneralSettingsScreen, ThemeSettingsScreen, BackupsScreen, ExtensionsScreen, ExtensionDetailScreen, AddRepositoryScreen, BrowseRepositoryScreen, BrowseAllRepositoriesScreen, DownloadManagerScreen, DeveloperScreen, CreditsScreen } from '../screens';
+import { RootStackParamList } from '../types';
+
+const Stack = createNativeStackNavigator<RootStackParamList>();
+
+export const AppNavigator: React.FC = () => {
+  const { theme, isDark } = useTheme();
+
+  return (
+    <NavigationContainer>
+      <Stack.Navigator
+        screenOptions={{
+          headerShown: false,
+        }}
+      >
+        <Stack.Screen name="Main" component={BottomTabNavigator} />
+        <Stack.Screen name="MangaDetail" component={MangaDetailScreen} />
+        <Stack.Screen name="Reader" component={ReaderScreen} />
+        <Stack.Screen name="GeneralSettings" component={GeneralSettingsScreen} />
+        <Stack.Screen name="ThemeSettings" component={ThemeSettingsScreen} />
+        <Stack.Screen name="Backups" component={BackupsScreen} />
+        <Stack.Screen name="Extensions" component={ExtensionsScreen} />
+        <Stack.Screen name="ExtensionDetail" component={ExtensionDetailScreen} />
+        <Stack.Screen 
+          name="AddRepository" 
+          component={AddRepositoryScreen}
+          options={{
+            presentation: 'transparentModal',
+            animation: 'slide_from_bottom',
+          }}
+        />
+        <Stack.Screen name="BrowseAllRepositories" component={BrowseAllRepositoriesScreen} />
+        <Stack.Screen name="BrowseRepository" component={BrowseRepositoryScreen} />
+        <Stack.Screen name="DownloadManager" component={DownloadManagerScreen} />
+        <Stack.Screen name="Developer" component={DeveloperScreen} />
+        <Stack.Screen name="Credits" component={CreditsScreen} />
+      </Stack.Navigator>
+    </NavigationContainer>
+  );
+};
