@@ -228,7 +228,7 @@ export const getHomeSections = async (extensionId: string): Promise<HomeSection[
     }
 
     return result.map((section: any) => ({
-      id: `${extensionId}-${section.id}`,
+      id: section.id, // Keep original section ID for getViewMoreItems
       title: section.title,
       items: (section.items || []).map((item: any) => ({
         id: item.mangaId || item.id,
@@ -248,33 +248,42 @@ export const getHomeSections = async (extensionId: string): Promise<HomeSection[
 };
 
 /**
- * Search manga
+ * Get more items for a home section (view more / pagination)
  */
-export const searchManga = async (extensionId: string, query: string): Promise<SourceManga[]> => {
+export interface ViewMoreResult {
+  results: SourceManga[];
+  metadata: any;
+}
+
+export const getViewMoreItems = async (
+  extensionId: string,
+  sectionId: string,
+  metadata?: any
+): Promise<ViewMoreResult> => {
   const extensions = await getInstalledExtensions();
   const ext = extensions.find(e => e.id === extensionId);
   
-  if (!ext) return [];
+  if (!ext) return { results: [], metadata: null };
 
   // Wait for bridge if not available
   if (!extensionBridge) {
     await waitForBridge(5000);
   }
-  if (!extensionBridge) return [];
+  if (!extensionBridge) return { results: [], metadata: null };
 
   const loaded = await ensureExtensionLoaded(ext);
-  if (!loaded) return [];
+  if (!loaded) return { results: [], metadata: null };
 
   try {
     const result = await extensionBridge.runExtensionMethod(
       extensionId,
-      'getSearchResults',
-      [{ title: query, includedTags: [] }, null]
+      'getViewMoreItems',
+      [sectionId, metadata]
     );
     
-    if (!result || !result.results) return [];
+    if (!result || !result.results) return { results: [], metadata: null };
 
-    return result.results.map((item: any) => ({
+    const mangaResults = result.results.map((item: any) => ({
       id: item.mangaId || item.id,
       mangaId: item.mangaId || item.id,
       title: item.title || '',
@@ -282,9 +291,69 @@ export const searchManga = async (extensionId: string, query: string): Promise<S
       subtitle: item.subtitle || '',
       extensionId,
     }));
+
+    return {
+      results: mangaResults,
+      metadata: result.metadata || null,
+    };
+  } catch (error) {
+    console.error(`getViewMoreItems error for ${extensionId}/${sectionId}:`, error);
+    return { results: [], metadata: null };
+  }
+};
+
+/**
+ * Search manga with pagination support
+ */
+export interface SearchResult {
+  results: SourceManga[];
+  metadata: any;
+}
+
+export const searchManga = async (
+  extensionId: string, 
+  query: string, 
+  metadata?: any
+): Promise<SearchResult> => {
+  const extensions = await getInstalledExtensions();
+  const ext = extensions.find(e => e.id === extensionId);
+  
+  if (!ext) return { results: [], metadata: null };
+
+  // Wait for bridge if not available
+  if (!extensionBridge) {
+    await waitForBridge(5000);
+  }
+  if (!extensionBridge) return { results: [], metadata: null };
+
+  const loaded = await ensureExtensionLoaded(ext);
+  if (!loaded) return { results: [], metadata: null };
+
+  try {
+    const result = await extensionBridge.runExtensionMethod(
+      extensionId,
+      'getSearchResults',
+      [{ title: query, includedTags: [] }, metadata]
+    );
+    
+    if (!result || !result.results) return { results: [], metadata: null };
+
+    const mangaResults = result.results.map((item: any) => ({
+      id: item.mangaId || item.id,
+      mangaId: item.mangaId || item.id,
+      title: item.title || '',
+      image: item.image || '',
+      subtitle: item.subtitle || '',
+      extensionId,
+    }));
+
+    return {
+      results: mangaResults,
+      metadata: result.metadata || null,
+    };
   } catch (error) {
     console.error(`Search error for ${extensionId}:`, error);
-    return [];
+    return { results: [], metadata: null };
   }
 };
 

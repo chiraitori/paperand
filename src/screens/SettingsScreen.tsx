@@ -9,13 +9,16 @@ import {
   Alert,
   Linking,
   ActivityIndicator,
+  ActionSheetIOS,
+  Platform,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
-import { getImageCacheSize, formatCacheSize, clearImageCache } from '../services/cacheService';
+import { getImageCacheSize, formatCacheSize, clearImageCache, getCacheLimit, setCacheLimit, CACHE_LIMIT_OPTIONS, CacheLimitOption } from '../services/cacheService';
+import { PickerModal } from '../components';
 import Constants from 'expo-constants';
 
 export const SettingsScreen: React.FC = () => {
@@ -25,17 +28,53 @@ export const SettingsScreen: React.FC = () => {
   const [errorPopups, setErrorPopups] = useState(true);
   const [cacheSize, setCacheSize] = useState<string>('Calculating...');
   const [isClearing, setIsClearing] = useState(false);
+  const [cacheLimit, setCacheLimitState] = useState<CacheLimitOption>('500MB');
+  const [showCachePicker, setShowCachePicker] = useState(false);
 
   const loadCacheSize = useCallback(async () => {
     const size = await getImageCacheSize();
     setCacheSize(formatCacheSize(size));
   }, []);
 
+  const loadCacheLimit = useCallback(async () => {
+    const limit = await getCacheLimit();
+    setCacheLimitState(limit);
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       loadCacheSize();
-    }, [loadCacheSize])
+      loadCacheLimit();
+    }, [loadCacheSize, loadCacheLimit])
   );
+
+  const handleCacheLimitChange = () => {
+    const options: CacheLimitOption[] = ['No Cache', '300MB', '500MB', '1GB', '3GB', '5GB', '10GB'];
+    
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: [...options, 'Cancel'],
+          cancelButtonIndex: options.length,
+          title: 'Image Cache Size',
+        },
+        (buttonIndex) => {
+          if (buttonIndex < options.length) {
+            const selected = options[buttonIndex];
+            setCacheLimitState(selected);
+            setCacheLimit(selected);
+          }
+        }
+      );
+    } else {
+      setShowCachePicker(true);
+    }
+  };
+
+  const handleCacheLimitSelect = (option: CacheLimitOption) => {
+    setCacheLimitState(option);
+    setCacheLimit(option);
+  };
 
   const handleClearCache = async () => {
     Alert.alert(
@@ -225,9 +264,9 @@ export const SettingsScreen: React.FC = () => {
           'STORAGE',
           <>
             {renderSettingItem({
-              title: 'Download Manager',
-              subtitle: 'Work in Progress',
-              onPress: () => navigation.navigate('DownloadManager'),
+              title: 'Image Cache Size',
+              value: cacheLimit,
+              onPress: handleCacheLimitChange,
             })}
             {renderSettingItem({
               title: 'Clear image cache',
@@ -270,6 +309,17 @@ export const SettingsScreen: React.FC = () => {
           v{Constants.expoConfig?.version || '0.0.1'}
         </Text>
       </ScrollView>
+
+      {/* Cache Size Picker Modal for Android */}
+      <PickerModal
+        visible={showCachePicker}
+        title="Image Cache Size"
+        subtitle="Choose maximum storage for cached images"
+        options={['No Cache', '300MB', '500MB', '1GB', '3GB', '5GB', '10GB'] as CacheLimitOption[]}
+        selectedValue={cacheLimit}
+        onSelect={handleCacheLimitSelect}
+        onClose={() => setShowCachePicker(false)}
+      />
     </View>
   );
 };

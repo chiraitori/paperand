@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,42 +6,58 @@ import {
   TextInput,
   FlatList,
   TouchableOpacity,
-  Image,
   Dimensions,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
 import { EmptyState, LoadingIndicator } from '../components';
-import { getInstalledExtensions, searchManga, InstalledExtension, SourceManga } from '../services/sourceService';
+import { getInstalledExtensions, searchManga, InstalledExtension, SourceManga, SearchResult } from '../services/sourceService';
 import { RootStackParamList } from '../types';
 
 type SearchScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 const { width } = Dimensions.get('window');
+const NUM_COLUMNS = 3;
+const GRID_PADDING = 16;
+const GRID_GAP = 10;
+const CARD_WIDTH = (width - GRID_PADDING * 2 - GRID_GAP * (NUM_COLUMNS - 1)) / NUM_COLUMNS;
+const CARD_HEIGHT = CARD_WIDTH * 1.4;
 const RECENT_SEARCHES_KEY = '@recent_searches';
+
+interface SourceSearchResult {
+  extensionId: string;
+  extensionName: string;
+  results: SourceManga[];
+  metadata: any;
+}
 
 export const SearchScreen: React.FC = () => {
   const { theme } = useTheme();
   const navigation = useNavigation<SearchScreenNavigationProp>();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SourceManga[]>([]);
+  const [multiSourceResults, setMultiSourceResults] = useState<SourceSearchResult[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
+  const [hasMoreResults, setHasMoreResults] = useState(true);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [installedExtensions, setInstalledExtensions] = useState<InstalledExtension[]>([]);
-  const [activeSource, setActiveSource] = useState<string | null>(null);
+  const [activeSource, setActiveSource] = useState<string | null>(null); // null = search all
+  const [searchMetadata, setSearchMetadata] = useState<any>(null);
+  const currentQueryRef = useRef<string>('');
 
   const loadExtensions = useCallback(async () => {
     const extensions = await getInstalledExtensions();
     setInstalledExtensions(extensions);
-    if (extensions.length > 0 && !activeSource) {
-      setActiveSource(extensions[0].id);
-    }
-  }, [activeSource]);
+    // Don't auto-select - null means search all sources
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -71,28 +87,104 @@ export const SearchScreen: React.FC = () => {
     }
   };
 
-  const performSearch = async (searchText: string) => {
-    if (searchText.trim().length === 0 || !activeSource) return;
+  const performSearch = async (searchText: string, isNewSearch: boolean = true) => {
+    if (searchText.trim().length === 0) return;
     
-    setQuery(searchText);
-    setLoading(true);
-    setHasSearched(true);
+    if (isNewSearch) {
+      setQuery(searchText);
+      setLoading(true);
+      setHasSearched(true);
+      setHasMoreResults(true);
+      setResults([]);
+      setMultiSourceResults([]);
+      setSearchMetadata(null);
+      currentQueryRef.current = searchText;
+    } else {
+      setLoadingMore(true);
+    }
+    
     try {
-      const searchResults = await searchManga(activeSource, searchText);
-      setResults(searchResults);
-      saveRecentSearch(searchText.trim());
+      if (activeSource) {
+        // Single source search
+        const searchResult = await searchManga(
+          activeSource, 
+          searchText, 
+          isNewSearch ? null : searchMetadata
+        );
+        
+        // Check if we got any results
+        if (searchResult.results.length === 0 && !isNewSearch) {
+          setHasMoreResults(false);
+        } else {
+          if (isNewSearch) {
+            setResults(searchResult.results);
+            saveRecentSearch(searchText.trim());
+          } else {
+            setResults(prev => [...prev, ...searchResult.results]);
+          }
+        }
+        
+        // If no metadata returned, no more pages
+        if (!searchResult.metadata) {
+          setHasMoreResults(false);
+        } else {
+          setSearchMetadata(searchResult.metadata);
+        }
+      } else {
+        // Multi-source search (search all installed extensions)
+        if (isNewSearch) {
+          saveRecentSearch(searchText.trim());
+          const searchPromises = installedExtensions.map(async (ext) => {
+            try {
+              const searchResult = await searchManga(ext.id, searchText, null);
+              return {
+                extensionId: ext.id,
+                extensionName: ext.name,
+                results: searchResult.results,
+                metadata: searchResult.metadata,
+              };
+            } catch (error) {
+              console.error(`Search failed for ${ext.name}:`, error);
+              return {
+                extensionId: ext.id,
+                extensionName: ext.name,
+                results: [],
+                metadata: null,
+              };
+            }
+          });
+          
+          const allResults = await Promise.all(searchPromises);
+          // Filter out sources with no results
+          setMultiSourceResults(allResults.filter(r => r.results.length > 0));
+        }
+      }
     } catch (error) {
       console.error('Search failed:', error);
-      setResults([]);
+      setHasMoreResults(false);
+      if (isNewSearch) {
+        setResults([]);
+        setMultiSourceResults([]);
+      }
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
+  };
+
+  const loadMoreResults = () => {
+    // Only load more if not already loading, have more results, and have a search query
+    if (loadingMore || loading || !hasMoreResults || !currentQueryRef.current) return;
+    performSearch(currentQueryRef.current, false);
   };
 
   const clearSearch = () => {
     setQuery('');
     setResults([]);
+    setMultiSourceResults([]);
     setHasSearched(false);
+    setSearchMetadata(null);
+    currentQueryRef.current = '';
   };
 
   const clearRecentSearches = async () => {
@@ -120,6 +212,25 @@ export const SearchScreen: React.FC = () => {
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={styles.sourcesContainer}
     >
+      {/* All Sources option */}
+      <TouchableOpacity 
+        style={styles.sourceCard}
+        onPress={() => setActiveSource(null)}
+      >
+        <View style={[
+          styles.sourceIconContainer,
+          { borderColor: activeSource === null ? theme.primary : 'transparent' }
+        ]}>
+          <Ionicons name="globe-outline" size={28} color={activeSource === null ? theme.primary : theme.textSecondary} />
+        </View>
+        <Text style={[
+          styles.sourceName, 
+          { color: activeSource === null ? theme.primary : theme.text }
+        ]} numberOfLines={1}>
+          All
+        </Text>
+      </TouchableOpacity>
+      
       {installedExtensions.map((ext) => {
         const iconUrl = getExtensionIconUrl(ext);
         return (
@@ -179,28 +290,100 @@ export const SearchScreen: React.FC = () => {
     );
   };
 
-  const renderResultItem = ({ item }: { item: SourceManga }) => (
-    <TouchableOpacity
-      style={[styles.resultItem, { backgroundColor: theme.card }]}
-      onPress={() => navigateToManga(item)}
-      activeOpacity={0.7}
-    >
-      <Image
-        source={{ uri: item.image }}
-        style={styles.resultCover}
-      />
-      <View style={styles.resultInfo}>
-        <Text style={[styles.resultTitle, { color: theme.text }]} numberOfLines={2}>
+  const renderResultItem = ({ item, index }: { item: SourceManga; index: number }) => {
+    const isLastRow = index >= results.length - (results.length % NUM_COLUMNS || NUM_COLUMNS);
+    const columnIndex = index % NUM_COLUMNS;
+    
+    return (
+      <TouchableOpacity
+        style={[
+          styles.gridItem,
+          columnIndex < NUM_COLUMNS - 1 && { marginRight: GRID_GAP },
+          !isLastRow && { marginBottom: GRID_GAP },
+        ]}
+        onPress={() => navigateToManga(item)}
+        activeOpacity={0.7}
+      >
+        <Image
+          source={{ uri: item.image }}
+          style={styles.gridCover}
+          contentFit="cover"
+        />
+        <Text style={[styles.gridTitle, { color: theme.text }]} numberOfLines={1}>
           {item.title}
         </Text>
         {item.subtitle && (
-          <Text style={[styles.resultAuthor, { color: theme.textSecondary }]}>
+          <Text style={[styles.gridSubtitle, { color: theme.textSecondary }]} numberOfLines={1}>
             {item.subtitle}
           </Text>
         )}
-      </View>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderMangaCard = (manga: SourceManga, index: number) => (
+    <TouchableOpacity
+      key={`${manga.extensionId}-${manga.id}-${index}`}
+      style={styles.horizontalCard}
+      onPress={() => navigateToManga(manga)}
+      activeOpacity={0.7}
+    >
+      <Image
+        source={{ uri: manga.image }}
+        style={styles.horizontalCover}
+        contentFit="cover"
+      />
+      <Text style={[styles.horizontalTitle, { color: theme.text }]} numberOfLines={2}>
+        {manga.title}
+      </Text>
+      {manga.subtitle && (
+        <Text style={[styles.horizontalSubtitle, { color: theme.textSecondary }]} numberOfLines={1}>
+          {manga.subtitle}
+        </Text>
+      )}
     </TouchableOpacity>
   );
+
+  const navigateToViewMore = (sourceResult: SourceSearchResult) => {
+    // Navigate to SearchResults screen with the source results and query for pagination
+    navigation.navigate('SearchResults', {
+      sourceId: sourceResult.extensionId,
+      sourceName: sourceResult.extensionName,
+      query: currentQueryRef.current,
+      initialItems: sourceResult.results,
+    });
+  };
+
+  const renderMultiSourceResults = () => (
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.multiSourceContainer}>
+      {multiSourceResults.map((sourceResult) => (
+        <View key={sourceResult.extensionId} style={styles.sourceSection}>
+          <View style={styles.sourceSectionHeader}>
+            <Text style={[styles.sourceSectionTitle, { color: theme.text }]}>
+              {sourceResult.extensionName}
+            </Text>
+            {sourceResult.results.length > 0 && (
+              <TouchableOpacity 
+                style={[styles.expandButton, { backgroundColor: theme.card }]}
+                onPress={() => navigateToViewMore(sourceResult)}
+              >
+                <Ionicons name="resize-outline" size={18} color={theme.primary} />
+              </TouchableOpacity>
+            )}
+          </View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.horizontalList}
+          >
+            {sourceResult.results.slice(0, 10).map((manga, index) => renderMangaCard(manga, index))}
+          </ScrollView>
+        </View>
+      ))}
+    </ScrollView>
+  );
+
+  const hasResults = activeSource ? results.length > 0 : multiSourceResults.length > 0;
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -239,20 +422,43 @@ export const SearchScreen: React.FC = () => {
       {loading ? (
         <LoadingIndicator message="Searching..." />
       ) : hasSearched ? (
-        results.length === 0 ? (
+        !hasResults ? (
           <EmptyState
             icon="search"
             title="No results found"
             description={`No manga found for "${query}"`}
           />
-        ) : (
+        ) : activeSource ? (
+          // Single source - grid view with pagination
           <FlatList
             data={results}
             renderItem={renderResultItem}
             keyExtractor={(item, index) => `${item.id}-${index}`}
-            contentContainerStyle={styles.resultsList}
+            numColumns={NUM_COLUMNS}
+            contentContainerStyle={styles.resultsGrid}
             showsVerticalScrollIndicator={false}
+            onEndReached={loadMoreResults}
+            onEndReachedThreshold={0.5}
+            ListFooterComponent={
+              loadingMore ? (
+                <View style={styles.loadingMore}>
+                  <ActivityIndicator size="small" color={theme.primary} />
+                  <Text style={[styles.loadingMoreText, { color: theme.textSecondary }]}>
+                    Loading more...
+                  </Text>
+                </View>
+              ) : !hasMoreResults && results.length > 0 ? (
+                <View style={styles.endOfResults}>
+                  <Text style={[styles.endOfResultsText, { color: theme.textSecondary }]}>
+                    No more results
+                  </Text>
+                </View>
+              ) : null
+            }
           />
+        ) : (
+          // Multi-source - horizontal sections
+          renderMultiSourceResults()
         )
       ) : (
         <ScrollView showsVerticalScrollIndicator={false}>
@@ -383,33 +589,91 @@ const styles = StyleSheet.create({
   recentItemText: {
     fontSize: 16,
   },
-  resultsList: {
-    paddingHorizontal: 16,
+  resultsGrid: {
+    paddingHorizontal: GRID_PADDING,
+    paddingTop: 8,
     paddingBottom: 100,
   },
-  resultItem: {
-    flexDirection: 'row',
-    borderRadius: 12,
-    marginBottom: 12,
-    overflow: 'hidden',
+  gridItem: {
+    width: CARD_WIDTH,
   },
-  resultCover: {
-    width: 80,
-    height: 120,
+  gridCover: {
+    width: CARD_WIDTH,
+    height: CARD_HEIGHT,
+    borderRadius: 8,
     backgroundColor: '#333',
   },
-  resultInfo: {
-    flex: 1,
-    padding: 12,
-    justifyContent: 'center',
-  },
-  resultTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  resultAuthor: {
+  gridTitle: {
     fontSize: 13,
-    marginBottom: 8,
+    fontWeight: '600',
+    marginTop: 6,
+  },
+  gridSubtitle: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  loadingMore: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 20,
+    gap: 10,
+  },
+  loadingMoreText: {
+    fontSize: 14,
+  },
+  // Multi-source styles
+  multiSourceContainer: {
+    paddingBottom: 100,
+  },
+  sourceSection: {
+    marginBottom: 24,
+  },
+  sourceSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    marginBottom: 12,
+  },
+  sourceSectionTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  expandButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  horizontalList: {
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+  horizontalCard: {
+    width: CARD_WIDTH,
+  },
+  horizontalCover: {
+    width: CARD_WIDTH,
+    height: CARD_HEIGHT,
+    borderRadius: 8,
+    backgroundColor: '#333',
+  },
+  horizontalTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 6,
+  },
+  horizontalSubtitle: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  endOfResults: {
+    alignItems: 'center',
+    paddingVertical: 20,
+  },
+  endOfResultsText: {
+    fontSize: 14,
   },
 });

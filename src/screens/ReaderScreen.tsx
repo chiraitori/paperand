@@ -322,6 +322,8 @@ export const ReaderScreen: React.FC = () => {
         initialNumToRender={3}
         maxToRenderPerBatch={5}
         windowSize={5}
+        contentContainerStyle={readingMode === 'vertical' ? styles.verticalContentContainer : undefined}
+        ListHeaderComponent={readingMode === 'vertical' ? <View style={styles.firstImageSpacer} /> : null}
       />
 
       {showControls && (
@@ -399,6 +401,12 @@ export const ReaderScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  verticalContentContainer: {
+    flexGrow: 1,
+  },
+  firstImageSpacer: {
+    height: height * 0.15, // 15% of screen height as top padding
   },
   verticalPage: {
     width: width,

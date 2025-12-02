@@ -3,7 +3,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useTheme } from '../context/ThemeContext';
 import { BottomTabNavigator } from './BottomTabNavigator';
-import { MangaDetailScreen, ReaderScreen, GeneralSettingsScreen, ThemeSettingsScreen, BackupsScreen, ExtensionsScreen, ExtensionDetailScreen, AddRepositoryScreen, BrowseRepositoryScreen, BrowseAllRepositoriesScreen, DownloadManagerScreen, DeveloperScreen, CreditsScreen } from '../screens';
+import { MangaDetailScreen, ReaderScreen, GeneralSettingsScreen, ThemeSettingsScreen, BackupsScreen, ExtensionsScreen, ExtensionDetailScreen, AddRepositoryScreen, BrowseRepositoryScreen, BrowseAllRepositoriesScreen, DeveloperScreen, CreditsScreen, CategoryScreen, SearchResultsScreen } from '../screens';
 import { RootStackParamList } from '../types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -36,9 +36,10 @@ export const AppNavigator: React.FC = () => {
         />
         <Stack.Screen name="BrowseAllRepositories" component={BrowseAllRepositoriesScreen} />
         <Stack.Screen name="BrowseRepository" component={BrowseRepositoryScreen} />
-        <Stack.Screen name="DownloadManager" component={DownloadManagerScreen} />
         <Stack.Screen name="Developer" component={DeveloperScreen} />
         <Stack.Screen name="Credits" component={CreditsScreen} />
+        <Stack.Screen name="Category" component={CategoryScreen} />
+        <Stack.Screen name="SearchResults" component={SearchResultsScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

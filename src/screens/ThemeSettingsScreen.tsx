@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -8,10 +8,12 @@ import {
   Platform,
   ScrollView,
   FlatList,
+  ActionSheetIOS,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
+import { PickerModal } from '../components';
 
 export const ThemeSettingsScreen: React.FC = () => {
   const { 
@@ -25,6 +27,7 @@ export const ThemeSettingsScreen: React.FC = () => {
     deleteCustomTheme,
   } = useTheme();
   const navigation = useNavigation();
+  const [showThemeModePicker, setShowThemeModePicker] = useState(false);
 
   const getThemeLabel = (mode: string) => {
     switch (mode) {
@@ -36,16 +39,34 @@ export const ThemeSettingsScreen: React.FC = () => {
   };
 
   const showThemePicker = () => {
-    Alert.alert(
-      'Select Theme',
-      '',
-      [
-        { text: 'Light', onPress: () => setThemeMode('light') },
-        { text: 'Dark', onPress: () => setThemeMode('dark') },
-        { text: 'System', onPress: () => setThemeMode('system') },
-        { text: 'Cancel', style: 'cancel' },
-      ]
-    );
+    const options = ['Light', 'Dark', 'System'];
+    const values: ('light' | 'dark' | 'system')[] = ['light', 'dark', 'system'];
+    
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: [...options, 'Cancel'],
+          cancelButtonIndex: options.length,
+          title: 'Theme Mode',
+        },
+        (buttonIndex) => {
+          if (buttonIndex < options.length) {
+            setThemeMode(values[buttonIndex]);
+          }
+        }
+      );
+    } else {
+      setShowThemeModePicker(true);
+    }
+  };
+
+  const handleThemeModeSelect = (option: string) => {
+    const modeMap: Record<string, 'light' | 'dark' | 'system'> = {
+      'Light': 'light',
+      'Dark': 'dark',
+      'System': 'system',
+    };
+    setThemeMode(modeMap[option] || 'system');
   };
 
   const handleImportTheme = async () => {
@@ -282,6 +303,17 @@ export const ThemeSettingsScreen: React.FC = () => {
           </Text>
         </View>
       </ScrollView>
+
+      {/* Theme Mode Picker Modal for Android */}
+      <PickerModal
+        visible={showThemeModePicker}
+        title="Theme Mode"
+        subtitle="Choose your preferred theme"
+        options={['Light', 'Dark', 'System']}
+        selectedValue={getThemeLabel(themeMode)}
+        onSelect={handleThemeModeSelect}
+        onClose={() => setShowThemeModePicker(false)}
+      />
     </View>
   );
 };

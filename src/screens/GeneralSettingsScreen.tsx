@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
@@ -6,19 +6,85 @@ import {
     ScrollView,
     TouchableOpacity,
     Switch,
+    Platform,
+    ActionSheetIOS,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
+import { PickerModal } from '../components/PickerModal';
+
+const SETTINGS_KEY = '@general_settings';
+
+interface GeneralSettings {
+    portraitColumns: number;
+    landscapeColumns: number;
+    chapterListSort: 'ascending' | 'descending';
+    interactiveUpdates: boolean;
+    libraryAuth: boolean;
+}
+
+const defaultSettings: GeneralSettings = {
+    portraitColumns: 3,
+    landscapeColumns: 7,
+    chapterListSort: 'descending',
+    interactiveUpdates: false,
+    libraryAuth: false,
+};
 
 export const GeneralSettingsScreen: React.FC = () => {
     const { theme } = useTheme();
     const navigation = useNavigation();
 
-    const [portraitColumns, setPortraitColumns] = useState(3);
-    const [landscapeColumns, setLandscapeColumns] = useState(7);
-    const [interactiveUpdates, setInteractiveUpdates] = useState(false);
-    const [libraryAuth, setLibraryAuth] = useState(false);
+    const [settings, setSettings] = useState<GeneralSettings>(defaultSettings);
+    const [showSortPicker, setShowSortPicker] = useState(false);
+
+    useEffect(() => {
+        loadSettings();
+    }, []);
+
+    const loadSettings = async () => {
+        try {
+            const saved = await AsyncStorage.getItem(SETTINGS_KEY);
+            if (saved) {
+                setSettings({ ...defaultSettings, ...JSON.parse(saved) });
+            }
+        } catch (e) {
+            console.error('Failed to load settings:', e);
+        }
+    };
+
+    const saveSettings = async (newSettings: GeneralSettings) => {
+        try {
+            await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(newSettings));
+            setSettings(newSettings);
+        } catch (e) {
+            console.error('Failed to save settings:', e);
+        }
+    };
+
+    const updateSetting = <K extends keyof GeneralSettings>(key: K, value: GeneralSettings[K]) => {
+        const newSettings = { ...settings, [key]: value };
+        saveSettings(newSettings);
+    };
+
+    const showSortOptions = () => {
+        if (Platform.OS === 'ios') {
+            ActionSheetIOS.showActionSheetWithOptions(
+                {
+                    options: ['Cancel', 'Ascending', 'Descending'],
+                    cancelButtonIndex: 0,
+                },
+                (buttonIndex) => {
+                    if (buttonIndex === 1) updateSetting('chapterListSort', 'ascending');
+                    if (buttonIndex === 2) updateSetting('chapterListSort', 'descending');
+                }
+            );
+        } else {
+            setShowSortPicker(true);
+        }
+    };
 
     const renderStepper = (
         value: number,
@@ -116,22 +182,22 @@ export const GeneralSettingsScreen: React.FC = () => {
                     <View style={[styles.sectionContent, { backgroundColor: theme.card }]}>
                         {renderItem({
                             title: 'Portrait',
-                            value: portraitColumns,
+                            value: settings.portraitColumns,
                             valueColor: theme.error,
                             rightElement: renderStepper(
-                                portraitColumns,
-                                () => setPortraitColumns(p => p + 1),
-                                () => setPortraitColumns(p => Math.max(1, p - 1))
+                                settings.portraitColumns,
+                                () => updateSetting('portraitColumns', settings.portraitColumns + 1),
+                                () => updateSetting('portraitColumns', Math.max(1, settings.portraitColumns - 1))
                             )
                         })}
                         {renderItem({
                             title: 'Landscape',
-                            value: landscapeColumns,
+                            value: settings.landscapeColumns,
                             valueColor: theme.error,
                             rightElement: renderStepper(
-                                landscapeColumns,
-                                () => setLandscapeColumns(l => l + 1),
-                                () => setLandscapeColumns(l => Math.max(1, l - 1))
+                                settings.landscapeColumns,
+                                () => updateSetting('landscapeColumns', settings.landscapeColumns + 1),
+                                () => updateSetting('landscapeColumns', Math.max(1, settings.landscapeColumns - 1))
                             )
                         })}
                     </View>
@@ -143,9 +209,9 @@ export const GeneralSettingsScreen: React.FC = () => {
                     <View style={[styles.sectionContent, { backgroundColor: theme.card }]}>
                         {renderItem({
                             title: 'Chapter List Sort',
-                            value: 'Descending',
+                            value: settings.chapterListSort === 'ascending' ? 'Ascending' : 'Descending',
                             showChevron: true,
-                            onPress: () => { }
+                            onPress: showSortOptions
                         })}
                     </View>
                 </View>
@@ -170,8 +236,8 @@ export const GeneralSettingsScreen: React.FC = () => {
                             title: 'Interactive Updates',
                             rightElement: (
                                 <Switch
-                                    value={interactiveUpdates}
-                                    onValueChange={setInteractiveUpdates}
+                                    value={settings.interactiveUpdates}
+                                    onValueChange={(value) => updateSetting('interactiveUpdates', value)}
                                     trackColor={{ false: theme.border, true: theme.success }}
                                     thumbColor={'#FFFFFF'}
                                 />
@@ -189,8 +255,8 @@ export const GeneralSettingsScreen: React.FC = () => {
                             title: 'Library Requires Authentication',
                             rightElement: (
                                 <Switch
-                                    value={libraryAuth}
-                                    onValueChange={setLibraryAuth}
+                                    value={settings.libraryAuth}
+                                    onValueChange={(value) => updateSetting('libraryAuth', value)}
                                     trackColor={{ false: theme.border, true: theme.success }}
                                     thumbColor={'#FFFFFF'}
                                 />
@@ -201,6 +267,22 @@ export const GeneralSettingsScreen: React.FC = () => {
                 </View>
 
             </ScrollView>
+
+            {/* Sort Picker Modal (Android) */}
+            <PickerModal
+                visible={showSortPicker}
+                onClose={() => setShowSortPicker(false)}
+                title="Chapter List Sort"
+                options={[
+                    { label: 'Ascending', value: 'ascending' },
+                    { label: 'Descending', value: 'descending' },
+                ]}
+                selectedValue={settings.chapterListSort}
+                onSelect={(value) => {
+                    updateSetting('chapterListSort', value as 'ascending' | 'descending');
+                    setShowSortPicker(false);
+                }}
+            />
         </View>
     );
 };

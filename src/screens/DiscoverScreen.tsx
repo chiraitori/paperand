@@ -171,6 +171,15 @@ export const DiscoverScreen: React.FC = () => {
     </TouchableOpacity>
   );
 
+  const navigateToCategory = (section: HomeSection) => {
+    navigation.navigate('Category', {
+      sourceId: activeSource,
+      sectionId: section.id,
+      title: section.title,
+      initialItems: section.items,
+    });
+  };
+
   const renderSection = (section: HomeSection) => {
     // Skip sections with no items
     if (!section.items || section.items.length === 0) {
@@ -182,7 +191,10 @@ export const DiscoverScreen: React.FC = () => {
         <View style={styles.sectionHeader}>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>{section.title}</Text>
           {section.containsMoreItems && (
-            <TouchableOpacity style={[styles.expandButton, { backgroundColor: theme.card }]}>
+            <TouchableOpacity 
+              style={[styles.expandButton, { backgroundColor: theme.card }]}
+              onPress={() => navigateToCategory(section)}
+            >
               <Ionicons name="resize-outline" size={18} color={theme.primary} />
             </TouchableOpacity>
           )}

@@ -93,9 +93,10 @@ export type RootStackParamList = {
   AddRepository: undefined;
   BrowseAllRepositories: undefined;
   BrowseRepository: { repoId: string; repoName: string; repoBaseUrl: string };
-  DownloadManager: undefined;
   Developer: undefined;
   Credits: undefined;
+  Category: { sourceId: string; sectionId: string; title: string; initialItems?: any[] };
+  SearchResults: { sourceId: string; sourceName: string; query: string; initialItems?: any[] };
 };
 
 export type BottomTabParamList = {

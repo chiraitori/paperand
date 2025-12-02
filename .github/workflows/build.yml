@@ -9,12 +9,12 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to build (e.g., 0.0.1)'
+        description: 'Version to build (e.g., 0.0.2-rc)'
         required: false
         default: ''
 
 env:
-  APP_VERSION: ${{ github.event.inputs.version || '0.0.1' }}
+  APP_VERSION: ${{ github.event.inputs.version || '0.0.2-rc' }}
 
 jobs:
   build-android:
@@ -48,8 +48,28 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
+      - name: Decode Keystore
+        run: |
+          mkdir -p credentials
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > credentials/keystore.jks
+
+      - name: Create credentials.json
+        run: |
+          cat > credentials.json << EOF
+          {
+            "android": {
+              "keystore": {
+                "keystorePath": "credentials/keystore.jks",
+                "keystorePassword": "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}",
+                "keyAlias": "${{ secrets.ANDROID_KEY_ALIAS }}",
+                "keyPassword": "${{ secrets.ANDROID_KEY_PASSWORD }}"
+              }
+            }
+          }
+          EOF
+
       - name: Build Android APK
-        run: eas build --platform android --profile preview --local --non-interactive --output ./build/paperback-android-${{ env.APP_VERSION }}.apk
+        run: eas build --platform android --profile preview --local --non-interactive --output ./build/paperand-${{ env.APP_VERSION }}.apk
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
 
@@ -57,7 +77,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: android-apk
-          path: ./build/paperback-android-${{ env.APP_VERSION }}.apk
+          path: ./build/paperand-${{ env.APP_VERSION }}.apk
           retention-days: 30
 
   build-ios:
@@ -85,22 +105,30 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
-      - name: Build iOS Simulator
-        run: eas build --platform ios --profile preview --local --non-interactive --output ./build/paperback-ios-${{ env.APP_VERSION }}.tar.gz
+      - name: Build iOS Simulator App
+        run: eas build --platform ios --profile preview --local --non-interactive --output ./build/paperand-ios-${{ env.APP_VERSION }}.tar.gz
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
 
-      - name: Upload iOS Artifact
+      - name: Extract and Create IPA
+        run: |
+          mkdir -p ./build/Payload
+          tar -xzf ./build/paperand-ios-${{ env.APP_VERSION }}.tar.gz -C ./build/Payload
+          cd ./build && zip -r paperand-${{ env.APP_VERSION }}.ipa Payload
+          rm -rf Payload paperand-ios-${{ env.APP_VERSION }}.tar.gz
+
+      - name: Upload iOS IPA Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ios-build
-          path: ./build/paperback-ios-${{ env.APP_VERSION }}.tar.gz
+          name: ios-ipa
+          path: ./build/paperand-${{ env.APP_VERSION }}.ipa
           retention-days: 30
 
   release:
     name: Create Release
     needs: [build-android, build-ios]
     runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
     steps:
@@ -116,20 +144,20 @@ jobs:
       - name: Download iOS Artifact
         uses: actions/download-artifact@v4
         with:
-          name: ios-build
+          name: ios-ipa
           path: ./release
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ env.APP_VERSION }}
-          name: Paperback Android v${{ env.APP_VERSION }}
+          name: Paperand v${{ env.APP_VERSION }}
           body: |
-            ## Paperback Android v${{ env.APP_VERSION }}
+            ## Paperand v${{ env.APP_VERSION }}
             
             ### Downloads
-            - **Android**: `paperback-android-${{ env.APP_VERSION }}.apk`
-            - **iOS Simulator**: `paperback-ios-${{ env.APP_VERSION }}.tar.gz`
+            - **Android**: `paperand-${{ env.APP_VERSION }}.apk`
+            - **iOS**: `paperand-${{ env.APP_VERSION }}.ipa` (requires sideloading via AltStore/Sideloadly)
             
             ### Installation
             #### Android
@@ -137,16 +165,21 @@ jobs:
             2. Enable "Install from unknown sources" in your device settings
             3. Open the APK file to install
             
-            #### iOS (Simulator only)
-            1. Download and extract the tar.gz file
-            2. Drag the .app file into your iOS Simulator
+            #### iOS
+            1. Download the IPA file
+            2. Use AltStore, Sideloadly, or similar tool to sideload
+            3. Trust the developer certificate in Settings > General > Device Management
             
             ---
             *Built with Expo*
           draft: false
-          prerelease: ${{ contains(env.APP_VERSION, 'alpha') || contains(env.APP_VERSION, 'beta') }}
+          prerelease: ${{ contains(env.APP_VERSION, 'rc') || contains(env.APP_VERSION, 'alpha') || contains(env.APP_VERSION, 'beta') }}
           files: |
-            ./release/paperback-android-${{ env.APP_VERSION }}.apk
-            ./release/paperback-ios-${{ env.APP_VERSION }}.tar.gz
+            ./release/paperand-${{ env.APP_VERSION }}.apk
+            ./release/paperand-${{ env.APP_VERSION }}.ipa
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          files: |
+            ./release/paperand-${{ env.APP_VERSION }}.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
