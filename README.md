@@ -1,4 +1,4 @@
-# Paperad- Ad-Free Manga Reader 📚
+# Paperand - Ad-Free Manga Reader 📚
 
 An elegant, ad-free manga reader built with Expo and React Native.
 

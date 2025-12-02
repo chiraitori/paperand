@@ -16,6 +16,7 @@ import { RootStackParamList } from '../types';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { getImageCacheSize, formatCacheSize, clearImageCache } from '../services/cacheService';
+import Constants from 'expo-constants';
 
 export const SettingsScreen: React.FC = () => {
   const { theme } = useTheme();
@@ -144,7 +145,7 @@ export const SettingsScreen: React.FC = () => {
         {renderSection(
           null,
           renderSettingItem({
-            title: 'Login to Paperback',
+            title: 'Login to Paperand',
             onPress: () => Alert.alert('Login', 'Login functionality not implemented'),
             showChevron: false,
           })
@@ -255,7 +256,8 @@ export const SettingsScreen: React.FC = () => {
             })}
             {renderSettingItem({
               title: 'Discord server',
-              onPress: () => Linking.openURL('https://discord.gg/paperback'),
+              subtitle: 'Coming Soon',
+              onPress: () => Alert.alert('Discord', 'Discord server coming soon!'),
             })}
             {renderSettingItem({
               title: 'Credits',
@@ -265,7 +267,7 @@ export const SettingsScreen: React.FC = () => {
         )}
 
         <Text style={[styles.versionText, { color: theme.textSecondary }]}>
-          v0.8.11-r1
+          v{Constants.expoConfig?.version || '0.0.1'}
         </Text>
       </ScrollView>
     </View>

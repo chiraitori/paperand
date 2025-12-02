@@ -1,9 +1,9 @@
 {
   "expo": {
-    "name": "Paperback",
+    "name": "Paperand",
     "slug": "paperback-android",
     "version": "0.0.1",
-    "scheme": "paperback",
+    "scheme": "paperand",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -14,7 +14,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.chiraitori.paperback.ios",
+      "bundleIdentifier": "com.chiraitori.paperand.ios",
       "buildNumber": "1",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
@@ -25,7 +25,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.chiraitori.paperback.android",
+      "package": "com.chiraitori.paperand.android",
       "versionCode": 1,
       "intentFilters": [
         {

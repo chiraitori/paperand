@@ -8,6 +8,7 @@ import {
   Linking,
   Image,
   Platform,
+  Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,25 +22,20 @@ interface Contributor {
 }
 
 const CORE_TEAM: Contributor[] = [
-  { name: 'Faizan Durrani', role: 'Lead Developer', github: 'FaizanDurrani' },
-  { name: 'Lemon', role: 'Core Developer', github: 'lemontea' },
-  { name: 'Netsky', role: 'Extensions Developer', github: 'Netsky' },
-  { name: 'GameFuzzy', role: 'Extensions Developer', github: 'GameFuzzy' },
+  { name: 'Chiraitori', role: 'Lead Developer', github: 'chiraitori' },
 ];
 
-const CONTRIBUTORS: Contributor[] = [
-  { name: 'AlanNois', role: 'Extensions', github: 'AlanNois' },
-  { name: 'NmN', role: 'Extensions', github: 'nmn' },
-  { name: 'loik9081', role: 'Extensions', github: 'loik9081' },
-  { name: 'Moomooo95', role: 'Extensions', github: 'Moomooo95' },
-  { name: 'xOnlyFadi', role: 'Extensions', github: 'xOnlyFadi' },
+const INSPIRATIONS: Contributor[] = [
+  { name: 'Faizan Durrani', role: 'Paperback Lead Developer', github: 'FaizanDurrani' },
+  { name: 'Lemon', role: 'Paperback Core Developer', github: 'lemontea' },
+  { name: 'Netsky', role: 'Paperback Extensions Developer', github: 'Netsky' },
+  { name: 'GameFuzzy', role: 'Paperback Extensions Developer', github: 'GameFuzzy' },
 ];
 
 const SPECIAL_THANKS = [
-  'All our Patreon supporters',
+  'The Paperback team for inspiration',
   'The Tachiyomi team for inspiration',
-  'Our amazing Discord community',
-  'All translators and contributors',
+  'All contributors and testers',
 ];
 
 export const CreditsScreen: React.FC = () => {
@@ -97,7 +93,7 @@ export const CreditsScreen: React.FC = () => {
           <View style={[styles.appIcon, { backgroundColor: theme.primary }]}>
             <Ionicons name="book" size={48} color="#FFF" />
           </View>
-          <Text style={[styles.appName, { color: theme.text }]}>Paperback</Text>
+          <Text style={[styles.appName, { color: theme.text }]}>Paperand</Text>
           <Text style={[styles.appTagline, { color: theme.textSecondary }]}>
             Ad-Free Manga Reader
           </Text>
@@ -105,14 +101,14 @@ export const CreditsScreen: React.FC = () => {
 
         {/* Core Team */}
         {renderSection(
-          'CORE TEAM',
+          'DEVELOPER',
           CORE_TEAM.map(renderContributor)
         )}
 
-        {/* Contributors */}
+        {/* Inspirations */}
         {renderSection(
-          'CONTRIBUTORS',
-          CONTRIBUTORS.map(renderContributor)
+          'INSPIRED BY (PAPERBACK TEAM)',
+          INSPIRATIONS.map(renderContributor)
         )}
 
         {/* Special Thanks */}
@@ -135,7 +131,7 @@ export const CreditsScreen: React.FC = () => {
           <>
             <TouchableOpacity
               style={[styles.linkItem, { borderBottomColor: theme.border }]}
-              onPress={() => Linking.openURL('https://github.com/Paperback-iOS/app')}
+              onPress={() => Linking.openURL('https://github.com/chiraitori/paperand')}
             >
               <Ionicons name="logo-github" size={24} color={theme.text} />
               <Text style={[styles.linkText, { color: theme.text }]}>GitHub Repository</Text>
@@ -143,33 +139,17 @@ export const CreditsScreen: React.FC = () => {
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.linkItem, { borderBottomColor: theme.border }]}
-              onPress={() => Linking.openURL('https://discord.gg/paperback')}
+              onPress={() => Alert.alert('Discord', 'Discord server coming soon!')}
             >
               <Ionicons name="logo-discord" size={24} color={theme.text} />
-              <Text style={[styles.linkText, { color: theme.text }]}>Discord Server</Text>
-              <Ionicons name="open-outline" size={20} color={theme.textSecondary} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.linkItem, { borderBottomColor: theme.border }]}
-              onPress={() => Linking.openURL('https://paperback.moe')}
-            >
-              <Ionicons name="globe-outline" size={24} color={theme.text} />
-              <Text style={[styles.linkText, { color: theme.text }]}>Website</Text>
-              <Ionicons name="open-outline" size={20} color={theme.textSecondary} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.linkItem, { borderBottomColor: theme.border }]}
-              onPress={() => Linking.openURL('https://www.patreon.com/FaizanDurrani')}
-            >
-              <Ionicons name="heart-outline" size={24} color={theme.text} />
-              <Text style={[styles.linkText, { color: theme.text }]}>Support on Patreon</Text>
+              <Text style={[styles.linkText, { color: theme.text }]}>Discord Server (Coming Soon)</Text>
               <Ionicons name="open-outline" size={20} color={theme.textSecondary} />
             </TouchableOpacity>
           </>
         )}
 
         <Text style={[styles.copyright, { color: theme.textSecondary }]}>
-          Made with ❤️ by the Paperback Team
+          Made with ❤️ by Chiraitori
         </Text>
       </ScrollView>
     </View>
