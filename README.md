@@ -1,17 +1,30 @@
 # Paperand - Ad-Free Manga Reader 📚
 
-An elegant, ad-free manga reader built with Expo and React Native.
+An elegant, ad-free manga reader built with Expo and React Native. Compatible with Paperback extensions.
+
+[![Build and Release](https://github.com/chiraitori/paperad/actions/workflows/build.yml/badge.svg)](https://github.com/chiraitori/paperad/actions/workflows/build.yml)
+[![Latest Release](https://img.shields.io/github/v/release/chiraitori/paperad?include_prereleases)](https://github.com/chiraitori/paperad/releases)
+
+## Download
+
+Get the latest release from the [Releases page](https://github.com/chiraitori/paperad/releases):
+
+- **Android**: Download `.apk` file and install
+- **iOS**: Download `.ipa` file and sideload with AltStore/Sideloadly
 
 ## Features
 
 - 📖 **Browse Manga** - Discover manga with genre filtering and search
+- 🔌 **Paperback Extensions** - Compatible with Paperback extension sources
 - 📚 **Personal Library** - Save your favorite manga for quick access
 - ❤️ **Favorites** - Mark manga as favorites for easy organization
 - 📊 **Reading Progress** - Automatic tracking of your reading position
-- 🌙 **Dark Mode** - Eye-friendly dark theme with system theme support
+- 🌙 **Dark Mode** - Eye-friendly dark theme with custom `.pbcolors` support
 - 📱 **Dual Reading Modes** - Vertical scroll or horizontal page flip
 - 🔄 **Chapter Navigation** - Easy navigation between chapters
 - 📜 **Reading History** - Track what you've been reading
+- 🔍 **Multi-Source Search** - Search across all installed extensions
+- 💾 **Image Caching** - Fast loading with configurable cache limits
 
 ## Screenshots
 
@@ -75,51 +88,75 @@ src/
 
 ## Tech Stack
 
-- **Expo** - Development framework
+- **Expo SDK 54** - Development framework
 - **React Native** - Cross-platform mobile development
 - **TypeScript** - Type-safe JavaScript
 - **React Navigation** - Navigation library
 - **AsyncStorage** - Persistent local storage
-- **Expo Image** - Optimized image loading
+- **expo-image** - Optimized image loading with caching
+- **WebView** - Extension runtime for Paperback sources
 
-## Building for Production
+## Building
 
-### Android
-
-```bash
-npx expo build:android
-# or for EAS Build
-npx eas build --platform android
-```
-
-### iOS
+### Local Development
 
 ```bash
-npx expo build:ios
-# or for EAS Build
-npx eas build --platform ios
+# Install dependencies
+npm install
+
+# Start Expo dev server
+npx expo start
+
+# Run on Android
+npm run android
+
+# Run on iOS
+npm run ios
 ```
+
+### GitHub Actions (Automated)
+
+The project uses GitHub Actions for automated builds. On every push to `main` or manual trigger:
+
+1. Builds Android APK with signing
+2. Builds iOS IPA (simulator build, sideloadable)
+3. Creates a GitHub Release with both artifacts
+
+**Required Secrets:**
+- `EXPO_TOKEN` - Expo access token
+- `ANDROID_KEYSTORE_BASE64` - Base64 encoded keystore
+- `ANDROID_KEYSTORE_PASSWORD` - Keystore password
+- `ANDROID_KEY_ALIAS` - Key alias
+- `ANDROID_KEY_PASSWORD` - Key password
+
+### Manual EAS Build
+
+```bash
+# Android APK
+eas build --platform android --profile preview
+
+# iOS
+eas build --platform ios --profile preview
+```
+
+## Adding Extensions
+
+1. Go to **More → External Sources**
+2. Add a Paperback-compatible extension repository URL
+3. Browse and install extensions
+4. Sources will appear in the **Discover** tab
 
 ## Customization
 
-### Adding Real Manga Sources
+### Themes
 
-The app currently uses mock data. To add real manga sources:
+Supports custom `.pbcolors` theme files. Import via **More → Appearance**.
 
-1. Create a new data source in `src/data/`
-2. Implement the API interface matching the types in `src/types/`
-3. Replace mock data imports with your data source
+### Settings
 
-### Theming
-
-Customize colors in `src/constants/theme.ts`:
-
-```typescript
-export const lightTheme: ThemeColors = {
-  primary: '#6200EE',  // Change primary color
-  // ...
-};
-```
+- **Portrait/Landscape columns** - Customize grid layout
+- **Chapter list sort** - Ascending or descending
+- **Cache limit** - Control storage usage
 
 ## License
 
@@ -128,6 +165,11 @@ MIT License - feel free to use this project for personal or commercial purposes.
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+## Credits
+
+- Inspired by [Paperback](https://paperback.moe/)
+- Built with [Expo](https://expo.dev/)
 
 ---
 
