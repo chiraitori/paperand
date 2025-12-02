@@ -78,57 +78,12 @@ jobs:
           path: ./build/paperand-${{ env.APP_VERSION }}.apk
           retention-days: 30
 
-  build-ios:
-    name: Build iOS
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Setup Expo CLI
-        run: npm install -g expo-cli eas-cli
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Setup EAS
-        uses: expo/expo-github-action@v8
-        with:
-          eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
-
-      - name: Build iOS on EAS Cloud
-        run: |
-          eas build --platform ios --profile preview --non-interactive --wait --json > build-result.json
-          cat build-result.json
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-
-      - name: Download IPA from EAS
-        run: |
-          mkdir -p ./build
-          BUILD_URL=$(cat build-result.json | jq -r '.[0].artifacts.buildUrl')
-          echo "Downloading from: $BUILD_URL"
-          curl -L -o ./build/paperand-${{ env.APP_VERSION }}.ipa "$BUILD_URL"
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-
-      - name: Upload iOS IPA Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ios-ipa
-          path: ./build/paperand-${{ env.APP_VERSION }}.ipa
-          retention-days: 30
+  # iOS builds are handled by Codemagic (see codemagic.yaml)
+  # Codemagic builds unsigned IPA without Apple Developer account
 
   release:
     name: Create Release
-    needs: [build-android, build-ios]
+    needs: [build-android]
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
     permissions:
@@ -143,12 +98,6 @@ jobs:
           name: android-apk
           path: ./release
 
-      - name: Download iOS Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: ios-ipa
-          path: ./release
-
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
@@ -159,7 +108,7 @@ jobs:
             
             ### Downloads
             - **Android**: `paperand-${{ env.APP_VERSION }}.apk`
-            - **iOS**: `paperand-${{ env.APP_VERSION }}.ipa`
+            - **iOS**: See Codemagic builds or build locally
             
             ### Installation
             #### Android
@@ -168,16 +117,14 @@ jobs:
             3. Open the APK file to install
             
             #### iOS
-            1. Download the IPA file
-            2. Use AltStore, Sideloadly, or TrollStore to install
-            3. Trust the developer in Settings → General → Device Management
+            iOS IPA is built via Codemagic CI (unsigned).
+            Sideload using AltStore, Sideloadly, or TrollStore.
             
             ---
-            *Built with Expo & EAS*
+            *Built with Expo*
           draft: false
           prerelease: ${{ contains(env.APP_VERSION, 'rc') || contains(env.APP_VERSION, 'alpha') || contains(env.APP_VERSION, 'beta') }}
           files: |
             ./release/paperand-${{ env.APP_VERSION }}.apk
-            ./release/paperand-${{ env.APP_VERSION }}.ipa
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
