@@ -103,18 +103,19 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
-      - name: Build iOS App
-        run: eas build --platform ios --profile preview --local --non-interactive --output ./build/paperand-ios-${{ env.APP_VERSION }}.app
+      - name: Build iOS Simulator App
+        run: eas build --platform ios --profile preview-simulator --local --non-interactive --output ./build/paperand-ios-${{ env.APP_VERSION }}.tar.gz
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
 
-      - name: Create IPA from App
+      - name: Create IPA from Simulator App
         run: |
           cd ./build
           mkdir -p Payload
-          mv paperand-ios-${{ env.APP_VERSION }}.app Payload/ 2>/dev/null || mv *.app Payload/
+          tar -xzf paperand-ios-${{ env.APP_VERSION }}.tar.gz
+          mv *.app Payload/
           zip -r paperand-${{ env.APP_VERSION }}.ipa Payload
-          rm -rf Payload
+          rm -rf Payload *.tar.gz
 
       - name: Upload iOS IPA Artifact
         uses: actions/upload-artifact@v4
@@ -156,7 +157,7 @@ jobs:
             
             ### Downloads
             - **Android**: `paperand-${{ env.APP_VERSION }}.apk`
-            - **iOS**: `paperand-${{ env.APP_VERSION }}.ipa`
+            - **iOS**: `paperand-${{ env.APP_VERSION }}.ipa` ⚠️ TrollStore required (see below)
             
             ### Installation
             #### Android
@@ -164,10 +165,14 @@ jobs:
             2. Enable "Install from unknown sources" in your device settings
             3. Open the APK file to install
             
-            #### iOS
+            #### iOS (TrollStore only)
+            > ⚠️ This is an unsigned simulator build. Regular sideloading (AltStore/Sideloadly) will NOT work.
+            > You need **TrollStore** or a jailbroken device.
+            
             1. Download the IPA file
-            2. Use AltStore, Sideloadly, or TrollStore to install
-            3. Trust the developer certificate in Settings if needed
+            2. Install via TrollStore
+            
+            For signed IPA builds, you need to build locally with Apple Developer credentials.
             
             ---
             *Built with Expo*
