@@ -60,29 +60,39 @@ npx expo start
 
 ```
 src/
-├── components/          # Reusable UI components
-│   ├── MangaCard.tsx    # Manga cover card
-│   ├── ChapterListItem.tsx
+├── components/             # Reusable UI components
+│   ├── MangaCard.tsx       # Manga cover card
+│   ├── ChapterListItem.tsx # Chapter list item
+│   ├── ExtensionRunner.tsx # WebView extension runtime
+│   ├── PickerModal.tsx     # Custom picker modal
 │   ├── LoadingIndicator.tsx
 │   └── EmptyState.tsx
-├── context/             # React Context providers
-│   ├── ThemeContext.tsx # Theme management
-│   └── LibraryContext.tsx # Library & progress state
-├── data/                # Mock data for demo
-│   └── mockData.ts
-├── navigation/          # Navigation configuration
+├── context/                # React Context providers
+│   ├── ThemeContext.tsx    # Theme management
+│   └── LibraryContext.tsx  # Library & progress state
+├── navigation/             # Navigation configuration
 │   ├── AppNavigator.tsx
 │   └── BottomTabNavigator.tsx
-├── screens/             # App screens
-│   ├── LibraryScreen.tsx
-│   ├── BrowseScreen.tsx
+├── screens/                # App screens
+│   ├── LibraryScreen.tsx   # User library
+│   ├── DiscoverScreen.tsx  # Browse sources
+│   ├── SearchScreen.tsx    # Multi-source search
 │   ├── MangaDetailScreen.tsx
-│   ├── ReaderScreen.tsx
-│   ├── HistoryScreen.tsx
-│   └── MoreScreen.tsx
-├── types/               # TypeScript types
+│   ├── ReaderScreen.tsx    # Manga reader
+│   ├── HistoryScreen.tsx   # Reading history
+│   ├── SettingsScreen.tsx  # App settings
+│   ├── ExtensionsScreen.tsx # Manage extensions
+│   ├── CategoryScreen.tsx  # Category view more
+│   └── ...                 # Other screens
+├── services/               # Core services
+│   ├── sourceService.ts    # Extension API bridge
+│   ├── extensionService.ts # Extension management
+│   ├── cacheService.ts     # Image caching
+│   ├── themeService.ts     # Theme file parsing
+│   └── deepLinkService.ts  # Deep link handling
+├── types/                  # TypeScript types
 │   └── index.ts
-└── constants/           # App constants
+└── constants/              # App constants
     └── theme.ts
 ```
 
