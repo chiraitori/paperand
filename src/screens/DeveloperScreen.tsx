@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,23 +7,182 @@ import {
   TouchableOpacity,
   Switch,
   Alert,
-  TextInput,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
+import { useLibrary } from '../context/LibraryContext';
 import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+import {
+  DeveloperSettings,
+  getDeveloperSettings,
+  saveDeveloperSettings,
+  initLogCapture,
+  getLogs,
+  clearLogs,
+  getMemoryInfo,
+  getPerformanceInfo,
+} from '../services/developerService';
 
 export const DeveloperScreen: React.FC = () => {
   const { theme } = useTheme();
   const navigation = useNavigation();
+  const { clearHistory, clearLibrary } = useLibrary();
   
-  const [debugMode, setDebugMode] = useState(false);
-  const [verboseLogging, setVerboseLogging] = useState(false);
-  const [networkInspector, setNetworkInspector] = useState(false);
-  const [customApiUrl, setCustomApiUrl] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [settings, setSettings] = useState<DeveloperSettings>({
+    debugMode: false,
+    verboseLogging: false,
+    networkInspector: false,
+    showMemoryUsage: false,
+    showFpsCounter: false,
+    customApiEndpoint: '',
+    enableTestAds: false,
+  });
+  const [memoryInfo, setMemoryInfo] = useState({ used: 'N/A', available: 'N/A' });
+  const [performanceInfo, setPerformanceInfo] = useState<any>(null);
+
+  // Load settings on mount
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const savedSettings = await getDeveloperSettings();
+        setSettings(savedSettings);
+        initLogCapture();
+        
+        // Get memory and performance info
+        setMemoryInfo(getMemoryInfo());
+        const perfInfo = await getPerformanceInfo();
+        setPerformanceInfo(perfInfo);
+      } catch (error) {
+        console.error('Failed to load developer settings:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadSettings();
+  }, []);
+
+  // Update setting and persist
+  const updateSetting = useCallback(async (key: keyof DeveloperSettings, value: any) => {
+    const newSettings = { ...settings, [key]: value };
+    setSettings(newSettings);
+    await saveDeveloperSettings({ [key]: value });
+  }, [settings]);
+
+  // Export logs function
+  const exportLogs = async () => {
+    try {
+      const logs = getLogs();
+      if (logs.length === 0) {
+        Alert.alert('No Logs', 'There are no logs to export.');
+        return;
+      }
+
+      const logContent = logs.map(log => 
+        `[${log.timestamp}] [${log.level.toUpperCase()}] ${log.message}`
+      ).join('\n');
+
+      const fileUri = FileSystem.documentDirectory + `developer_logs_${Date.now()}.txt`;
+      await FileSystem.writeAsStringAsync(fileUri, logContent, {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(fileUri, {
+          mimeType: 'text/plain',
+          dialogTitle: 'Export Developer Logs',
+        });
+      } else {
+        Alert.alert('Export Complete', `Logs saved to: ${fileUri}`);
+      }
+    } catch (error) {
+      Alert.alert('Export Failed', 'Could not export logs');
+    }
+  };
+
+  // Test notification
+  const testPushNotification = async () => {
+    // Simulate a local notification-like alert
+    Alert.alert(
+      '🔔 Test Notification',
+      'This is a test push notification!\n\nIn production, this would trigger an actual push notification using expo-notifications.',
+      [{ text: 'OK' }]
+    );
+    
+    // Log the test
+    console.log('[TEST] Push notification test triggered');
+  };
+
+  // Simulate crash
+  const simulateCrash = () => {
+    Alert.alert(
+      '⚠️ Simulate Crash',
+      'This will throw a JavaScript error. The app may need to be reloaded.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Crash',
+          style: 'destructive',
+          onPress: () => {
+            console.error('[CRASH] Simulated crash triggered by developer');
+            // Throw an error to simulate crash
+            throw new Error('Simulated crash from Developer Screen');
+          },
+        },
+      ]
+    );
+  };
+
+  // Clear all data
+  const clearAllData = () => {
+    Alert.alert(
+      '🗑️ Clear All Data',
+      'This will permanently delete:\n• Library entries\n• Reading history & progress\n• All settings\n• Cached data\n\nThis action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear Everything',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // Clear AsyncStorage
+              await AsyncStorage.clear();
+              
+              // Clear logs
+              clearLogs();
+              
+              // Clear context states
+              clearHistory();
+              clearLibrary();
+              
+              Alert.alert(
+                '✅ Data Cleared',
+                'All app data has been cleared. Please restart the app for changes to take effect.',
+                [{ text: 'OK' }]
+              );
+            } catch (error) {
+              console.error('Failed to clear data:', error);
+              Alert.alert('Error', 'Failed to clear some data. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Force refresh performance info
+  const refreshPerformanceInfo = async () => {
+    setMemoryInfo(getMemoryInfo());
+    const perfInfo = await getPerformanceInfo();
+    setPerformanceInfo(perfInfo);
+    Alert.alert('Refreshed', 'Performance info updated');
+  };
 
   const renderSettingItem = ({
     title,
@@ -80,161 +239,255 @@ export const DeveloperScreen: React.FC = () => {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {/* Debug Options */}
-        {renderSection(
-          'DEBUG OPTIONS',
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={theme.primary} />
+            <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
+              Loading developer settings...
+            </Text>
+          </View>
+        ) : (
           <>
-            {renderSettingItem({
-              title: 'Debug Mode',
-              subtitle: 'Enable debug features and console output',
-              rightElement: (
-                <Switch
-                  value={debugMode}
-                  onValueChange={setDebugMode}
-                  trackColor={{ false: theme.border, true: theme.success }}
-                  thumbColor="#FFFFFF"
-                />
-              ),
-            })}
-            {renderSettingItem({
-              title: 'Verbose Logging',
-              subtitle: 'Log detailed information for debugging',
-              rightElement: (
-                <Switch
-                  value={verboseLogging}
-                  onValueChange={setVerboseLogging}
-                  trackColor={{ false: theme.border, true: theme.success }}
-                  thumbColor="#FFFFFF"
-                />
-              ),
-            })}
-            {renderSettingItem({
-              title: 'Network Inspector',
-              subtitle: 'Monitor all network requests',
-              rightElement: (
-                <Switch
-                  value={networkInspector}
-                  onValueChange={setNetworkInspector}
-                  trackColor={{ false: theme.border, true: theme.success }}
-                  thumbColor="#FFFFFF"
-                />
-              ),
-            })}
-          </>
-        )}
+            {/* Debug Options */}
+            {renderSection(
+              'DEBUG OPTIONS',
+              <>
+                {renderSettingItem({
+                  title: 'Debug Mode',
+                  subtitle: 'Enable debug features and console output',
+                  rightElement: (
+                    <Switch
+                      value={settings.debugMode}
+                      onValueChange={(value) => updateSetting('debugMode', value)}
+                      trackColor={{ false: theme.border, true: theme.success }}
+                      thumbColor="#FFFFFF"
+                    />
+                  ),
+                })}
+                {renderSettingItem({
+                  title: 'Verbose Logging',
+                  subtitle: 'Log detailed information for debugging',
+                  rightElement: (
+                    <Switch
+                      value={settings.verboseLogging}
+                      onValueChange={(value) => updateSetting('verboseLogging', value)}
+                      trackColor={{ false: theme.border, true: theme.success }}
+                      thumbColor="#FFFFFF"
+                    />
+                  ),
+                })}
+                {renderSettingItem({
+                  title: 'Network Inspector',
+                  subtitle: 'Monitor all network requests',
+                  rightElement: (
+                    <Switch
+                      value={settings.networkInspector}
+                      onValueChange={(value) => updateSetting('networkInspector', value)}
+                      trackColor={{ false: theme.border, true: theme.success }}
+                      thumbColor="#FFFFFF"
+                    />
+                  ),
+                })}
+                {renderSettingItem({
+                  title: 'Show Memory Usage',
+                  subtitle: 'Display memory stats in performance section',
+                  rightElement: (
+                    <Switch
+                      value={settings.showMemoryUsage}
+                      onValueChange={(value) => updateSetting('showMemoryUsage', value)}
+                      trackColor={{ false: theme.border, true: theme.success }}
+                      thumbColor="#FFFFFF"
+                    />
+                  ),
+                })}
+                {renderSettingItem({
+                  title: 'Enable Test Ads',
+                  subtitle: 'Show test advertisements for development',
+                  rightElement: (
+                    <Switch
+                      value={settings.enableTestAds}
+                      onValueChange={(value) => updateSetting('enableTestAds', value)}
+                      trackColor={{ false: theme.border, true: theme.success }}
+                      thumbColor="#FFFFFF"
+                    />
+                  ),
+                })}
+              </>
+            )}
 
-        {/* API Configuration */}
-        {renderSection(
-          'API CONFIGURATION',
-          <>
-            {renderSettingItem({
-              title: 'Custom API Endpoint',
-              subtitle: customApiUrl || 'Not configured',
-              onPress: () => {
-                const promptFn = (Alert as any).prompt;
-                if (typeof promptFn === 'function') {
-                  promptFn(
-                    'Custom API URL',
-                    'Enter custom API endpoint',
-                    (text: string) => setCustomApiUrl(text),
-                    'plain-text',
-                    customApiUrl
-                  );
-                } else {
-                  Alert.alert('API URL', 'Set custom API endpoint in the code');
-                }
-              },
-            })}
-            {renderSettingItem({
-              title: 'Reset API Configuration',
-              isDestructive: true,
-              onPress: () => {
-                setCustomApiUrl('');
-                Alert.alert('Reset', 'API configuration has been reset');
-              },
-            })}
-          </>
-        )}
+            {/* API Configuration */}
+            {renderSection(
+              'API CONFIGURATION',
+              <>
+                {renderSettingItem({
+                  title: 'Custom API Endpoint',
+                  subtitle: settings.customApiEndpoint || 'Not configured (using default)',
+                  onPress: () => {
+                    Alert.prompt?.(
+                      'Custom API URL',
+                      'Enter custom API endpoint (leave empty to reset)',
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Save',
+                          onPress: (text?: string) => updateSetting('customApiEndpoint', text || ''),
+                        },
+                      ],
+                      'plain-text',
+                      settings.customApiEndpoint
+                    ) || Alert.alert('API URL', `Current: ${settings.customApiEndpoint || 'Default'}\n\nEdit in code for Android.`);
+                  },
+                })}
+                {renderSettingItem({
+                  title: 'Reset API Configuration',
+                  isDestructive: true,
+                  onPress: () => {
+                    updateSetting('customApiEndpoint', '');
+                    Alert.alert('✅ Reset', 'API configuration has been reset to default');
+                  },
+                })}
+              </>
+            )}
 
-        {/* Testing */}
-        {renderSection(
-          'TESTING',
-          <>
-            {renderSettingItem({
-              title: 'Test Push Notifications',
-              onPress: () => Alert.alert('Test', 'Push notification sent'),
-            })}
-            {renderSettingItem({
-              title: 'Simulate Crash',
-              isDestructive: true,
-              onPress: () => Alert.alert('Crash', 'This would simulate a crash'),
-            })}
-            {renderSettingItem({
-              title: 'Clear All Data',
-              isDestructive: true,
-              onPress: () => {
-                Alert.alert(
-                  'Clear All Data',
-                  'This will delete all app data including library, history, and settings.',
-                  [
-                    { text: 'Cancel', style: 'cancel' },
-                    {
-                      text: 'Clear',
-                      style: 'destructive',
-                      onPress: async () => {
-                        try {
-                          await AsyncStorage.clear();
-                          Alert.alert('Cleared', 'All data has been cleared. Please restart the app.');
-                        } catch (error) {
-                          Alert.alert('Error', 'Failed to clear data');
-                        }
-                      },
-                    },
-                  ]
-                );
-              },
-            })}
-          </>
-        )}
+            {/* Logging */}
+            {renderSection(
+              'LOGGING',
+              <>
+                {renderSettingItem({
+                  title: 'Export Developer Logs',
+                  subtitle: `${getLogs().length} log entries captured`,
+                  onPress: exportLogs,
+                })}
+                {renderSettingItem({
+                  title: 'Clear Logs',
+                  isDestructive: true,
+                  onPress: () => {
+                    clearLogs();
+                    Alert.alert('✅ Cleared', 'All developer logs have been cleared');
+                  },
+                })}
+              </>
+            )}
 
-        {/* App Info */}
-        {renderSection(
-          'APP INFO',
-          <>
-            {renderSettingItem({
-              title: 'Version',
-              rightElement: (
-                <Text style={[styles.valueText, { color: theme.textSecondary }]}>
-                  {Constants.expoConfig?.version || '0.0.1'}
-                </Text>
-              ),
-            })}
-            {renderSettingItem({
-              title: 'Build Number',
-              rightElement: (
-                <Text style={[styles.valueText, { color: theme.textSecondary }]}>
-                  {Constants.expoConfig?.android?.versionCode || Constants.expoConfig?.ios?.buildNumber || '1'}
-                </Text>
-              ),
-            })}
-            {renderSettingItem({
-              title: 'React Native',
-              rightElement: (
-                <Text style={[styles.valueText, { color: theme.textSecondary }]}>
-                  {Platform.constants?.reactNativeVersion ? 
-                    `${Platform.constants.reactNativeVersion.major}.${Platform.constants.reactNativeVersion.minor}.${Platform.constants.reactNativeVersion.patch}` : 
-                    '0.81.x'}
-                </Text>
-              ),
-            })}
-            {renderSettingItem({
-              title: 'Expo SDK',
-              rightElement: (
-                <Text style={[styles.valueText, { color: theme.textSecondary }]}>
-                  {Constants.expoConfig?.sdkVersion || '54'}
-                </Text>
-              ),
-            })}
+            {/* Testing */}
+            {renderSection(
+              'TESTING',
+              <>
+                {renderSettingItem({
+                  title: 'Test Push Notifications',
+                  subtitle: 'Send a test notification to this device',
+                  onPress: testPushNotification,
+                })}
+                {renderSettingItem({
+                  title: 'Simulate Crash',
+                  subtitle: 'Throw a JavaScript error for testing',
+                  isDestructive: true,
+                  onPress: simulateCrash,
+                })}
+                {renderSettingItem({
+                  title: 'Clear All Data',
+                  subtitle: 'Remove all app data and reset to defaults',
+                  isDestructive: true,
+                  onPress: clearAllData,
+                })}
+              </>
+            )}
+
+            {/* Performance */}
+            {settings.showMemoryUsage && renderSection(
+              'PERFORMANCE',
+              <>
+                {renderSettingItem({
+                  title: 'Memory Used',
+                  rightElement: (
+                    <Text style={[styles.valueText, { color: theme.textSecondary }]}>
+                      {memoryInfo.used}
+                    </Text>
+                  ),
+                })}
+                {renderSettingItem({
+                  title: 'Memory Available',
+                  rightElement: (
+                    <Text style={[styles.valueText, { color: theme.textSecondary }]}>
+                      {memoryInfo.available}
+                    </Text>
+                  ),
+                })}
+                {performanceInfo && (
+                  <>
+                    {renderSettingItem({
+                      title: 'Device',
+                      rightElement: (
+                        <Text style={[styles.valueText, { color: theme.textSecondary }]}>
+                          {performanceInfo.deviceName}
+                        </Text>
+                      ),
+                    })}
+                    {renderSettingItem({
+                      title: 'OS Version',
+                      rightElement: (
+                        <Text style={[styles.valueText, { color: theme.textSecondary }]}>
+                          {performanceInfo.osVersion}
+                        </Text>
+                      ),
+                    })}
+                  </>
+                )}
+                {renderSettingItem({
+                  title: 'Refresh Performance Info',
+                  onPress: refreshPerformanceInfo,
+                })}
+              </>
+            )}
+
+            {/* App Info */}
+            {renderSection(
+              'APP INFO',
+              <>
+                {renderSettingItem({
+                  title: 'Version',
+                  rightElement: (
+                    <Text style={[styles.valueText, { color: theme.textSecondary }]}>
+                      {Constants.expoConfig?.version || '0.0.1'}
+                    </Text>
+                  ),
+                })}
+                {renderSettingItem({
+                  title: 'Build Number',
+                  rightElement: (
+                    <Text style={[styles.valueText, { color: theme.textSecondary }]}>
+                      {Constants.expoConfig?.android?.versionCode || Constants.expoConfig?.ios?.buildNumber || '1'}
+                    </Text>
+                  ),
+                })}
+                {renderSettingItem({
+                  title: 'React Native',
+                  rightElement: (
+                    <Text style={[styles.valueText, { color: theme.textSecondary }]}>
+                      {Platform.constants?.reactNativeVersion ? 
+                        `${Platform.constants.reactNativeVersion.major}.${Platform.constants.reactNativeVersion.minor}.${Platform.constants.reactNativeVersion.patch}` : 
+                        '0.81.x'}
+                    </Text>
+                  ),
+                })}
+                {renderSettingItem({
+                  title: 'Expo SDK',
+                  rightElement: (
+                    <Text style={[styles.valueText, { color: theme.textSecondary }]}>
+                      {Constants.expoConfig?.sdkVersion || '54'}
+                    </Text>
+                  ),
+                })}
+                {renderSettingItem({
+                  title: 'Platform',
+                  rightElement: (
+                    <Text style={[styles.valueText, { color: theme.textSecondary }]}>
+                      {Platform.OS} ({Platform.Version})
+                    </Text>
+                  ),
+                })}
+              </>
+            )}
           </>
         )}
       </ScrollView>
@@ -310,5 +563,15 @@ const styles = StyleSheet.create({
   },
   valueText: {
     fontSize: 17,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 15,
   },
 });

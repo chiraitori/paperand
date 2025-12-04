@@ -13,6 +13,7 @@ interface LibraryContextType {
   isInLibrary: (mangaId: string) => boolean;
   isFavorite: (mangaId: string) => boolean;
   clearHistory: () => Promise<void>;
+  clearLibrary: () => Promise<void>;
 }
 
 const LibraryContext = createContext<LibraryContextType | undefined>(undefined);
@@ -122,6 +123,11 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
     await saveLibrary(newLibrary);
   };
 
+  const clearLibrary = async () => {
+    // Clear entire library
+    await saveLibrary([]);
+  };
+
   const favorites = library.filter(entry => entry.isFavorite);
 
   return (
@@ -136,6 +142,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
       isInLibrary,
       isFavorite,
       clearHistory,
+      clearLibrary,
     }}>
       {children}
     </LibraryContext.Provider>
