@@ -12,6 +12,7 @@ interface LibraryContextType {
   getProgress: (mangaId: string) => ReadingProgress | null;
   isInLibrary: (mangaId: string) => boolean;
   isFavorite: (mangaId: string) => boolean;
+  clearHistory: () => Promise<void>;
 }
 
 const LibraryContext = createContext<LibraryContextType | undefined>(undefined);
@@ -113,6 +114,14 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
     return entry?.isFavorite || false;
   }, [library]);
 
+  const clearHistory = async () => {
+    // Clear progress from all entries but keep favorites in library
+    const newLibrary = library
+      .map(entry => ({ ...entry, progress: null, lastReadChapter: undefined }))
+      .filter(entry => entry.isFavorite); // Only keep favorites
+    await saveLibrary(newLibrary);
+  };
+
   const favorites = library.filter(entry => entry.isFavorite);
 
   return (
@@ -126,6 +135,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
       getProgress,
       isInLibrary,
       isFavorite,
+      clearHistory,
     }}>
       {children}
     </LibraryContext.Provider>

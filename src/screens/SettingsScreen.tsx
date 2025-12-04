@@ -17,12 +17,14 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
+import { useLibrary } from '../context/LibraryContext';
 import { getImageCacheSize, formatCacheSize, clearImageCache, getCacheLimit, setCacheLimit, CACHE_LIMIT_OPTIONS, CacheLimitOption } from '../services/cacheService';
 import { PickerModal } from '../components';
 import Constants from 'expo-constants';
 
 export const SettingsScreen: React.FC = () => {
   const { theme } = useTheme();
+  const { clearHistory } = useLibrary();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [hideReadHistory, setHideReadHistory] = useState(false);
   const [errorPopups, setErrorPopups] = useState(true);
@@ -245,9 +247,25 @@ export const SettingsScreen: React.FC = () => {
               onPress: () => navigation.navigate('Backups'),
             })}
             {renderSettingItem({
-              title: 'Clear All Search History',
+              title: 'Clear Reading History',
               isDestructive: true,
-              onPress: () => Alert.alert('Clear History', 'History cleared'),
+              onPress: () => {
+                Alert.alert(
+                  'Clear Reading History',
+                  'Are you sure you want to clear all reading history? This will remove all entries except favorites.',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Clear',
+                      style: 'destructive',
+                      onPress: async () => {
+                        await clearHistory();
+                        Alert.alert('Success', 'Reading history cleared');
+                      },
+                    },
+                  ]
+                );
+              },
               showChevron: false,
             })}
             {renderSettingItem({

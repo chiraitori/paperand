@@ -4,9 +4,12 @@ import {
   Text,
   StyleSheet,
   FlatList,
+  TouchableOpacity,
+  Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { useLibrary } from '../context/LibraryContext';
 import { MangaCard, EmptyState } from '../components';
@@ -16,7 +19,7 @@ type HistoryScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>
 
 export const HistoryScreen: React.FC = () => {
   const { theme } = useTheme();
-  const { library } = useLibrary();
+  const { library, clearHistory } = useLibrary();
   const navigation = useNavigation<HistoryScreenNavigationProp>();
 
   // Debug logging
@@ -34,6 +37,23 @@ export const HistoryScreen: React.FC = () => {
       const dateB = new Date(b.progress?.lastRead || 0);
       return dateB.getTime() - dateA.getTime();
     });
+
+  const handleClearHistory = () => {
+    Alert.alert(
+      'Clear Reading History',
+      'Are you sure you want to clear all reading history? This will remove all entries except favorites. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: async () => {
+            await clearHistory();
+          },
+        },
+      ]
+    );
+  };
 
   const navigateToManga = (entry: LibraryEntry) => {
     navigation.navigate('MangaDetail', { 
@@ -79,6 +99,14 @@ export const HistoryScreen: React.FC = () => {
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <View style={styles.header}>
         <Text style={[styles.title, { color: theme.text }]}>History</Text>
+        {readingHistory.length > 0 && (
+          <TouchableOpacity
+            style={styles.clearButton}
+            onPress={handleClearHistory}
+          >
+            <Ionicons name="trash-outline" size={24} color={theme.error} />
+          </TouchableOpacity>
+        )}
       </View>
 
       {readingHistory.length === 0 ? (
@@ -107,6 +135,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: 16,
     paddingTop: 60,
     paddingBottom: 16,
@@ -114,6 +145,9 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: 'bold',
+  },
+  clearButton: {
+    padding: 8,
   },
   listContent: {
     paddingHorizontal: 12,
