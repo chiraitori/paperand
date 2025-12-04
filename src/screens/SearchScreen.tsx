@@ -11,7 +11,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useFocusEffect, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -21,6 +21,7 @@ import { getInstalledExtensions, searchManga, InstalledExtension, SourceManga, S
 import { RootStackParamList } from '../types';
 
 type SearchScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
+type SearchScreenRouteProp = RouteProp<RootStackParamList, 'Search'>;
 
 const { width } = Dimensions.get('window');
 const NUM_COLUMNS = 3;
@@ -40,7 +41,9 @@ interface SourceSearchResult {
 export const SearchScreen: React.FC = () => {
   const { theme } = useTheme();
   const navigation = useNavigation<SearchScreenNavigationProp>();
-  const [query, setQuery] = useState('');
+  const route = useRoute<SearchScreenRouteProp>();
+  const initialQuery = (route.params as any)?.initialQuery || '';
+  const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState<SourceManga[]>([]);
   const [multiSourceResults, setMultiSourceResults] = useState<SourceSearchResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -52,11 +55,23 @@ export const SearchScreen: React.FC = () => {
   const [activeSource, setActiveSource] = useState<string | null>(null); // null = search all
   const [searchMetadata, setSearchMetadata] = useState<any>(null);
   const currentQueryRef = useRef<string>('');
+  const pendingSearchRef = useRef<string | null>(null);
+  const extensionsLoadedRef = useRef(false);
 
   const loadExtensions = useCallback(async () => {
     const extensions = await getInstalledExtensions();
     setInstalledExtensions(extensions);
-    // Don't auto-select - null means search all sources
+    extensionsLoadedRef.current = true;
+    
+    // If there's a pending search, execute it now
+    if (pendingSearchRef.current) {
+      const searchQuery = pendingSearchRef.current;
+      pendingSearchRef.current = null;
+      // Use setTimeout to ensure state is updated
+      setTimeout(() => {
+        performSearchDirect(searchQuery, extensions);
+      }, 100);
+    }
   }, []);
 
   useFocusEffect(
@@ -65,6 +80,20 @@ export const SearchScreen: React.FC = () => {
       loadRecentSearches();
     }, [loadExtensions])
   );
+
+  // Handle initial query from navigation
+  useEffect(() => {
+    if (initialQuery) {
+      setQuery(initialQuery);
+      if (extensionsLoadedRef.current && installedExtensions.length > 0) {
+        // Extensions already loaded, search immediately
+        performSearchDirect(initialQuery, installedExtensions);
+      } else {
+        // Extensions not loaded yet, queue the search
+        pendingSearchRef.current = initialQuery;
+      }
+    }
+  }, [initialQuery]);
 
   const loadRecentSearches = async () => {
     try {
@@ -84,6 +113,53 @@ export const SearchScreen: React.FC = () => {
       await AsyncStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(updated));
     } catch (e) {
       console.error('Failed to save recent search:', e);
+    }
+  };
+
+  // Direct search with extensions passed in (used for initial query)
+  const performSearchDirect = async (searchText: string, extensions: InstalledExtension[]) => {
+    if (searchText.trim().length === 0 || extensions.length === 0) return;
+    
+    setQuery(searchText);
+    setLoading(true);
+    setHasSearched(true);
+    setHasMoreResults(true);
+    setResults([]);
+    setMultiSourceResults([]);
+    setSearchMetadata(null);
+    currentQueryRef.current = searchText;
+    
+    try {
+      // Multi-source search using passed extensions
+      saveRecentSearch(searchText.trim());
+      const searchPromises = extensions.map(async (ext) => {
+        try {
+          const searchResult = await searchManga(ext.id, searchText, null);
+          return {
+            extensionId: ext.id,
+            extensionName: ext.name,
+            results: searchResult.results,
+            metadata: searchResult.metadata,
+          };
+        } catch (error) {
+          console.error(`Search failed for ${ext.name}:`, error);
+          return {
+            extensionId: ext.id,
+            extensionName: ext.name,
+            results: [],
+            metadata: null,
+          };
+        }
+      });
+      
+      const allResults = await Promise.all(searchPromises);
+      // Filter out sources with no results
+      const resultsWithData = allResults.filter(r => r.results.length > 0);
+      setMultiSourceResults(resultsWithData);
+    } catch (error) {
+      console.error('Search failed:', error);
+    } finally {
+      setLoading(false);
     }
   };
 

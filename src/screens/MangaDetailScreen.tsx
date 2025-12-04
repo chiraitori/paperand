@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   Dimensions,
   Platform,
+  Linking,
 } from 'react-native';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -23,6 +24,105 @@ type MangaDetailRouteProp = RouteProp<RootStackParamList, 'MangaDetail'>;
 type MangaDetailNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 const { width } = Dimensions.get('window');
+
+// Component to render text with clickable links parsed from HTML
+const LinkifiedText: React.FC<{
+  text: string;
+  style?: any;
+  linkStyle?: any;
+  numberOfLines?: number;
+}> = ({ text, style, linkStyle, numberOfLines }) => {
+  // Parse HTML anchor tags and extract text/links
+  const parseLinks = (input: string): Array<{ type: 'text' | 'link'; content: string; url?: string }> => {
+    const parts: Array<{ type: 'text' | 'link'; content: string; url?: string }> = [];
+    
+    // Clean up the text first - remove <br /> tags and replace with newlines
+    let cleanedInput = input.replace(/<br\s*\/?>/gi, '\n');
+    
+    // Regex to match anchor tags: <a href="url">text</a>
+    const linkRegex = /<a\s+[^>]*href=["']([^"']+)["'][^>]*>([^<]*)<\/a>/gi;
+    
+    let lastIndex = 0;
+    let match;
+    
+    while ((match = linkRegex.exec(cleanedInput)) !== null) {
+      // Add text before the link
+      if (match.index > lastIndex) {
+        const textBefore = cleanedInput.substring(lastIndex, match.index);
+        if (textBefore.trim()) {
+          parts.push({ type: 'text', content: textBefore });
+        }
+      }
+      
+      // Extract URL - handle encoded URLs
+      let url = match[1];
+      // Check if it's a redirect URL like /jump.php?url=...
+      if (url.includes('jump.php?')) {
+        const urlMatch = url.match(/[?&](?:url=|)([^&]+)/i);
+        if (urlMatch) {
+          url = decodeURIComponent(urlMatch[1]);
+        }
+      }
+      
+      // Add the link
+      parts.push({ type: 'link', content: match[2], url });
+      
+      lastIndex = match.index + match[0].length;
+    }
+    
+    // Add remaining text
+    if (lastIndex < cleanedInput.length) {
+      const remaining = cleanedInput.substring(lastIndex);
+      if (remaining.trim()) {
+        parts.push({ type: 'text', content: remaining });
+      }
+    }
+    
+    // If no links found, return original text
+    if (parts.length === 0) {
+      parts.push({ type: 'text', content: cleanedInput });
+    }
+    
+    return parts;
+  };
+
+  const handleLinkPress = (url: string) => {
+    Linking.openURL(url).catch(err => console.error('Failed to open URL:', err));
+  };
+
+  const parts = parseLinks(text);
+  
+  // Check if there are any links
+  const hasLinks = parts.some(p => p.type === 'link');
+  
+  if (!hasLinks) {
+    // No links, just render plain text
+    return (
+      <Text style={style} numberOfLines={numberOfLines}>
+        {text.replace(/<br\s*\/?>/gi, '\n')}
+      </Text>
+    );
+  }
+
+  return (
+    <Text style={style} numberOfLines={numberOfLines}>
+      {parts.map((part, index) => {
+        if (part.type === 'link' && part.url) {
+          return (
+            <Text
+              key={index}
+              style={[{ color: '#FA6432', textDecorationLine: 'underline' }, linkStyle]}
+              onPress={() => handleLinkPress(part.url!)}
+            >
+              {part.content}
+            </Text>
+          );
+        }
+        return <Text key={index}>{part.content}</Text>;
+      })}
+    </Text>
+  );
+};
 
 export const MangaDetailScreen: React.FC = () => {
   const { theme } = useTheme();
@@ -252,14 +352,21 @@ export const MangaDetailScreen: React.FC = () => {
         {/* Genres */}
         <View style={styles.genresContainer}>
           {manga.genres.map(genre => (
-            <View
+            <TouchableOpacity
               key={genre}
               style={[styles.genreTag, { backgroundColor: theme.card }]}
+              onPress={() => {
+                navigation.navigate('Main', { 
+                  screen: 'Search', 
+                  params: { initialQuery: genre } 
+                } as any);
+              }}
             >
+              <Ionicons name="search" size={12} color={theme.textSecondary} style={{ marginRight: 4 }} />
               <Text style={[styles.genreText, { color: theme.text }]}>
                 {genre}
               </Text>
-            </View>
+            </TouchableOpacity>
           ))}
         </View>
 
@@ -269,12 +376,11 @@ export const MangaDetailScreen: React.FC = () => {
             Synopsis
           </Text>
           <TouchableOpacity onPress={() => setShowFullDescription(!showFullDescription)}>
-            <Text
+            <LinkifiedText
+              text={manga.description}
               style={[styles.description, { color: theme.textSecondary }]}
               numberOfLines={showFullDescription ? undefined : 3}
-            >
-              {manga.description}
-            </Text>
+            />
             <Text style={[styles.showMore, { color: theme.primary }]}>
               {showFullDescription ? 'Show less' : 'Show more'}
             </Text>
@@ -431,6 +537,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   genreTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,

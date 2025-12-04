@@ -482,6 +482,41 @@ export const getChapterPages = async (
 };
 
 /**
+ * Decrypt a DRM-protected image on-demand
+ */
+export const decryptDrmImage = async (
+  extensionId: string,
+  imageUrl: string
+): Promise<string | null> => {
+  const extensions = await getInstalledExtensions();
+  const ext = extensions.find(e => e.id === extensionId);
+  
+  if (!ext) return null;
+
+  // Wait for bridge if not available
+  if (!extensionBridge) {
+    await waitForBridge(5000);
+  }
+  if (!extensionBridge) return null;
+
+  const loaded = await ensureExtensionLoaded(ext);
+  if (!loaded) return null;
+
+  try {
+    const result = await extensionBridge.runExtensionMethod(
+      extensionId,
+      'decryptDrmImage',
+      [imageUrl]
+    );
+    
+    return result || null;
+  } catch (error) {
+    console.error(`Error decrypting DRM image:`, error);
+    return null;
+  }
+};
+
+/**
  * Get tags/genres from extension
  */
 export const getTags = async (extensionId: string): Promise<Tag[]> => {

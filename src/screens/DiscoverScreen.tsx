@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
 import { LoadingIndicator } from '../components';
 import { 
@@ -62,6 +63,17 @@ export const DiscoverScreen: React.FC = () => {
   const [featuredItems, setFeaturedItems] = useState<SourceManga[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const activeSourceRef = useRef<string>('');
+  const initialLoadDone = useRef(false);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    activeSourceRef.current = activeSource;
+    // Persist active source
+    if (activeSource) {
+      AsyncStorage.setItem('activeSource', activeSource);
+    }
+  }, [activeSource]);
 
   useFocusEffect(
     useCallback(() => {
@@ -81,8 +93,24 @@ export const DiscoverScreen: React.FC = () => {
       setInstalledExtensions(extensions);
       
       if (extensions.length > 0) {
-        if (!activeSource || !extensions.find((e: InstalledExtension) => e.id === activeSource)) {
+        // Use ref to get current value, or load from storage on initial load
+        let currentSource = activeSourceRef.current;
+        
+        if (!initialLoadDone.current) {
+          // On initial load, try to restore from storage
+          const savedSource = await AsyncStorage.getItem('activeSource');
+          if (savedSource && extensions.find((e: InstalledExtension) => e.id === savedSource)) {
+            currentSource = savedSource;
+          }
+          initialLoadDone.current = true;
+        }
+        
+        // Only set if no current source or current source is no longer available
+        if (!currentSource || !extensions.find((e: InstalledExtension) => e.id === currentSource)) {
           setActiveSource(extensions[0].id);
+        } else if (currentSource !== activeSourceRef.current) {
+          // Restore saved source
+          setActiveSource(currentSource);
         }
       } else {
         setLoading(false);

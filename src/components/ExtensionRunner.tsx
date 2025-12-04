@@ -67,12 +67,19 @@ export const ExtensionRunner: React.FC = () => {
         };
         const headers: Record<string, string> = { ...defaultHeaders, ...options?.headers };
         
+        // Check if this is likely an image request (for DRM handling)
+        const isImageRequest = url.includes('drm_data=') || 
+                               url.match(/\.(jpg|jpeg|png|gif|webp)(\?|#|$)/i) ||
+                               options?.responseType === 'arraybuffer';
+        
         // Log the request details for debugging
-        console.log('[ExtensionRunner] Request method:', options?.method || 'GET');
-        console.log('[ExtensionRunner] Request headers:', JSON.stringify(headers, null, 2));
-        if (requestBody) {
-          console.log('[ExtensionRunner] Request body type:', typeof requestBody);
-          console.log('[ExtensionRunner] Request body:', typeof requestBody === 'string' ? requestBody.substring(0, 200) : JSON.stringify(requestBody).substring(0, 200));
+        if (!isImageRequest) {
+          console.log('[ExtensionRunner] Request method:', options?.method || 'GET');
+          console.log('[ExtensionRunner] Request headers:', JSON.stringify(headers, null, 2));
+          if (requestBody) {
+            console.log('[ExtensionRunner] Request body type:', typeof requestBody);
+            console.log('[ExtensionRunner] Request body:', typeof requestBody === 'string' ? requestBody.substring(0, 200) : JSON.stringify(requestBody).substring(0, 200));
+          }
         }
         
         // Create AbortController for timeout
@@ -80,7 +87,6 @@ export const ExtensionRunner: React.FC = () => {
         const timeoutId = setTimeout(() => controller.abort(), 60000);
         
         try {
-          console.log('[ExtensionRunner] Starting fetch to:', url);
           const response = await fetch(url, {
             method: options?.method || 'GET',
             headers,
@@ -89,16 +95,38 @@ export const ExtensionRunner: React.FC = () => {
           });
           
           clearTimeout(timeoutId);
-          console.log('[ExtensionRunner] Fetch completed, status:', response.status);
-          const text = await response.text();
-          console.log('[ExtensionRunner] Response text length:', text.length);
-          console.log('[ExtensionRunner] Response preview:', text.substring(0, 300));
           
-          const responseData = {
-            requestId,
-            data: text,
-            status: response.status,
-          };
+          let responseData: any;
+          
+          if (isImageRequest) {
+            // For image requests, return as base64 for binary processing
+            const arrayBuffer = await response.arrayBuffer();
+            const bytes = new Uint8Array(arrayBuffer);
+            let binary = '';
+            for (let i = 0; i < bytes.length; i++) {
+              binary += String.fromCharCode(bytes[i]);
+            }
+            const base64 = btoa(binary);
+            
+            responseData = {
+              requestId,
+              data: '', // Not used for binary
+              rawData: base64, // Base64 encoded binary data
+              status: response.status,
+              isBinary: true,
+            };
+          } else {
+            // For text/JSON requests
+            const text = await response.text();
+            console.log('[ExtensionRunner] Response text length:', text.length);
+            
+            responseData = {
+              requestId,
+              data: text,
+              status: response.status,
+            };
+          }
+          
           webViewRef.current?.injectJavaScript(`
             window.handleFetchResponse(${JSON.stringify(responseData)});
             true;
@@ -106,8 +134,6 @@ export const ExtensionRunner: React.FC = () => {
         } catch (err: any) {
           clearTimeout(timeoutId);
           console.log('[ExtensionRunner] Proxy fetch error:', err.message);
-          console.log('[ExtensionRunner] Error name:', err.name);
-          console.log('[ExtensionRunner] Error cause:', err.cause);
           const responseData = {
             requestId,
             data: '',
@@ -407,7 +433,9 @@ const App = {
             }
           }
           
-          log('Fetching URL:', finalRequest.url, 'method:', finalRequest.method);
+          // Check if this might be an image request for DRM
+          const isImageRequest = finalRequest.url.includes('drm_data=') || 
+                                  finalRequest.url.match(/\\.(jpg|jpeg|png|gif|webp)(\\?|#|$)/i);
           
           // Use proxy fetch to go through React Native
           const response = await proxyFetch(finalRequest.url, {
@@ -415,19 +443,32 @@ const App = {
             headers: finalRequest.headers || {},
             body: finalRequest.body,
             data: finalRequest.data, // For POST form data
+            responseType: isImageRequest ? 'arraybuffer' : undefined,
           });
-          
-          log('Fetch response status:', response.status, 'data length:', response.data?.length || 0);
           
           // Build result object with all expected properties
           let result = { 
-            data: response.data, 
+            data: response.data || '', 
             status: response.status, 
             rawData: null,
             request: finalRequest, // Add request for interceptor
           };
           
-          // Apply response interceptor if present
+          // If binary response, convert base64 to Uint8Array for rawData
+          if (response.isBinary && response.rawData) {
+            try {
+              const binaryString = atob(response.rawData);
+              const bytes = new Uint8Array(binaryString.length);
+              for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+              }
+              result.rawData = bytes;
+            } catch (e) {
+              log('Error decoding binary response:', e.message);
+            }
+          }
+          
+          // Apply response interceptor if present (handles DRM decryption)
           if (interceptor?.interceptResponse) {
             try {
               result = await interceptor.interceptResponse(result);
@@ -555,6 +596,148 @@ const App = {
   createDUIStepper: (config) => config,
   createDUILink: (config) => config,
   createDUIMultilineLabel: (config) => ({ ...config, _isLabel: true }),
+  
+  // PBImage and PBCanvas for DRM image processing
+  // Note: createPBImage is synchronous - parses JPEG dimensions from header
+  createPBImage: (config) => {
+    // Convert data to Uint8Array if needed
+    let bytes;
+    if (typeof config.data === 'string') {
+      // It's base64
+      const binaryString = atob(config.data);
+      bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+    } else if (config.data instanceof Uint8Array) {
+      bytes = config.data;
+    } else if (config.data instanceof ArrayBuffer) {
+      bytes = new Uint8Array(config.data);
+    } else {
+      log('createPBImage: Unknown data type:', typeof config.data);
+      return { width: 0, height: 0, _bytes: null };
+    }
+    
+    // Parse JPEG dimensions from header
+    let width = 0, height = 0;
+    try {
+      // JPEG starts with FF D8
+      if (bytes[0] === 0xFF && bytes[1] === 0xD8) {
+        let offset = 2;
+        while (offset < bytes.length) {
+          if (bytes[offset] !== 0xFF) {
+            offset++;
+            continue;
+          }
+          const marker = bytes[offset + 1];
+          // SOF0-SOF3 markers contain image dimensions
+          if (marker >= 0xC0 && marker <= 0xC3) {
+            height = (bytes[offset + 5] << 8) | bytes[offset + 6];
+            width = (bytes[offset + 7] << 8) | bytes[offset + 8];
+            break;
+          }
+          // Skip to next marker
+          const length = (bytes[offset + 2] << 8) | bytes[offset + 3];
+          offset += 2 + length;
+        }
+      }
+      // PNG starts with 89 50 4E 47
+      else if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47) {
+        // PNG IHDR chunk starts at offset 16 (after 8-byte signature + 4-byte length + 4-byte 'IHDR')
+        width = (bytes[16] << 24) | (bytes[17] << 16) | (bytes[18] << 8) | bytes[19];
+        height = (bytes[20] << 24) | (bytes[21] << 16) | (bytes[22] << 8) | bytes[23];
+      }
+    } catch (e) {
+      log('createPBImage: Error parsing image dimensions:', e.message);
+    }
+    
+    if (width === 0 || height === 0) {
+      log('createPBImage: Could not determine image dimensions, bytes length:', bytes.length, 'first bytes:', bytes[0], bytes[1]);
+    }
+    
+    // Create the PBImage object with the parsed dimensions
+    return {
+      width: width,
+      height: height,
+      _bytes: bytes,
+    };
+  },
+  
+  createPBCanvas: () => {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const drawQueue = []; // Queue of draw operations
+    let sourceImage = null; // Cached source image element
+    let sourceImageBytes = null; // The bytes of the source image
+    
+    return {
+      _canvas: canvas,
+      _ctx: ctx,
+      width: 0,
+      height: 0,
+      
+      setSize: function(w, h) {
+        this.width = w;
+        this.height = h;
+        canvas.width = w;
+        canvas.height = h;
+      },
+      
+      drawImage: function(srcImg, sx, sy, sw, sh, dx, dy) {
+        // srcImg is a PBImage from createPBImage with _bytes
+        // Queue the draw operation to be executed when encode is called
+        if (srcImg._bytes) {
+          // Store reference to source bytes (should be same for all calls)
+          if (!sourceImageBytes) {
+            sourceImageBytes = srcImg._bytes;
+          }
+          drawQueue.push({ sx, sy, sw, sh, dx, dy });
+        } else {
+          log('drawImage: No bytes in source image');
+        }
+      },
+      
+      encode: async function(mimeType) {
+        try {
+          // If we have draw operations queued, execute them first
+          if (drawQueue.length > 0 && sourceImageBytes) {
+            // Load the source image
+            const imgEl = await new Promise((resolve, reject) => {
+              const img = new Image();
+              img.onload = () => resolve(img);
+              img.onerror = () => reject(new Error('Failed to load source image'));
+              
+              // Convert bytes to base64
+              let binary = '';
+              for (let i = 0; i < sourceImageBytes.length; i++) {
+                binary += String.fromCharCode(sourceImageBytes[i]);
+              }
+              const base64 = btoa(binary);
+              img.src = 'data:image/jpeg;base64,' + base64;
+            });
+            
+            // Execute all queued draw operations
+            for (const op of drawQueue) {
+              ctx.drawImage(imgEl, op.sx, op.sy, op.sw, op.sh, op.dx, op.dy, op.sw, op.sh);
+            }
+          }
+          
+          const dataUrl = canvas.toDataURL(mimeType || 'image/jpeg', 0.9);
+          // Return as Uint8Array (raw bytes)
+          const base64 = dataUrl.split(',')[1];
+          const binaryString = atob(base64);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          return bytes;
+        } catch (e) {
+          log('PBCanvas encode error:', e.message);
+          return null;
+        }
+      },
+    };
+  },
 };
 
 // Make App globally available
@@ -658,7 +841,7 @@ async function runExtensionMethod(extensionId, method, args, requestId) {
     }
     
     // Special methods that don't need to exist on the extension object
-    const specialMethods = ['setSettingValue', 'invokeSettingAction'];
+    const specialMethods = ['setSettingValue', 'invokeSettingAction', 'decryptDrmImage'];
     
     if (typeof extension[method] !== 'function' && !specialMethods.includes(method)) {
       throw new Error('Method not found: ' + method);
@@ -712,18 +895,72 @@ async function runExtensionMethod(extensionId, method, args, requestId) {
           pages = rawResult;
         }
         
+        log('getChapterDetails raw pages count:', pages.length);
+        
         // Pages might be objects with url/image property
-        pages = pages.map(p => {
-          if (typeof p === 'string') return p;
-          if (p.url) return p.url;
-          if (p.image) return p.image;
-          if (p.imageUrl) return p.imageUrl;
-          return p;
-        });
+        const processedPages = [];
+        for (let i = 0; i < pages.length; i++) {
+          const p = pages[i];
+          let url;
+          if (typeof p === 'string') {
+            url = p;
+          } else if (p.url) {
+            url = p.url;
+          } else if (p.image) {
+            url = p.image;
+          } else if (p.imageUrl) {
+            url = p.imageUrl;
+          } else {
+            url = p;
+          }
+          
+          // Mark DRM URLs with special prefix so reader knows to decrypt on-demand
+          if (url && url.includes('#drm_data=')) {
+            // Add sourceId so we know which extension to use for decryption
+            url = 'drm://' + extensionId + '/' + url;
+          }
+          
+          processedPages.push(url);
+        }
+        pages = processedPages;
+        
+        // Log for debugging
+        if (pages.length > 0) {
+          log('First page URL type:', pages[0].substring(0, 20));
+        }
       }
       
       log('getChapterDetails pages count:', pages.length);
       result = { pages };
+    } else if (method === 'decryptDrmImage') {
+      // On-demand DRM image decryption
+      const [imageUrl] = args;
+      log('Decrypting DRM image on-demand');
+      
+      try {
+        // Fetch through the extension's request manager (which has the DRM interceptor)
+        const response = await extension.requestManager.schedule(
+          App.createRequest({ url: imageUrl, method: 'GET' }),
+          1
+        );
+        
+        // If we got decrypted rawData, convert to base64 data URL
+        if (response.rawData) {
+          let binary = '';
+          const bytes = response.rawData instanceof Uint8Array ? response.rawData : new Uint8Array(response.rawData);
+          for (let j = 0; j < bytes.length; j++) {
+            binary += String.fromCharCode(bytes[j]);
+          }
+          const base64 = btoa(binary);
+          result = 'data:image/jpeg;base64,' + base64;
+          log('DRM image decrypted successfully, size:', bytes.length);
+        } else {
+          throw new Error('No rawData in response');
+        }
+      } catch (e) {
+        log('Error decrypting DRM image:', e.message);
+        throw e;
+      }
     } else if (method === 'getSourceMenu') {
       // Special handling for getSourceMenu - need to resolve async rows and bindings
       const menu = await extension.getSourceMenu();
