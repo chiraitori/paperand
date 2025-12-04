@@ -72,6 +72,66 @@ workflows:
           cd $CM_BUILD_DIR
           zip -r paperand-${APP_VERSION}.ipa Payload
           rm -rf Payload
+
+      - name: Upload IPA to GitHub Release
+        script: |
+          # Wait a bit for GitHub Actions to create the release first
+          sleep 90
+          
+          # Use the tag from CM_TAG or construct from APP_VERSION
+          TAG_NAME="${CM_TAG:-v$APP_VERSION}"
+          echo "Tag name: $TAG_NAME"
+          echo "App version: $APP_VERSION"
+          
+          # Find the IPA file
+          IPA_FILE=$(find $CM_BUILD_DIR -name "*.ipa" -type f | head -1)
+          if [ -z "$IPA_FILE" ]; then
+            echo "No IPA file found!"
+            exit 1
+          fi
+          
+          IPA_NAME=$(basename "$IPA_FILE")
+          echo "Uploading $IPA_NAME to release $TAG_NAME"
+          
+          # Get the release by tag
+          RELEASE_INFO=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            "https://api.github.com/repos/chiraitori/paperand/releases/tags/$TAG_NAME")
+          
+          RELEASE_ID=$(echo "$RELEASE_INFO" | jq -r '.id')
+          echo "Found release ID: $RELEASE_ID"
+          
+          if [ "$RELEASE_ID" == "null" ] || [ -z "$RELEASE_ID" ]; then
+            echo "Release not found for tag $TAG_NAME, creating new one..."
+            RELEASE_INFO=$(curl -s -X POST \
+              -H "Authorization: token $GITHUB_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"tag_name\": \"$TAG_NAME\", \"name\": \"📱 Paperand $APP_VERSION\", \"prerelease\": true}" \
+              "https://api.github.com/repos/chiraitori/paperand/releases")
+            RELEASE_ID=$(echo "$RELEASE_INFO" | jq -r '.id')
+            echo "Created release ID: $RELEASE_ID"
+          fi
+          
+          if [ "$RELEASE_ID" == "null" ] || [ -z "$RELEASE_ID" ]; then
+            echo "❌ Failed to get or create release!"
+            exit 1
+          fi
+          
+          # Upload the IPA to the release
+          echo "Uploading to release $RELEASE_ID..."
+          UPLOAD_RESULT=$(curl -s -X POST \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Content-Type: application/octet-stream" \
+            --data-binary @"$IPA_FILE" \
+            "https://uploads.github.com/repos/chiraitori/paperand/releases/$RELEASE_ID/assets?name=$IPA_NAME")
+          
+          echo "$UPLOAD_RESULT"
+          
+          if echo "$UPLOAD_RESULT" | jq -e '.id' > /dev/null 2>&1; then
+            echo "✅ IPA uploaded successfully!"
+          else
+            echo "❌ Upload may have failed. Check the response above."
+            exit 1
+          fi
     
     artifacts:
       - "*.ipa"
@@ -83,47 +143,3 @@ workflows:
         notify:
           success: true
           failure: true
-      
-      scripts:
-        - name: Upload IPA to existing GitHub Release
-          script: |
-            # Wait a bit for GitHub Actions to create the release first
-            sleep 60
-            
-            # Find the IPA file
-            IPA_FILE=$(find $CM_BUILD_DIR -name "*.ipa" -type f | head -1)
-            if [ -z "$IPA_FILE" ]; then
-              echo "No IPA file found!"
-              exit 1
-            fi
-            
-            IPA_NAME=$(basename "$IPA_FILE")
-            echo "Uploading $IPA_NAME to release $CM_TAG"
-            
-            # Get the release by tag
-            RELEASE_INFO=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
-              "https://api.github.com/repos/chiraitori/paperand/releases/tags/$CM_TAG")
-            
-            RELEASE_ID=$(echo "$RELEASE_INFO" | jq -r '.id')
-            
-            if [ "$RELEASE_ID" == "null" ] || [ -z "$RELEASE_ID" ]; then
-              echo "Release not found for tag $CM_TAG, creating new one..."
-              # Create a new release if not exists
-              RELEASE_INFO=$(curl -s -X POST \
-                -H "Authorization: token $GITHUB_TOKEN" \
-                -H "Content-Type: application/json" \
-                -d "{\"tag_name\": \"$CM_TAG\", \"name\": \"📱 Paperand ${CM_TAG#v}\", \"prerelease\": true}" \
-                "https://api.github.com/repos/chiraitori/paperand/releases")
-              RELEASE_ID=$(echo "$RELEASE_INFO" | jq -r '.id')
-            fi
-            
-            echo "Release ID: $RELEASE_ID"
-            
-            # Upload the IPA to the release
-            curl -s -X POST \
-              -H "Authorization: token $GITHUB_TOKEN" \
-              -H "Content-Type: application/octet-stream" \
-              --data-binary @"$IPA_FILE" \
-              "https://uploads.github.com/repos/chiraitori/paperand/releases/$RELEASE_ID/assets?name=$IPA_NAME"
-            
-            echo "✅ IPA uploaded successfully!"
