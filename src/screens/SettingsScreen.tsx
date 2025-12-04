@@ -21,6 +21,8 @@ import { useLibrary } from '../context/LibraryContext';
 import { getImageCacheSize, formatCacheSize, clearImageCache, getCacheLimit, setCacheLimit, CACHE_LIMIT_OPTIONS, CacheLimitOption } from '../services/cacheService';
 import { PickerModal } from '../components';
 import Constants from 'expo-constants';
+import * as Sharing from 'expo-sharing';
+import { Paths, File } from 'expo-file-system';
 
 export const SettingsScreen: React.FC = () => {
   const { theme } = useTheme();
@@ -309,7 +311,44 @@ export const SettingsScreen: React.FC = () => {
             })}
             {renderSettingItem({
               title: 'Export app logs',
-              onPress: () => Alert.alert('Export Logs', 'Logs exported'),
+              onPress: async () => {
+                try {
+                  // Create a log file with app info and debug data
+                  const logData = {
+                    timestamp: new Date().toISOString(),
+                    app: {
+                      name: Constants.expoConfig?.name || 'Paperand',
+                      version: Constants.expoConfig?.version || '0.0.1',
+                      sdkVersion: Constants.expoConfig?.sdkVersion || 'unknown',
+                      platform: Platform.OS,
+                      platformVersion: Platform.Version,
+                    },
+                    device: {
+                      brand: Constants.deviceName || 'unknown',
+                    },
+                  };
+                  
+                  const logContent = JSON.stringify(logData, null, 2);
+                  const logFileName = `paperand-logs-${Date.now()}.json`;
+                  const logFile = new File(Paths.cache, logFileName);
+                  
+                  await logFile.create();
+                  await logFile.write(logContent);
+                  
+                  const canShare = await Sharing.isAvailableAsync();
+                  if (canShare) {
+                    await Sharing.shareAsync(logFile.uri, {
+                      mimeType: 'application/json',
+                      dialogTitle: 'Export Paperand Logs',
+                    });
+                  } else {
+                    Alert.alert('Error', 'Sharing is not available on this device');
+                  }
+                } catch (error) {
+                  console.error('Failed to export logs:', error);
+                  Alert.alert('Error', 'Failed to export logs');
+                }
+              },
             })}
             {renderSettingItem({
               title: 'Discord server',

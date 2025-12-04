@@ -13,6 +13,8 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
+import Constants from 'expo-constants';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export const DeveloperScreen: React.FC = () => {
   const { theme } = useTheme();
@@ -179,7 +181,14 @@ export const DeveloperScreen: React.FC = () => {
                     {
                       text: 'Clear',
                       style: 'destructive',
-                      onPress: () => Alert.alert('Cleared', 'All data has been cleared'),
+                      onPress: async () => {
+                        try {
+                          await AsyncStorage.clear();
+                          Alert.alert('Cleared', 'All data has been cleared. Please restart the app.');
+                        } catch (error) {
+                          Alert.alert('Error', 'Failed to clear data');
+                        }
+                      },
                     },
                   ]
                 );
@@ -195,25 +204,35 @@ export const DeveloperScreen: React.FC = () => {
             {renderSettingItem({
               title: 'Version',
               rightElement: (
-                <Text style={[styles.valueText, { color: theme.textSecondary }]}>0.8.11-r1</Text>
+                <Text style={[styles.valueText, { color: theme.textSecondary }]}>
+                  {Constants.expoConfig?.version || '0.0.1'}
+                </Text>
               ),
             })}
             {renderSettingItem({
               title: 'Build Number',
               rightElement: (
-                <Text style={[styles.valueText, { color: theme.textSecondary }]}>2024120101</Text>
+                <Text style={[styles.valueText, { color: theme.textSecondary }]}>
+                  {Constants.expoConfig?.android?.versionCode || Constants.expoConfig?.ios?.buildNumber || '1'}
+                </Text>
               ),
             })}
             {renderSettingItem({
               title: 'React Native',
               rightElement: (
-                <Text style={[styles.valueText, { color: theme.textSecondary }]}>0.76.x</Text>
+                <Text style={[styles.valueText, { color: theme.textSecondary }]}>
+                  {Platform.constants?.reactNativeVersion ? 
+                    `${Platform.constants.reactNativeVersion.major}.${Platform.constants.reactNativeVersion.minor}.${Platform.constants.reactNativeVersion.patch}` : 
+                    '0.81.x'}
+                </Text>
               ),
             })}
             {renderSettingItem({
               title: 'Expo SDK',
               rightElement: (
-                <Text style={[styles.valueText, { color: theme.textSecondary }]}>54</Text>
+                <Text style={[styles.valueText, { color: theme.textSecondary }]}>
+                  {Constants.expoConfig?.sdkVersion || '54'}
+                </Text>
               ),
             })}
           </>
