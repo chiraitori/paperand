@@ -117,6 +117,8 @@ jobs:
         id: notes
         run: |
           VERSION="${{ needs.build-android.outputs.version }}"
+          # Escape hyphens for shields.io badge (- becomes --)
+          VERSION_BADGE="${VERSION//-/--}"
           
           # Get commit messages since last tag
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
@@ -134,7 +136,7 @@ jobs:
           
           ### _Ad-Free Manga Reader for iOS & Android_
           
-          <img src="https://img.shields.io/badge/version-${{ needs.build-android.outputs.version && needs.build-android.outputs.version.replace('-', '--') }}-blue?style=for-the-badge" alt="Version"/>
+          <img src="https://img.shields.io/badge/version-${VERSION_BADGE}-blue?style=for-the-badge" alt="Version"/>
           <img src="https://img.shields.io/badge/platform-iOS%20%7C%20Android-green?style=for-the-badge" alt="Platform"/>
           <img src="https://img.shields.io/badge/built%20with-Expo-4630EB?style=for-the-badge" alt="Built with Expo"/>
           
