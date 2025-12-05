@@ -2,7 +2,7 @@
 
 An elegant, ad-free manga reader built with Expo and React Native. Compatible with Paperback extensions.
 
-[![Build Status](https://img.shields.io/github/actions/workflow/status/chiraitori/paperand/build.yml?event=push&label=Build%20Release)](https://github.com/chiraitori/paperand/actions/workflows/build.yml)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/chiraitori/paperand/build.yml?branch=main&label=Build%20Release)](https://github.com/chiraitori/paperand/actions/workflows/build.yml)
 [![Codemagic build status](https://api.codemagic.io/apps/692e85e20dd71cfd29155044/ios-build/status_badge.svg)](https://codemagic.io/app/692e85e20dd71cfd29155044/ios-build/latest_build)
 [![Latest Release](https://img.shields.io/github/v/release/chiraitori/paperand?include_prereleases)](https://github.com/chiraitori/paperand/releases)
 
