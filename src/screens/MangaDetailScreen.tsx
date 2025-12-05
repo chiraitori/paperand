@@ -18,6 +18,7 @@ import { useLibrary } from '../context/LibraryContext';
 import { ChapterListItem, LoadingIndicator } from '../components';
 import { getMangaById } from '../data/mockData';
 import { getMangaDetails, getChapters } from '../services/sourceService';
+import { getGeneralSettings, updateGeneralSetting } from '../services/settingsService';
 import { Manga, RootStackParamList } from '../types';
 
 type MangaDetailRouteProp = RouteProp<RootStackParamList, 'MangaDetail'>;
@@ -35,16 +36,16 @@ const LinkifiedText: React.FC<{
   // Parse HTML anchor tags and extract text/links
   const parseLinks = (input: string): Array<{ type: 'text' | 'link'; content: string; url?: string }> => {
     const parts: Array<{ type: 'text' | 'link'; content: string; url?: string }> = [];
-    
+
     // Clean up the text first - remove <br /> tags and replace with newlines
     let cleanedInput = input.replace(/<br\s*\/?>/gi, '\n');
-    
+
     // Regex to match anchor tags: <a href="url">text</a>
     const linkRegex = /<a\s+[^>]*href=["']([^"']+)["'][^>]*>([^<]*)<\/a>/gi;
-    
+
     let lastIndex = 0;
     let match;
-    
+
     while ((match = linkRegex.exec(cleanedInput)) !== null) {
       // Add text before the link
       if (match.index > lastIndex) {
@@ -53,7 +54,7 @@ const LinkifiedText: React.FC<{
           parts.push({ type: 'text', content: textBefore });
         }
       }
-      
+
       // Extract URL - handle encoded URLs
       let url = match[1];
       // Check if it's a redirect URL like /jump.php?url=...
@@ -63,13 +64,13 @@ const LinkifiedText: React.FC<{
           url = decodeURIComponent(urlMatch[1]);
         }
       }
-      
+
       // Add the link
       parts.push({ type: 'link', content: match[2], url });
-      
+
       lastIndex = match.index + match[0].length;
     }
-    
+
     // Add remaining text
     if (lastIndex < cleanedInput.length) {
       const remaining = cleanedInput.substring(lastIndex);
@@ -77,12 +78,12 @@ const LinkifiedText: React.FC<{
         parts.push({ type: 'text', content: remaining });
       }
     }
-    
+
     // If no links found, return original text
     if (parts.length === 0) {
       parts.push({ type: 'text', content: cleanedInput });
     }
-    
+
     return parts;
   };
 
@@ -91,10 +92,10 @@ const LinkifiedText: React.FC<{
   };
 
   const parts = parseLinks(text);
-  
+
   // Check if there are any links
   const hasLinks = parts.some(p => p.type === 'link');
-  
+
   if (!hasLinks) {
     // No links, just render plain text
     return (
@@ -129,7 +130,7 @@ export const MangaDetailScreen: React.FC = () => {
   const route = useRoute<MangaDetailRouteProp>();
   const navigation = useNavigation<MangaDetailNavigationProp>();
   const { isInLibrary, isFavorite, addToLibrary, removeFromLibrary, toggleFavorite, getProgress } = useLibrary();
-  
+
   const [manga, setManga] = useState<Manga | null>(null);
   const [loading, setLoading] = useState(true);
   const [showFullDescription, setShowFullDescription] = useState(false);
@@ -140,23 +141,39 @@ export const MangaDetailScreen: React.FC = () => {
   const favorite = manga ? isFavorite(manga.id) : false;
   const progress = manga ? getProgress(manga.id) : null;
 
+  // Load settings on mount
+  useEffect(() => {
+    const loadSettings = async () => {
+      const settings = await getGeneralSettings();
+      setSortDescending(settings.chapterListSort === 'descending');
+    };
+    loadSettings();
+  }, []);
+
   useEffect(() => {
     loadManga();
   }, [mangaId, sourceId]);
 
+  // Save sort preference when changed
+  const handleSortToggle = async () => {
+    const newSort = !sortDescending;
+    setSortDescending(newSort);
+    await updateGeneralSetting('chapterListSort', newSort ? 'descending' : 'ascending');
+  };
+
   const loadManga = async () => {
     try {
       setLoading(true);
-      
+
       // If sourceId is provided, use extension service
       if (sourceId) {
         console.log('[MangaDetail] Fetching from extension:', sourceId, mangaId);
         const details = await getMangaDetails(sourceId, mangaId);
         const chapters = await getChapters(sourceId, mangaId);
-        
+
         console.log('[MangaDetail] Details:', JSON.stringify(details));
         console.log('[MangaDetail] Chapters:', JSON.stringify(chapters));
-        
+
         if (details) {
           // Parse tags - they can be nested in sections
           let genres: string[] = [];
@@ -173,7 +190,7 @@ export const MangaDetailScreen: React.FC = () => {
               }
             });
           }
-          
+
           // Convert to Manga format
           const mangaData: Manga = {
             id: mangaId,
@@ -282,7 +299,7 @@ export const MangaDetailScreen: React.FC = () => {
             blurRadius={20}
           />
           <View style={styles.headerOverlay} />
-          
+
           <TouchableOpacity
             style={[styles.backButton, { backgroundColor: theme.card }]}
             onPress={() => navigation.goBack()}
@@ -328,7 +345,7 @@ export const MangaDetailScreen: React.FC = () => {
               {progress ? 'Continue Reading' : 'Start Reading'}
             </Text>
           </TouchableOpacity>
-          
+
           <View style={styles.secondaryActions}>
             <TouchableOpacity
               style={[styles.iconButton, { backgroundColor: theme.card }]}
@@ -356,9 +373,9 @@ export const MangaDetailScreen: React.FC = () => {
               key={genre}
               style={[styles.genreTag, { backgroundColor: theme.card }]}
               onPress={() => {
-                navigation.navigate('Main', { 
-                  screen: 'Search', 
-                  params: { initialQuery: genre } 
+                navigation.navigate('Main', {
+                  screen: 'Search',
+                  params: { initialQuery: genre }
                 } as any);
               }}
             >
@@ -393,13 +410,13 @@ export const MangaDetailScreen: React.FC = () => {
             <Text style={[styles.sectionTitle, { color: theme.text }]}>
               Chapters ({manga.chapters.length})
             </Text>
-            <TouchableOpacity onPress={() => setSortDescending(!sortDescending)}>
+            <TouchableOpacity onPress={handleSortToggle}>
               <Text style={[styles.sortButton, { color: theme.primary }]}>
                 {sortDescending ? '↓ Newest' : '↑ Oldest'}
               </Text>
             </TouchableOpacity>
           </View>
-          
+
           {sortedChapters.slice(0, 50).map(chapter => (
             <ChapterListItem
               key={chapter.id}
@@ -408,7 +425,7 @@ export const MangaDetailScreen: React.FC = () => {
               isRead={progress?.chapterId === chapter.id}
             />
           ))}
-          
+
           {manga.chapters.length > 50 && (
             <Text style={[styles.moreChapters, { color: theme.textSecondary }]}>
               And {manga.chapters.length - 50} more chapters...

@@ -7,55 +7,72 @@ import {
   TouchableOpacity,
   Dimensions,
   ActivityIndicator,
+  useWindowDimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { LoadingIndicator } from '../components';
 import { searchManga, SourceManga } from '../services/sourceService';
+import { getGeneralSettings, GeneralSettings, defaultSettings } from '../services/settingsService';
 import { RootStackParamList } from '../types';
 
 type SearchResultsScreenRouteProp = RouteProp<RootStackParamList, 'SearchResults'>;
 type SearchResultsScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
-const { width } = Dimensions.get('window');
-const NUM_COLUMNS = 3;
 const GRID_PADDING = 16;
 const GRID_GAP = 10;
-const CARD_WIDTH = (width - GRID_PADDING * 2 - GRID_GAP * (NUM_COLUMNS - 1)) / NUM_COLUMNS;
-const CARD_HEIGHT = CARD_WIDTH * 1.4;
 
 export const SearchResultsScreen: React.FC = () => {
   const { theme } = useTheme();
   const navigation = useNavigation<SearchResultsScreenNavigationProp>();
   const route = useRoute<SearchResultsScreenRouteProp>();
   const { sourceId, sourceName, query, initialItems } = route.params;
+  const { width, height } = useWindowDimensions();
 
   const [results, setResults] = useState<SourceManga[]>(initialItems || []);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [metadata, setMetadata] = useState<any>(null);
   const [hasMoreResults, setHasMoreResults] = useState(true);
+  const [settings, setSettings] = useState<GeneralSettings>(defaultSettings);
   const isInitialLoad = useRef(true);
+
+  // Determine orientation and get appropriate column count
+  const isLandscape = width > height;
+  const numColumns = isLandscape ? settings.landscapeColumns : settings.portraitColumns;
+
+  // Calculate card dimensions based on columns
+  const cardWidth = (width - GRID_PADDING * 2 - GRID_GAP * (numColumns - 1)) / numColumns;
+  const cardHeight = cardWidth * 1.4;
+
+  // Load settings when screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      const loadSettings = async () => {
+        const loadedSettings = await getGeneralSettings();
+        setSettings(loadedSettings);
+      };
+      loadSettings();
+    }, [])
+  );
 
   useEffect(() => {
     if (isInitialLoad.current) {
       isInitialLoad.current = false;
-      // Load first page to get metadata for pagination
       loadResults(true);
     }
   }, []);
 
   const loadResults = async (isFirstLoad: boolean = false) => {
     if (isFirstLoad && initialItems && initialItems.length > 0) {
-      // We have initial items, just load to get metadata for next page
       setLoading(true);
     } else if (isFirstLoad) {
       setLoading(true);
     } else {
-      if (!hasMoreResults) return; // No more pages
+      if (!hasMoreResults) return;
       setLoadingMore(true);
     }
 
@@ -66,13 +83,11 @@ export const SearchResultsScreen: React.FC = () => {
         isFirstLoad ? null : metadata
       );
 
-      // Check if we got any results
       if (result.results.length === 0) {
         setHasMoreResults(false);
       } else {
         if (isFirstLoad) {
           if (initialItems && initialItems.length > 0) {
-            // Append new results to initial items (avoiding duplicates by checking IDs)
             const existingIds = new Set(initialItems.map((item: SourceManga) => item.id));
             const newItems = result.results.filter((item: SourceManga) => !existingIds.has(item.id));
             setResults([...initialItems, ...newItems]);
@@ -83,8 +98,7 @@ export const SearchResultsScreen: React.FC = () => {
           setResults(prev => [...prev, ...result.results]);
         }
       }
-      
-      // If no metadata returned, no more pages
+
       if (!result.metadata) {
         setHasMoreResults(false);
       } else {
@@ -113,13 +127,19 @@ export const SearchResultsScreen: React.FC = () => {
 
   const renderItem = ({ item, index }: { item: SourceManga; index: number }) => (
     <TouchableOpacity
-      style={[styles.gridItem, { marginLeft: index % NUM_COLUMNS === 0 ? 0 : GRID_GAP }]}
+      style={[
+        styles.gridItem,
+        {
+          width: cardWidth,
+          marginLeft: index % numColumns === 0 ? 0 : GRID_GAP
+        }
+      ]}
       onPress={() => navigateToManga(item)}
       activeOpacity={0.7}
     >
       <Image
         source={{ uri: item.image }}
-        style={[styles.gridCover, { backgroundColor: theme.card }]}
+        style={[styles.gridCover, { width: cardWidth, height: cardHeight, backgroundColor: theme.card }]}
         contentFit="cover"
       />
       <Text style={[styles.gridTitle, { color: theme.text }]} numberOfLines={2}>
@@ -163,10 +183,11 @@ export const SearchResultsScreen: React.FC = () => {
         </View>
       ) : (
         <FlatList
+          key={`search-${numColumns}`}
           data={results}
           renderItem={renderItem}
           keyExtractor={(item, index) => `${item.id}-${index}`}
-          numColumns={NUM_COLUMNS}
+          numColumns={numColumns}
           contentContainerStyle={styles.gridContainer}
           showsVerticalScrollIndicator={false}
           onEndReached={loadMoreResults}
@@ -231,12 +252,9 @@ const styles = StyleSheet.create({
     paddingBottom: 100,
   },
   gridItem: {
-    width: CARD_WIDTH,
     marginBottom: 16,
   },
   gridCover: {
-    width: CARD_WIDTH,
-    height: CARD_HEIGHT,
     borderRadius: 8,
   },
   gridTitle: {

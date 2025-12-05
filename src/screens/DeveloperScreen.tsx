@@ -18,6 +18,7 @@ import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
+import * as Notifications from 'expo-notifications';
 import {
   DeveloperSettings,
   getDeveloperSettings,
@@ -33,7 +34,7 @@ export const DeveloperScreen: React.FC = () => {
   const { theme } = useTheme();
   const navigation = useNavigation();
   const { clearHistory, clearLibrary } = useLibrary();
-  
+
   const [loading, setLoading] = useState(true);
   const [settings, setSettings] = useState<DeveloperSettings>({
     debugMode: false,
@@ -54,7 +55,7 @@ export const DeveloperScreen: React.FC = () => {
         const savedSettings = await getDeveloperSettings();
         setSettings(savedSettings);
         initLogCapture();
-        
+
         // Get memory and performance info
         setMemoryInfo(getMemoryInfo());
         const perfInfo = await getPerformanceInfo();
@@ -84,7 +85,7 @@ export const DeveloperScreen: React.FC = () => {
         return;
       }
 
-      const logContent = logs.map(log => 
+      const logContent = logs.map(log =>
         `[${log.timestamp}] [${log.level.toUpperCase()}] ${log.message}`
       ).join('\n');
 
@@ -108,15 +109,63 @@ export const DeveloperScreen: React.FC = () => {
 
   // Test notification
   const testPushNotification = async () => {
-    // Simulate a local notification-like alert
-    Alert.alert(
-      '🔔 Test Notification',
-      'This is a test push notification!\n\nIn production, this would trigger an actual push notification using expo-notifications.',
-      [{ text: 'OK' }]
-    );
-    
-    // Log the test
-    console.log('[TEST] Push notification test triggered');
+    try {
+      // Request permissions first
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
+
+      if (existingStatus !== 'granted') {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+      }
+
+      if (finalStatus !== 'granted') {
+        Alert.alert(
+          '❌ Permission Denied',
+          'Push notification permission was denied. Please enable notifications in your device settings.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      // Configure notification handler for foreground
+      Notifications.setNotificationHandler({
+        handleNotification: async () => ({
+          shouldShowAlert: true,
+          shouldPlaySound: true,
+          shouldSetBadge: false,
+          shouldShowBanner: true,
+          shouldShowList: true,
+        }),
+      });
+
+      // Schedule an immediate notification
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: '🔔 Paperand Test Notification',
+          body: 'This is a test push notification from the Developer screen!',
+          data: { type: 'test', timestamp: Date.now() },
+          sound: true,
+        },
+        trigger: null, // null means immediate
+      });
+
+      // Log the test
+      console.log('[TEST] Push notification sent successfully');
+
+      Alert.alert(
+        '✅ Notification Sent',
+        'Check your notification tray!',
+        [{ text: 'OK' }]
+      );
+    } catch (error) {
+      console.error('[TEST] Push notification failed:', error);
+      Alert.alert(
+        '❌ Error',
+        `Failed to send notification: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        [{ text: 'OK' }]
+      );
+    }
   };
 
   // Simulate crash
@@ -153,14 +202,14 @@ export const DeveloperScreen: React.FC = () => {
             try {
               // Clear AsyncStorage
               await AsyncStorage.clear();
-              
+
               // Clear logs
               clearLogs();
-              
+
               // Clear context states
               clearHistory();
               clearLibrary();
-              
+
               Alert.alert(
                 '✅ Data Cleared',
                 'All app data has been cleared. Please restart the app for changes to take effect.',
@@ -295,18 +344,6 @@ export const DeveloperScreen: React.FC = () => {
                     <Switch
                       value={settings.showMemoryUsage}
                       onValueChange={(value) => updateSetting('showMemoryUsage', value)}
-                      trackColor={{ false: theme.border, true: theme.success }}
-                      thumbColor="#FFFFFF"
-                    />
-                  ),
-                })}
-                {renderSettingItem({
-                  title: 'Enable Test Ads',
-                  subtitle: 'Show test advertisements for development',
-                  rightElement: (
-                    <Switch
-                      value={settings.enableTestAds}
-                      onValueChange={(value) => updateSetting('enableTestAds', value)}
                       trackColor={{ false: theme.border, true: theme.success }}
                       thumbColor="#FFFFFF"
                     />
@@ -464,8 +501,8 @@ export const DeveloperScreen: React.FC = () => {
                   title: 'React Native',
                   rightElement: (
                     <Text style={[styles.valueText, { color: theme.textSecondary }]}>
-                      {Platform.constants?.reactNativeVersion ? 
-                        `${Platform.constants.reactNativeVersion.major}.${Platform.constants.reactNativeVersion.minor}.${Platform.constants.reactNativeVersion.patch}` : 
+                      {Platform.constants?.reactNativeVersion ?
+                        `${Platform.constants.reactNativeVersion.major}.${Platform.constants.reactNativeVersion.minor}.${Platform.constants.reactNativeVersion.patch}` :
                         '0.81.x'}
                     </Text>
                   ),

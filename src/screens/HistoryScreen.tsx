@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,14 +6,16 @@ import {
   FlatList,
   TouchableOpacity,
   Alert,
+  useWindowDimensions,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { useLibrary } from '../context/LibraryContext';
 import { MangaCard, EmptyState } from '../components';
 import { RootStackParamList, LibraryEntry } from '../types';
+import { getGeneralSettings, GeneralSettings, defaultSettings } from '../services/settingsService';
 
 type HistoryScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -21,13 +23,23 @@ export const HistoryScreen: React.FC = () => {
   const { theme } = useTheme();
   const { library, clearHistory } = useLibrary();
   const navigation = useNavigation<HistoryScreenNavigationProp>();
+  const [settings, setSettings] = useState<GeneralSettings>(defaultSettings);
+  const { width, height } = useWindowDimensions();
 
-  // Debug logging
-  console.log('[History] Library size:', library.length);
-  console.log('[History] Entries with progress:', library.filter(e => e.progress !== null).length);
-  library.forEach(e => {
-    console.log('[History] Entry:', e.manga.id, e.manga.title, 'progress:', e.progress ? 'YES' : 'NO');
-  });
+  // Determine orientation and get appropriate column count
+  const isLandscape = width > height;
+  const numColumns = isLandscape ? settings.landscapeColumns : settings.portraitColumns;
+
+  // Load settings when screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      const loadSettings = async () => {
+        const loadedSettings = await getGeneralSettings();
+        setSettings(loadedSettings);
+      };
+      loadSettings();
+    }, [])
+  );
 
   // Filter and sort by last read
   const readingHistory = library
@@ -56,18 +68,19 @@ export const HistoryScreen: React.FC = () => {
   };
 
   const navigateToManga = (entry: LibraryEntry) => {
-    navigation.navigate('MangaDetail', { 
+    navigation.navigate('MangaDetail', {
       mangaId: entry.manga.id,
-      sourceId: entry.manga.source 
+      sourceId: entry.manga.source
     });
   };
 
   const renderItem = ({ item }: { item: LibraryEntry }) => (
-    <View style={styles.itemContainer}>
+    <View style={[styles.itemContainer, { maxWidth: `${100 / numColumns - 2}%` }]}>
       <MangaCard
         manga={item.manga}
         onPress={() => navigateToManga(item)}
         compact
+        columns={numColumns}
       />
       {item.progress && (
         <Text style={[styles.progressText, { color: theme.textSecondary }]}>
@@ -117,12 +130,13 @@ export const HistoryScreen: React.FC = () => {
         />
       ) : (
         <FlatList
+          key={`history-${numColumns}`}
           data={readingHistory}
           renderItem={renderItem}
           keyExtractor={item => item.manga.id}
-          numColumns={2}
+          numColumns={numColumns}
           contentContainerStyle={styles.listContent}
-          columnWrapperStyle={styles.row}
+          columnWrapperStyle={numColumns > 1 ? styles.row : undefined}
           showsVerticalScrollIndicator={false}
         />
       )}
@@ -159,7 +173,6 @@ const styles = StyleSheet.create({
   },
   itemContainer: {
     flex: 1,
-    maxWidth: '48%',
   },
   progressText: {
     fontSize: 11,

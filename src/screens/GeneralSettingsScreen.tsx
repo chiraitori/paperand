@@ -23,6 +23,7 @@ interface GeneralSettings {
     chapterListSort: 'ascending' | 'descending';
     interactiveUpdates: boolean;
     libraryAuth: boolean;
+    hideUpdateModal: boolean;
 }
 
 const defaultSettings: GeneralSettings = {
@@ -31,6 +32,7 @@ const defaultSettings: GeneralSettings = {
     chapterListSort: 'descending',
     interactiveUpdates: false,
     libraryAuth: false,
+    hideUpdateModal: false,
 };
 
 export const GeneralSettingsScreen: React.FC = () => {
@@ -201,6 +203,11 @@ export const GeneralSettingsScreen: React.FC = () => {
                             )
                         })}
                     </View>
+                    {settings.portraitColumns > 3 && (
+                        <Text style={[styles.warningText, { color: '#FF9500' }]}>
+                            ⚠️ More than 3 columns in portrait mode may make covers too small on phones
+                        </Text>
+                    )}
                 </View>
 
                 {/* Chapter List Sort */}
@@ -264,6 +271,25 @@ export const GeneralSettingsScreen: React.FC = () => {
                         })}
                     </View>
                     {renderFooter('Ask for Pin/TouchID/FaceID when opening library')}
+                </View>
+
+                {/* Update Checking */}
+                <View style={styles.section}>
+                    {renderSectionHeader('UPDATE CHECKING')}
+                    <View style={[styles.sectionContent, { backgroundColor: theme.card }]}>
+                        {renderItem({
+                            title: 'Hide Update Modal',
+                            rightElement: (
+                                <Switch
+                                    value={settings.hideUpdateModal}
+                                    onValueChange={(value) => updateSetting('hideUpdateModal', value)}
+                                    trackColor={{ false: theme.border, true: theme.success }}
+                                    thumbColor={'#FFFFFF'}
+                                />
+                            )
+                        })}
+                    </View>
+                    {renderFooter('When enabled, the app will not show update notifications on startup')}
                 </View>
 
             </ScrollView>
@@ -375,5 +401,11 @@ const styles = StyleSheet.create({
     stepperDivider: {
         width: 1,
         backgroundColor: '#000',
+    },
+    warningText: {
+        fontSize: 13,
+        marginHorizontal: 16,
+        marginTop: 8,
+        lineHeight: 18,
     },
 });

@@ -7,47 +7,64 @@ import {
   TouchableOpacity,
   Dimensions,
   ActivityIndicator,
+  useWindowDimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { LoadingIndicator } from '../components';
 import { getViewMoreItems, searchByTag, SourceManga } from '../services/sourceService';
+import { getGeneralSettings, GeneralSettings, defaultSettings } from '../services/settingsService';
 import { RootStackParamList } from '../types';
 
 type CategoryScreenRouteProp = RouteProp<RootStackParamList, 'Category'>;
 type CategoryScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
-const { width } = Dimensions.get('window');
-const NUM_COLUMNS = 3;
 const GRID_PADDING = 16;
 const GRID_GAP = 10;
-const CARD_WIDTH = (width - GRID_PADDING * 2 - GRID_GAP * (NUM_COLUMNS - 1)) / NUM_COLUMNS;
-const CARD_HEIGHT = CARD_WIDTH * 1.4;
 
 export const CategoryScreen: React.FC = () => {
   const { theme } = useTheme();
   const navigation = useNavigation<CategoryScreenNavigationProp>();
   const route = useRoute<CategoryScreenRouteProp>();
   const { sourceId, sectionId, title, initialItems, tagId } = route.params;
+  const { width, height } = useWindowDimensions();
 
   const [results, setResults] = useState<SourceManga[]>(initialItems || []);
   const [loading, setLoading] = useState(initialItems?.length === 0);
   const [loadingMore, setLoadingMore] = useState(false);
   const [metadata, setMetadata] = useState<any>(null);
   const [hasMoreResults, setHasMoreResults] = useState(true);
+  const [settings, setSettings] = useState<GeneralSettings>(defaultSettings);
   const isInitialLoad = useRef(true);
+
+  // Determine orientation and get appropriate column count
+  const isLandscape = width > height;
+  const numColumns = isLandscape ? settings.landscapeColumns : settings.portraitColumns;
+
+  // Calculate card dimensions based on columns
+  const cardWidth = (width - GRID_PADDING * 2 - GRID_GAP * (numColumns - 1)) / numColumns;
+  const cardHeight = cardWidth * 1.4;
+
+  // Load settings when screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      const loadSettings = async () => {
+        const loadedSettings = await getGeneralSettings();
+        setSettings(loadedSettings);
+      };
+      loadSettings();
+    }, [])
+  );
 
   useEffect(() => {
     if (isInitialLoad.current) {
       isInitialLoad.current = false;
-      // Load first page if no initial items
       if (!initialItems || initialItems.length === 0) {
         loadItems(true);
       } else {
-        // Load next page metadata
         loadItems(true);
       }
     }
@@ -62,8 +79,7 @@ export const CategoryScreen: React.FC = () => {
 
     try {
       let result;
-      
-      // If we have a tagId, use searchByTag instead of getViewMoreItems
+
       if (tagId) {
         result = await searchByTag(
           sourceId,
@@ -78,12 +94,10 @@ export const CategoryScreen: React.FC = () => {
         );
       }
 
-      // Check if we got any results
       if (result.results.length === 0) {
         setHasMoreResults(false);
       } else {
         if (isFirstLoad) {
-          // If we have initial items, append to them
           if (initialItems && initialItems.length > 0) {
             setResults([...initialItems, ...result.results]);
           } else {
@@ -93,8 +107,7 @@ export const CategoryScreen: React.FC = () => {
           setResults(prev => [...prev, ...result.results]);
         }
       }
-      
-      // If no metadata returned, no more pages
+
       if (!result.metadata) {
         setHasMoreResults(false);
       } else {
@@ -123,13 +136,19 @@ export const CategoryScreen: React.FC = () => {
 
   const renderItem = ({ item, index }: { item: SourceManga; index: number }) => (
     <TouchableOpacity
-      style={[styles.gridItem, { marginLeft: index % NUM_COLUMNS === 0 ? 0 : GRID_GAP }]}
+      style={[
+        styles.gridItem,
+        {
+          width: cardWidth,
+          marginLeft: index % numColumns === 0 ? 0 : GRID_GAP
+        }
+      ]}
       onPress={() => navigateToManga(item)}
       activeOpacity={0.7}
     >
       <Image
         source={{ uri: item.image }}
-        style={[styles.gridCover, { backgroundColor: theme.card }]}
+        style={[styles.gridCover, { width: cardWidth, height: cardHeight, backgroundColor: theme.card }]}
         contentFit="cover"
       />
       <Text style={[styles.gridTitle, { color: theme.text }]} numberOfLines={2}>
@@ -168,10 +187,11 @@ export const CategoryScreen: React.FC = () => {
         </View>
       ) : (
         <FlatList
+          key={`category-${numColumns}`}
           data={results}
           renderItem={renderItem}
           keyExtractor={(item, index) => `${item.id}-${index}`}
-          numColumns={NUM_COLUMNS}
+          numColumns={numColumns}
           contentContainerStyle={styles.gridContainer}
           showsVerticalScrollIndicator={false}
           onEndReached={loadMoreItems}
@@ -230,12 +250,9 @@ const styles = StyleSheet.create({
     paddingBottom: 100,
   },
   gridItem: {
-    width: CARD_WIDTH,
     marginBottom: 16,
   },
   gridCover: {
-    width: CARD_WIDTH,
-    height: CARD_HEIGHT,
     borderRadius: 8,
   },
   gridTitle: {

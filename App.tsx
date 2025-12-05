@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { StyleSheet, View, Text, Alert } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ThemeProvider } from './src/context/ThemeContext';
 import { LibraryProvider } from './src/context/LibraryContext';
 import { AppNavigator } from './src/navigation';
@@ -16,6 +17,8 @@ import {
   checkForUpdate,
   ReleaseInfo,
 } from './src/services/updateService';
+
+const SETTINGS_KEY = '@general_settings';
 
 const handleDeepLink = async (url: string) => {
   const action = parseDeepLink(url);
@@ -44,6 +47,16 @@ export default function App() {
   useEffect(() => {
     const performUpdateCheck = async () => {
       try {
+        // Check if user has disabled update modal
+        const savedSettings = await AsyncStorage.getItem(SETTINGS_KEY);
+        if (savedSettings) {
+          const settings = JSON.parse(savedSettings);
+          if (settings.hideUpdateModal) {
+            console.log('Update modal is disabled by user settings');
+            return;
+          }
+        }
+
         console.log('Checking for updates...');
         const result = await checkForUpdate(true); // force=true to bypass cache
         console.log('Update check result:', JSON.stringify(result, null, 2));

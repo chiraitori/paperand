@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,8 @@ import {
   FlatList,
   TouchableOpacity,
   RefreshControl,
+  Dimensions,
+  useWindowDimensions,
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -13,6 +15,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useLibrary } from '../context/LibraryContext';
 import { MangaCard, EmptyState } from '../components';
 import { RootStackParamList, LibraryEntry } from '../types';
+import { getGeneralSettings, GeneralSettings, defaultSettings } from '../services/settingsService';
 
 type LibraryScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -24,19 +27,32 @@ export const LibraryScreen: React.FC = () => {
   const navigation = useNavigation<LibraryScreenNavigationProp>();
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
   const [refreshing, setRefreshing] = useState(false);
+  const [settings, setSettings] = useState<GeneralSettings>(defaultSettings);
+  const { width, height } = useWindowDimensions();
+
+  // Determine orientation and get appropriate column count
+  const isLandscape = width > height;
+  const numColumns = isLandscape ? settings.landscapeColumns : settings.portraitColumns;
+
+  // Load settings when screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      const loadSettings = async () => {
+        const loadedSettings = await getGeneralSettings();
+        setSettings(loadedSettings);
+      };
+      loadSettings();
+    }, [])
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    // Simulate refresh
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    // Reload settings on refresh
+    const loadedSettings = await getGeneralSettings();
+    setSettings(loadedSettings);
+    await new Promise(resolve => setTimeout(resolve, 500));
     setRefreshing(false);
   }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      // Refresh library when screen is focused
-    }, [])
-  );
 
   const getFilteredLibrary = (): LibraryEntry[] => {
     switch (activeFilter) {
@@ -61,9 +77,9 @@ export const LibraryScreen: React.FC = () => {
   ];
 
   const navigateToManga = (entry: LibraryEntry) => {
-    navigation.navigate('MangaDetail', { 
+    navigation.navigate('MangaDetail', {
       mangaId: entry.manga.id,
-      sourceId: entry.manga.source 
+      sourceId: entry.manga.source
     });
   };
 
@@ -72,6 +88,7 @@ export const LibraryScreen: React.FC = () => {
       manga={item.manga}
       onPress={() => navigateToManga(item)}
       compact
+      columns={numColumns}
     />
   );
 
@@ -120,12 +137,13 @@ export const LibraryScreen: React.FC = () => {
         />
       ) : (
         <FlatList
+          key={`library-${numColumns}`} // Force re-render when columns change
           data={filteredLibrary}
           renderItem={renderItem}
           keyExtractor={item => item.manga.id}
-          numColumns={2}
+          numColumns={numColumns}
           contentContainerStyle={styles.listContent}
-          columnWrapperStyle={styles.row}
+          columnWrapperStyle={numColumns > 1 ? styles.row : undefined}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl

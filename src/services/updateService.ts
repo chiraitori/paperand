@@ -53,26 +53,26 @@ export const getCurrentVersion = (): string => {
 export const compareVersions = (v1: string, v2: string): number => {
   // Remove any pre-release tags for comparison (e.g., -rc, -beta)
   const cleanVersion = (v: string) => v.replace(/-.*$/, '');
-  
+
   const parts1 = cleanVersion(v1).split('.').map(Number);
   const parts2 = cleanVersion(v2).split('.').map(Number);
-  
+
   for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
     const num1 = parts1[i] || 0;
     const num2 = parts2[i] || 0;
-    
+
     if (num1 > num2) return 1;
     if (num1 < num2) return -1;
   }
-  
+
   // If base versions are equal, check pre-release tags
   // Release version (no tag) > pre-release version (with tag)
   const hasTag1 = v1.includes('-');
   const hasTag2 = v2.includes('-');
-  
+
   if (!hasTag1 && hasTag2) return 1;
   if (hasTag1 && !hasTag2) return -1;
-  
+
   return 0;
 };
 
@@ -83,7 +83,7 @@ const parseReleaseData = (data: any): ReleaseInfo => {
   // Find APK download URL from assets
   let apkDownloadUrl: string | null = null;
   let apkSize: number | null = null;
-  
+
   if (data.assets && Array.isArray(data.assets)) {
     const apkAsset = data.assets.find(
       (asset: any) => asset.name?.endsWith('.apk')
@@ -93,11 +93,11 @@ const parseReleaseData = (data: any): ReleaseInfo => {
       apkSize = apkAsset.size;
     }
   }
-  
+
   // Clean up release notes - remove HTML tags and extract meaningful content
   let releaseNotes = data.body || 'No release notes available.';
   releaseNotes = cleanReleaseNotes(releaseNotes);
-  
+
   return {
     version: data.tag_name?.replace(/^v/, '') || data.name || 'Unknown',
     tagName: data.tag_name || '',
@@ -116,24 +116,24 @@ const parseReleaseData = (data: any): ReleaseInfo => {
 const cleanReleaseNotes = (notes: string): string => {
   // Remove HTML tags like <div>, <img>, etc.
   let cleaned = notes.replace(/<[^>]*>/g, '');
-  
+
   // Remove markdown image syntax ![alt](url)
   cleaned = cleaned.replace(/!\[[^\]]*\]\([^)]*\)/g, '');
-  
+
   // Remove markdown link syntax but keep text [text](url) -> text
   cleaned = cleaned.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1');
-  
+
   // Remove horizontal rules
   cleaned = cleaned.replace(/^---+$/gm, '');
-  
+
   // Remove excessive whitespace and empty lines
   cleaned = cleaned.replace(/\r\n/g, '\n');
   cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
-  
+
   // Try to extract "What's New" section
   const whatsNewMatch = cleaned.match(/##\s*✨\s*What's New([\s\S]*?)(?=##|$)/i) ||
-                        cleaned.match(/##\s*What's New([\s\S]*?)(?=##|$)/i);
-  
+    cleaned.match(/##\s*What's New([\s\S]*?)(?=##|$)/i);
+
   if (whatsNewMatch) {
     let whatsNew = whatsNewMatch[1].trim();
     // Clean up the extracted section and limit to 5 items
@@ -141,12 +141,12 @@ const cleanReleaseNotes = (notes: string): string => {
       .map(line => line.trim())
       .filter(line => line && !line.startsWith('|') && line.startsWith('-'))
       .slice(0, 5); // Only show first 5 items
-    
+
     if (items.length > 0) {
       return items.join('\n'); // Don't include heading, modal already has one
     }
   }
-  
+
   // Fallback: just clean up and return first meaningful content
   const lines = cleaned.split('\n')
     .map(line => line.trim())
@@ -157,7 +157,7 @@ const cleanReleaseNotes = (notes: string): string => {
       if (line.match(/^#+\s*$/)) return false;
       return true;
     });
-  
+
   return lines.slice(0, 8).join('\n').trim() || 'New version available!';
 };
 
@@ -172,7 +172,7 @@ export const fetchLatestRelease = async (): Promise<ReleaseInfo | null> => {
         'User-Agent': 'Paperand-App',
       },
     });
-    
+
     if (!response.ok) {
       if (response.status === 404) {
         console.log('No releases found on GitHub');
@@ -180,7 +180,7 @@ export const fetchLatestRelease = async (): Promise<ReleaseInfo | null> => {
       }
       throw new Error(`GitHub API error: ${response.status}`);
     }
-    
+
     const data = await response.json();
     return parseReleaseData(data);
   } catch (error) {
@@ -196,10 +196,10 @@ export const shouldCheckForUpdate = async (): Promise<boolean> => {
   try {
     const lastCheckStr = await AsyncStorage.getItem(STORAGE_KEYS.LAST_CHECK_TIME);
     if (!lastCheckStr) return true;
-    
+
     const lastCheck = parseInt(lastCheckStr, 10);
     const now = Date.now();
-    
+
     return now - lastCheck >= CHECK_INTERVAL;
   } catch (error) {
     console.error('Error checking update interval:', error);
@@ -259,7 +259,7 @@ export const clearSkippedVersion = async (): Promise<void> => {
 export const checkForUpdate = async (force: boolean = false): Promise<UpdateCheckResult> => {
   const currentVersion = getCurrentVersion();
   console.log('Current app version:', currentVersion);
-  
+
   // Debug mode: return mock update data
   if (DEBUG_FORCE_UPDATE) {
     const mockRelease: ReleaseInfo = {
@@ -288,7 +288,7 @@ export const checkForUpdate = async (force: boolean = false): Promise<UpdateChec
       error: null,
     };
   }
-  
+
   try {
     // Check if we should perform the check (unless forced)
     if (!force) {
@@ -302,13 +302,13 @@ export const checkForUpdate = async (force: boolean = false): Promise<UpdateChec
         };
       }
     }
-    
+
     // Fetch the latest release
     const latestRelease = await fetchLatestRelease();
-    
+
     // Mark that we checked
     await markUpdateChecked();
-    
+
     if (!latestRelease) {
       return {
         hasUpdate: false,
@@ -317,13 +317,13 @@ export const checkForUpdate = async (force: boolean = false): Promise<UpdateChec
         error: null,
       };
     }
-    
+
     // Compare versions
     console.log('Comparing versions - GitHub:', latestRelease.version, 'vs App:', currentVersion);
     const comparison = compareVersions(latestRelease.version, currentVersion);
     console.log('Version comparison result:', comparison, '(1 = update available, 0 = same, -1 = older)');
     const hasUpdate = comparison > 0;
-    
+
     // Check if this version was skipped (unless force check)
     if (hasUpdate && !force) {
       const isSkipped = await isVersionSkipped(latestRelease.version);
@@ -336,7 +336,7 @@ export const checkForUpdate = async (force: boolean = false): Promise<UpdateChec
         };
       }
     }
-    
+
     return {
       hasUpdate,
       currentVersion,
@@ -369,17 +369,17 @@ export const downloadApk = async (
     console.log('APK download is only supported on Android');
     return null;
   }
-  
+
   try {
     const fileName = 'paperand-update.apk';
     const fileUri = `${FileSystem.cacheDirectory}${fileName}`;
-    
+
     // Delete existing file if present
     const fileInfo = await FileSystem.getInfoAsync(fileUri);
     if (fileInfo.exists) {
       await FileSystem.deleteAsync(fileUri);
     }
-    
+
     // Create download resumable with progress callback
     const downloadResumable = FileSystem.createDownloadResumable(
       url,
@@ -396,13 +396,13 @@ export const downloadApk = async (
         }
       }
     );
-    
+
     const result = await downloadResumable.downloadAsync();
-    
+
     if (result?.uri) {
       return result.uri;
     }
-    
+
     return null;
   } catch (error) {
     console.error('Error downloading APK:', error);
@@ -418,14 +418,17 @@ export const installApk = async (fileUri: string): Promise<void> => {
     console.log('APK installation is only supported on Android');
     return;
   }
-  
+
   try {
     // Convert file:// URI to content:// URI for Android
     const contentUri = await FileSystem.getContentUriAsync(fileUri);
-    
+
+    // FLAG_ACTIVITY_NEW_TASK (0x10000000 = 268435456) | FLAG_GRANT_READ_URI_PERMISSION (0x1)
+    // Combined: 268435457
+    // This is required for the APK installation dialog to appear properly
     await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
       data: contentUri,
-      flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
+      flags: 268435457,
       type: 'application/vnd.android.package-archive',
     });
   } catch (error) {
@@ -439,11 +442,11 @@ export const installApk = async (fileUri: string): Promise<void> => {
  */
 export const formatBytes = (bytes: number): string => {
   if (bytes === 0) return '0 Bytes';
-  
+
   const k = 1024;
   const sizes = ['Bytes', 'KB', 'MB', 'GB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
-  
+
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
 };
 

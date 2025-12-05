@@ -6,6 +6,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   Dimensions,
+  useWindowDimensions,
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { Manga } from '../types';
@@ -14,16 +15,31 @@ interface MangaCardProps {
   manga: Manga;
   onPress: () => void;
   compact?: boolean;
+  columns?: number; // Dynamic column count from settings
 }
 
-const { width } = Dimensions.get('window');
-const CARD_WIDTH = (width - 48) / 3;
-const COMPACT_CARD_WIDTH = (width - 48) / 2; // 16px padding each side + 16px gap between cards
+const PADDING = 32; // Total horizontal padding
+const GAP = 8; // Gap between cards
 
-export const MangaCard: React.FC<MangaCardProps> = ({ manga, onPress, compact = false }) => {
+export const MangaCard: React.FC<MangaCardProps> = ({
+  manga,
+  onPress,
+  compact = false,
+  columns,
+}) => {
   const { theme } = useTheme();
+  const { width } = useWindowDimensions();
 
-  const cardWidth = compact ? COMPACT_CARD_WIDTH : CARD_WIDTH;
+  // Calculate card width based on columns prop or default
+  const getCardWidth = () => {
+    if (columns && columns > 0) {
+      return (width - PADDING - GAP * (columns - 1)) / columns;
+    }
+    // Fallback to old behavior
+    return compact ? (width - 48) / 2 : (width - 48) / 3;
+  };
+
+  const cardWidth = getCardWidth();
   const imageHeight = compact ? cardWidth * 1.5 : cardWidth * 1.4;
 
   return (

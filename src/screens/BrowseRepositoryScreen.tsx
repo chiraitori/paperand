@@ -13,6 +13,7 @@ import {
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
+import { AppDialog } from '../components';
 import {
   ExtensionSource,
   fetchRepositoryVersioning,
@@ -48,8 +49,30 @@ export const BrowseRepositoryScreen: React.FC = () => {
   const [installedExtensions, setInstalledExtensions] = useState<InstalledExtension[]>([]);
   const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set());
 
+  // Dialog state for Android Material You
+  const [dialogVisible, setDialogVisible] = useState(false);
+  const [dialogConfig, setDialogConfig] = useState<{
+    title: string;
+    message: string;
+    buttons: Array<{ text: string; onPress?: () => void; style?: 'default' | 'cancel' | 'destructive' }>;
+  }>({ title: '', message: '', buttons: [] });
+
   // Derive installed IDs from full extension data
   const installedIds = new Set(installedExtensions.map(ext => ext.id));
+
+  // Helper to show platform-appropriate dialog
+  const showAppDialog = (
+    title: string,
+    message: string,
+    buttons: Array<{ text: string; onPress?: () => void; style?: 'default' | 'cancel' | 'destructive' }> = [{ text: 'OK' }]
+  ) => {
+    if (Platform.OS === 'ios') {
+      Alert.alert(title, message, buttons);
+    } else {
+      setDialogConfig({ title, message, buttons });
+      setDialogVisible(true);
+    }
+  };
 
   useEffect(() => {
     loadData();
@@ -57,7 +80,7 @@ export const BrowseRepositoryScreen: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
-    
+
     // Load installed extensions (full data)
     try {
       const stored = await AsyncStorage.getItem(INSTALLED_EXTENSIONS_KEY);
@@ -89,7 +112,7 @@ export const BrowseRepositoryScreen: React.FC = () => {
       // Download the extension's source.js
       const sourceUrl = `${repoBaseUrl}/${ext.id}/source.js`;
       console.log(`Downloading extension source from: ${sourceUrl}`);
-      
+
       const sourceResponse = await fetch(sourceUrl);
       if (!sourceResponse.ok) {
         throw new Error(`Failed to download source.js: ${sourceResponse.status}`);
@@ -113,10 +136,10 @@ export const BrowseRepositoryScreen: React.FC = () => {
         JSON.stringify(newInstalled)
       );
 
-      Alert.alert('Installed', `${ext.name} has been installed successfully.`);
+      showAppDialog('Installed', `${ext.name} has been installed successfully.`);
     } catch (error) {
       console.error('Error installing extension:', error);
-      Alert.alert('Error', `Failed to install ${ext.name}: ${error}`);
+      showAppDialog('Error', `Failed to install ${ext.name}: ${error}`);
     }
 
     setLoadingIds((prev) => {
@@ -138,11 +161,11 @@ export const BrowseRepositoryScreen: React.FC = () => {
       return next;
     });
 
-    Alert.alert('Reloaded', `${ext.name} has been reloaded.`);
+    showAppDialog('Reloaded', `${ext.name} has been reloaded.`);
   };
 
   const handleUninstall = async (ext: ExtensionSource) => {
-    Alert.alert(
+    showAppDialog(
       'Uninstall Extension',
       `Are you sure you want to uninstall ${ext.name}?`,
       [
@@ -285,6 +308,15 @@ export const BrowseRepositoryScreen: React.FC = () => {
           </View>
         </ScrollView>
       )}
+
+      {/* Material You Dialog for Android */}
+      <AppDialog
+        visible={dialogVisible}
+        title={dialogConfig.title}
+        message={dialogConfig.message}
+        buttons={dialogConfig.buttons}
+        onDismiss={() => setDialogVisible(false)}
+      />
     </View>
   );
 };
