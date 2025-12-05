@@ -5,7 +5,7 @@ workflows:
     max_build_duration: 60
     
     environment:
-      node: 20
+      node: 22
       xcode: latest
       cocoapods: default
       groups:
@@ -18,6 +18,8 @@ workflows:
         - tag
       tag_patterns:
         - pattern: 'v*'
+          include: true
+        - pattern: '[0-9]*'
           include: true
       cancel_previous_builds: true
     
