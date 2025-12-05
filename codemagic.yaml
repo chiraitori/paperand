@@ -5,7 +5,6 @@ workflows:
     max_build_duration: 60
     
     environment:
-      node: 22
       xcode: latest
       cocoapods: default
       groups:
@@ -30,18 +29,30 @@ workflows:
           APP_VERSION=${CM_TAG#v}
           echo "Building version: $APP_VERSION"
           echo "APP_VERSION=$APP_VERSION" >> $CM_ENV
+
+      - name: Install Bun
+        script: |
+          curl -fsSL https://bun.sh/install | bash
+          export BUN_INSTALL="$HOME/.bun"
+          export PATH="$BUN_INSTALL/bin:$PATH"
+          echo "BUN_INSTALL=$BUN_INSTALL" >> $CM_ENV
+          echo "PATH=$BUN_INSTALL/bin:$PATH" >> $CM_ENV
+          bun --version
           
       - name: Install dependencies
         script: |
-          npm ci
+          export PATH="$BUN_INSTALL/bin:$PATH"
+          bun install
           
       - name: Install Expo CLI and EAS CLI
         script: |
-          npm install -g expo-cli eas-cli
+          export PATH="$BUN_INSTALL/bin:$PATH"
+          bun add -g expo-cli eas-cli
           
       - name: Run Expo Prebuild
         script: |
-          npx expo prebuild --platform ios --clean
+          export PATH="$BUN_INSTALL/bin:$PATH"
+          bunx expo prebuild --platform ios --clean
           
       - name: Install CocoaPods
         script: |
