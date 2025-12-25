@@ -17,40 +17,21 @@ import {
   checkForUpdate,
   ReleaseInfo,
 } from './src/services/updateService';
-import * as QuickActions from 'expo-quick-actions';
-import { useQuickActionRouting } from 'expo-quick-actions/router';
+import { Action, setItems } from 'expo-quick-actions';
+import { useQuickAction } from 'expo-quick-actions/hooks';
+import { initLogCapture } from './src/services/developerService';
 
 // Initialize log capture immediately so all logs are captured from startup
 initLogCapture();
 
-// Set up quick actions
-QuickActions.setItems([
-  {
-    title: 'Library',
-    subtitle: 'View your manga library',
-    icon: 'bookmark',
-    id: 'library',
-    params: { href: '/library' },
-  },
-  {
-    title: 'History',
-    subtitle: 'Check reading history',
-    icon: 'time',
-    id: 'history',
-    params: { href: '/history' },
-  },
-  {
-    title: 'Search',
-    subtitle: 'Search for manga',
-    icon: 'search',
-    id: 'search',
-    params: { href: '/search' },
-  },
-]);
-
 const SETTINGS_KEY = '@general_settings';
 
 const handleDeepLink = async (url: string) => {
+  // ... (rest of helper functions)
+  // skipping unchanged lines for brevity in prompt, but tool requires clean replacement
+  // actually I'll just target the import and usage separately or use a larger block carefully
+  // Let's replace the import line first
+
   const action = parseDeepLink(url);
   if (!action) return;
 
@@ -77,10 +58,39 @@ export default function App() {
   // Note: Since we're using React Navigation, the router implementation handles the navigation
   // based on the action params. However, since we might need custom handling for tabs,
   // we listen to the action here.
-  const quickAction = QuickActions.useQuickAction();
+  const quickAction = useQuickAction();
 
   // Check for updates on app start
   useEffect(() => {
+    // Set up quick actions safely
+    try {
+      setItems([
+        {
+          title: 'Library',
+          subtitle: 'View your manga library',
+          icon: 'bookmark',
+          id: 'library',
+          params: { href: '/library' },
+        },
+        {
+          title: 'History',
+          subtitle: 'Check reading history',
+          icon: 'time',
+          id: 'history',
+          params: { href: '/history' },
+        },
+        {
+          title: 'Search',
+          subtitle: 'Search for manga',
+          icon: 'search',
+          id: 'search',
+          params: { href: '/search' },
+        },
+      ]);
+    } catch (e) {
+      console.warn('Failed to set quick actions:', e);
+    }
+
     const performUpdateCheck = async () => {
       try {
         // Check if user has disabled update modal
