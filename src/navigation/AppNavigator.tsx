@@ -1,10 +1,12 @@
 import React from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useTheme } from '../context/ThemeContext';
 import { BottomTabNavigator } from './BottomTabNavigator';
 import { MangaDetailScreen, ReaderScreen, GeneralSettingsScreen, ThemeSettingsScreen, BackupsScreen, ExtensionsScreen, ExtensionDetailScreen, ExtensionSettingsScreen, AddRepositoryScreen, BrowseRepositoryScreen, BrowseAllRepositoriesScreen, DeveloperScreen, CreditsScreen, CategoryScreen, SearchResultsScreen, GenreListScreen } from '../screens';
 import { RootStackParamList } from '../types';
+
+export const navigationRef = createNavigationContainerRef<RootStackParamList>();
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -12,7 +14,7 @@ export const AppNavigator: React.FC = () => {
   const { theme, isDark } = useTheme();
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       <Stack.Navigator
         screenOptions={{
           headerShown: false,
@@ -27,8 +29,8 @@ export const AppNavigator: React.FC = () => {
         <Stack.Screen name="Extensions" component={ExtensionsScreen} />
         <Stack.Screen name="ExtensionDetail" component={ExtensionDetailScreen} />
         <Stack.Screen name="ExtensionSettings" component={ExtensionSettingsScreen} />
-        <Stack.Screen 
-          name="AddRepository" 
+        <Stack.Screen
+          name="AddRepository"
           component={AddRepositoryScreen}
           options={{
             presentation: 'transparentModal',

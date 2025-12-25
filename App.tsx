@@ -5,7 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ThemeProvider } from './src/context/ThemeContext';
 import { LibraryProvider } from './src/context/LibraryContext';
-import { AppNavigator } from './src/navigation';
+import { AppNavigator, navigationRef } from './src/navigation';
 import { ExtensionRunner, UpdateModal } from './src/components';
 import {
   parseDeepLink,
@@ -17,10 +17,36 @@ import {
   checkForUpdate,
   ReleaseInfo,
 } from './src/services/updateService';
-import { initLogCapture } from './src/services/developerService';
+import * as QuickActions from 'expo-quick-actions';
+import { useQuickActionRouting } from 'expo-quick-actions/router';
 
 // Initialize log capture immediately so all logs are captured from startup
 initLogCapture();
+
+// Set up quick actions
+QuickActions.setItems([
+  {
+    title: 'Library',
+    subtitle: 'View your manga library',
+    icon: 'bookmark',
+    id: 'library',
+    params: { href: '/library' },
+  },
+  {
+    title: 'History',
+    subtitle: 'Check reading history',
+    icon: 'time',
+    id: 'history',
+    params: { href: '/history' },
+  },
+  {
+    title: 'Search',
+    subtitle: 'Search for manga',
+    icon: 'search',
+    id: 'search',
+    params: { href: '/search' },
+  },
+]);
 
 const SETTINGS_KEY = '@general_settings';
 
@@ -46,6 +72,12 @@ export default function App() {
   const [updateModalVisible, setUpdateModalVisible] = useState(false);
   const [currentVersion, setCurrentVersion] = useState('');
   const [latestRelease, setLatestRelease] = useState<ReleaseInfo | null>(null);
+
+  // Hook for handling quick action routing
+  // Note: Since we're using React Navigation, the router implementation handles the navigation
+  // based on the action params. However, since we might need custom handling for tabs,
+  // we listen to the action here.
+  const quickAction = QuickActions.useQuickAction();
 
   // Check for updates on app start
   useEffect(() => {
@@ -96,6 +128,29 @@ export default function App() {
 
     return unsubscribe;
   }, []);
+
+  // Handle Quick Action navigation
+  useEffect(() => {
+    if (quickAction) {
+      if (navigationRef.isReady()) {
+        const routeName = quickAction.id;
+        // Map quick action IDs to tab names
+        switch (routeName) {
+          case 'library':
+            navigationRef.navigate('Main', { screen: 'Library' });
+            break;
+          case 'history':
+            navigationRef.navigate('Main', { screen: 'History' });
+            break;
+          case 'search':
+            navigationRef.navigate('Main', { screen: 'Search' });
+            break;
+          default:
+            console.log('Unknown quick action:', routeName);
+        }
+      }
+    }
+  }, [quickAction]);
 
   return (
     <SafeAreaProvider>

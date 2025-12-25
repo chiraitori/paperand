@@ -8,10 +8,12 @@ import {
     Switch,
     Platform,
     ActionSheetIOS,
+    Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as LocalAuthentication from 'expo-local-authentication';
 import { useTheme } from '../context/ThemeContext';
 import { PickerModal } from '../components/PickerModal';
 
@@ -73,6 +75,55 @@ export const GeneralSettingsScreen: React.FC = () => {
     const updateSetting = <K extends keyof GeneralSettings>(key: K, value: GeneralSettings[K]) => {
         const newSettings = { ...settings, [key]: value };
         saveSettings(newSettings);
+    };
+
+    // Handle auth setting changes with biometric verification
+    const handleAuthSettingChange = async (
+        settingKey: 'libraryAuth' | 'historyAuth',
+        newValue: boolean
+    ) => {
+        try {
+            // Check if biometrics are available
+            const hasHardware = await LocalAuthentication.hasHardwareAsync();
+            const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+
+            if (hasHardware && isEnrolled) {
+                // Require biometric verification before changing auth settings
+                const result = await LocalAuthentication.authenticateAsync({
+                    promptMessage: newValue
+                        ? 'Verify to enable authentication'
+                        : 'Verify to disable authentication',
+                    fallbackLabel: 'Use passcode',
+                    cancelLabel: 'Cancel',
+                });
+
+                if (result.success) {
+                    updateSetting(settingKey, newValue);
+                } else {
+                    // Authentication failed or cancelled - don't change setting
+                    Alert.alert(
+                        'Authentication Required',
+                        'You must verify your identity to change this security setting.'
+                    );
+                }
+            } else {
+                // No biometrics available - show warning and allow change
+                Alert.alert(
+                    'No Biometrics Available',
+                    'Biometric authentication is not set up on this device. The setting will be changed without verification.',
+                    [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                            text: 'Continue',
+                            onPress: () => updateSetting(settingKey, newValue)
+                        },
+                    ]
+                );
+            }
+        } catch (error) {
+            console.error('Biometric auth error:', error);
+            Alert.alert('Error', 'Failed to verify identity. Please try again.');
+        }
     };
 
     const showSortOptions = () => {
@@ -267,7 +318,7 @@ export const GeneralSettingsScreen: React.FC = () => {
                             rightElement: (
                                 <Switch
                                     value={settings.libraryAuth}
-                                    onValueChange={(value) => updateSetting('libraryAuth', value)}
+                                    onValueChange={(value) => handleAuthSettingChange('libraryAuth', value)}
                                     trackColor={{ false: theme.border, true: theme.success }}
                                     thumbColor={'#FFFFFF'}
                                 />
@@ -278,7 +329,7 @@ export const GeneralSettingsScreen: React.FC = () => {
                             rightElement: (
                                 <Switch
                                     value={settings.historyAuth}
-                                    onValueChange={(value) => updateSetting('historyAuth', value)}
+                                    onValueChange={(value) => handleAuthSettingChange('historyAuth', value)}
                                     trackColor={{ false: theme.border, true: theme.success }}
                                     thumbColor={'#FFFFFF'}
                                 />

@@ -63,7 +63,8 @@
           "icon": "./assets/icon.png",
           "color": "#C0392B"
         }
-      ]
+      ],
+      "expo-quick-actions"
     ]
   }
 }

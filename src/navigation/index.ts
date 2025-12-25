@@ -1,2 +1,2 @@
-export { AppNavigator } from './AppNavigator';
+export { AppNavigator, navigationRef } from './AppNavigator';
 export { BottomTabNavigator } from './BottomTabNavigator';
