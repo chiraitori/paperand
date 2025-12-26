@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { StyleSheet, View, Text, Alert, AppState, AppStateStatus } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -54,8 +55,10 @@ export default function App() {
   const [currentVersion, setCurrentVersion] = useState('');
   const [latestRelease, setLatestRelease] = useState<ReleaseInfo | null>(null);
 
-  // Privacy overlay state - show when app is in background/inactive
+  // Privacy overlay state - show when app is in background/inactive AND on protected screen
   const [isAppInactive, setIsAppInactive] = useState(false);
+  const [authSettings, setAuthSettings] = useState({ libraryAuth: false, historyAuth: false });
+  const [currentRoute, setCurrentRoute] = useState<string | null>(null);
   const appState = useRef(AppState.currentState);
 
   // Hook for handling quick action routing
@@ -64,11 +67,51 @@ export default function App() {
   // we listen to the action here.
   const quickAction = useQuickAction();
 
+  // Load auth settings
+  useEffect(() => {
+    const loadAuthSettings = async () => {
+      try {
+        const savedSettings = await AsyncStorage.getItem(SETTINGS_KEY);
+        if (savedSettings) {
+          const settings = JSON.parse(savedSettings);
+          setAuthSettings({
+            libraryAuth: settings.libraryAuth || false,
+            historyAuth: settings.historyAuth || false,
+          });
+        }
+      } catch (error) {
+        console.error('Failed to load auth settings:', error);
+      }
+    };
+    loadAuthSettings();
+  }, []);
+
+  // Track current navigation route
+  useEffect(() => {
+    const unsubscribe = navigationRef.addListener('state', () => {
+      if (navigationRef.isReady()) {
+        const route = navigationRef.getCurrentRoute();
+        setCurrentRoute(route?.name || null);
+      }
+    });
+    return unsubscribe;
+  }, []);
+
   // Listen for app state changes to show privacy overlay
   useEffect(() => {
-    const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
-      // Show overlay when app goes to background or inactive (multitasking view)
+    const subscription = AppState.addEventListener('change', async (nextAppState: AppStateStatus) => {
+      // When going to background, reload settings to get latest values
       if (nextAppState === 'background' || nextAppState === 'inactive') {
+        try {
+          const savedSettings = await AsyncStorage.getItem(SETTINGS_KEY);
+          if (savedSettings) {
+            const settings = JSON.parse(savedSettings);
+            setAuthSettings({
+              libraryAuth: settings.libraryAuth || false,
+              historyAuth: settings.historyAuth || false,
+            });
+          }
+        } catch (error) { }
         setIsAppInactive(true);
       } else if (nextAppState === 'active') {
         setIsAppInactive(false);
@@ -80,6 +123,12 @@ export default function App() {
       subscription.remove();
     };
   }, []);
+
+  // Calculate if we should show privacy overlay
+  const shouldShowPrivacyOverlay = isAppInactive && (
+    (currentRoute === 'Library' && authSettings.libraryAuth) ||
+    (currentRoute === 'History' && authSettings.historyAuth)
+  );
 
   // Check for updates on app start
   useEffect(() => {
@@ -199,12 +248,12 @@ export default function App() {
               onSkip={() => setUpdateModalVisible(false)}
             />
           )}
-          {/* Privacy overlay for multitasking - covers content when app is in background */}
-          {isAppInactive && (
-            <View style={styles.privacyOverlay}>
+          {/* Privacy overlay for multitasking - covers content when on protected screen */}
+          {shouldShowPrivacyOverlay && (
+            <BlurView intensity={100} tint="dark" style={styles.privacyOverlay}>
               <Text style={styles.privacyIcon}>📚</Text>
               <Text style={styles.privacyTitle}>Paperand</Text>
-            </View>
+            </BlurView>
           )}
         </LibraryProvider>
       </ThemeProvider>
@@ -215,10 +264,8 @@ export default function App() {
 const styles = StyleSheet.create({
   privacyOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#1a1a2e',
     justifyContent: 'center',
     alignItems: 'center',
-    zIndex: 9999,
   },
   privacyIcon: {
     fontSize: 64,
