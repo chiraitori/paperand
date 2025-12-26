@@ -25,6 +25,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useLibrary } from '../context/LibraryContext';
 import { getChapterPages, getMangaDetails, getChapters, decryptDrmImage } from '../services/sourceService';
 import { Manga, Chapter, Page, RootStackParamList } from '../types';
+import { t } from '../services/i18nService';
 
 type ReaderRouteProp = RouteProp<RootStackParamList, 'Reader'>;
 type ReaderNavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -64,7 +65,11 @@ const InfoModal: React.FC<{
   };
 
   const getStatusText = () => {
-    return manga?.status?.toUpperCase() || 'UNKNOWN';
+    const status = manga?.status?.toLowerCase();
+    if (status && ['ongoing', 'completed', 'hiatus', 'unknown'].includes(status)) {
+      return t(`manga.${status}`).toUpperCase();
+    }
+    return t('manga.unknown').toUpperCase();
   };
 
   return (
@@ -111,7 +116,7 @@ const InfoModal: React.FC<{
               <TouchableOpacity style={styles.infoModalReadButton} onPress={handleContinue}>
                 <Ionicons name="book" size={18} color="#000" />
                 <Text style={styles.infoModalReadButtonText}>
-                  Ch. {chapter.number} • {currentPage + 1}/{totalPages}
+                  {t('reader.chapter')} {chapter.number} • {currentPage + 1}/{totalPages}
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.infoModalIconButton}>
@@ -136,7 +141,7 @@ const InfoModal: React.FC<{
                     {manga.description}
                   </Text>
                   <Text style={styles.infoModalMoreButton}>
-                    {showFullDescription ? 'Less' : 'More'}
+                    {showFullDescription ? t('manga.showLess') : t('manga.showMore')}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -146,7 +151,7 @@ const InfoModal: React.FC<{
             {manga.genres && manga.genres.length > 0 && (
               <View style={styles.infoModalTagsSection}>
                 <View style={styles.infoModalTagsLabelContainer}>
-                  <Text style={styles.infoModalTagsLabel}>Tags</Text>
+                  <Text style={styles.infoModalTagsLabel}>{t('reader.tags')}</Text>
                 </View>
                 <View style={styles.infoModalGenres}>
                   {manga.genres.map((genre, index) => (
@@ -200,15 +205,15 @@ const ReaderSettingsModal: React.FC<{
           />
           <View style={styles.settingsModalContent}>
             <View style={styles.settingsModalHeader}>
-              <Text style={styles.settingsModalTitle}>Reader Settings</Text>
+              <Text style={styles.settingsModalTitle}>{t('reader.settingsTitle')}</Text>
               <TouchableOpacity onPress={onClose}>
-                <Text style={styles.settingsDoneButton}>Done</Text>
+                <Text style={styles.settingsDoneButton}>{t('common.done')}</Text>
               </TouchableOpacity>
             </View>
 
             <ScrollView style={styles.settingsScrollView}>
               {/* Reader Type */}
-              <Text style={styles.settingsSectionTitle}>READER TYPE</Text>
+              <Text style={styles.settingsSectionTitle}>{t('reader.readerType')}</Text>
               <View style={styles.settingsSegmentContainer}>
                 <TouchableOpacity
                   style={[
@@ -220,7 +225,7 @@ const ReaderSettingsModal: React.FC<{
                   <Text style={[
                     styles.settingsSegmentText,
                     readingMode === 'vertical' && styles.settingsSegmentTextActive,
-                  ]}>Vertical</Text>
+                  ]}>{t('reader.vertical')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[
@@ -232,14 +237,14 @@ const ReaderSettingsModal: React.FC<{
                   <Text style={[
                     styles.settingsSegmentText,
                     readingMode === 'horizontal' && styles.settingsSegmentTextActive,
-                  ]}>Horizontal</Text>
+                  ]}>{t('reader.horizontal')}</Text>
                 </TouchableOpacity>
               </View>
 
               {/* Reading Direction (for horizontal mode) */}
               {readingMode === 'horizontal' && (
                 <>
-                  <Text style={styles.settingsSectionTitle}>READING DIRECTION</Text>
+                  <Text style={styles.settingsSectionTitle}>{t('reader.readingDirection')}</Text>
                   <View style={styles.settingsSegmentContainer}>
                     <TouchableOpacity
                       style={[
@@ -251,7 +256,7 @@ const ReaderSettingsModal: React.FC<{
                       <Text style={[
                         styles.settingsSegmentText,
                         readingDirection === 'ltr' && styles.settingsSegmentTextActive,
-                      ]}>Left to Right</Text>
+                      ]}>{t('reader.ltr')}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[
@@ -263,17 +268,17 @@ const ReaderSettingsModal: React.FC<{
                       <Text style={[
                         styles.settingsSegmentText,
                         readingDirection === 'rtl' && styles.settingsSegmentTextActive,
-                      ]}>Right to Left</Text>
+                      ]}>{t('reader.rtl')}</Text>
                     </TouchableOpacity>
                   </View>
                 </>
               )}
 
               {/* General Settings */}
-              <Text style={styles.settingsSectionTitle}>GENERAL SETTINGS</Text>
+              <Text style={styles.settingsSectionTitle}>{t('reader.generalSettings')}</Text>
               <View style={styles.settingsCard}>
                 <View style={styles.settingsRow}>
-                  <Text style={styles.settingsRowLabel}>Page Padding</Text>
+                  <Text style={styles.settingsRowLabel}>{t('reader.pagePadding')}</Text>
                   <Switch
                     value={pagePadding}
                     onValueChange={setPagePadding}
@@ -410,14 +415,14 @@ const AutoSizeImage: React.FC<{
           <View style={styles.pageLoadingContainer}>
             <ActivityIndicator size="small" color="#FA6432" />
             <Text style={styles.pageLoadingText}>
-              {decrypting ? `Decrypting page ${pageNumber}...` : `Loading page ${pageNumber}/${totalPages}...`}
+              {decrypting ? t('common.decryptingPage', { page: pageNumber }) : t('common.loadingPage', { current: pageNumber, total: totalPages })}
             </Text>
           </View>
         )}
         {error ? (
           <View style={styles.pageErrorContainer}>
             <Ionicons name="image-outline" size={40} color="#555" />
-            <Text style={styles.pageErrorText}>Failed to load page {pageNumber}</Text>
+            <Text style={styles.pageErrorText}>{t('reader.failedToLoadPage', { page: pageNumber })}</Text>
           </View>
         ) : actualUri ? (
           <Image
@@ -492,13 +497,13 @@ const HorizontalPageImage: React.FC<{
         <View style={styles.horizontalLoadingContainer}>
           <ActivityIndicator size="large" color="#FA6432" />
           <Text style={styles.pageLoadingText}>
-            {decrypting ? `Decrypting page ${pageNumber}...` : `Loading...`}
+            {decrypting ? t('common.decryptingPage', { page: pageNumber }) : t('common.loading')}
           </Text>
         </View>
       ) : error ? (
         <View style={styles.horizontalLoadingContainer}>
           <Ionicons name="image-outline" size={48} color="#555" />
-          <Text style={styles.pageErrorText}>Failed to load page {pageNumber}</Text>
+          <Text style={styles.pageErrorText}>{t('reader.failedToLoadPage', { page: pageNumber })}</Text>
         </View>
       ) : actualUri ? (
         <Image
@@ -535,12 +540,12 @@ const ChapterTransition: React.FC<{
             color="#666"
           />
           <Text style={styles.transitionTitle}>
-            {isPrevious ? 'No Previous Chapter' : 'You\'re All Caught Up!'}
+            {isPrevious ? t('reader.noPreviousChapter') : t('reader.caughtUp')}
           </Text>
           <Text style={styles.transitionSubtitle}>
             {isPrevious
-              ? 'This is the first chapter'
-              : 'You\'ve reached the latest chapter'}
+              ? t('reader.firstChapter')
+              : t('reader.latestChapter')}
           </Text>
         </View>
       </View>
@@ -564,14 +569,14 @@ const ChapterTransition: React.FC<{
               color="#FA6432"
             />
             <Text style={styles.transitionLabel}>
-              {isPrevious ? 'Previous Chapter' : 'Next Chapter'}
+              {isPrevious ? t('reader.previousChapter') : t('reader.nextChapter')}
             </Text>
             <Text style={styles.transitionChapterTitle}>
-              Ch. {chapter.number}{chapter.title ? ` - ${chapter.title}` : ''}
+              {t('reader.chapter')} {chapter.number}{chapter.title ? ` - ${chapter.title}` : ''}
             </Text>
             <View style={styles.transitionButton}>
               <Text style={styles.transitionButtonText}>
-                {isPrevious ? 'Go to Previous' : 'Continue Reading'}
+                {isPrevious ? t('reader.goToPrevious') : t('manga.continueReading')}
               </Text>
             </View>
           </>

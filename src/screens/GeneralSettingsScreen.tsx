@@ -8,14 +8,18 @@ import {
     Switch,
     Platform,
     ActionSheetIOS,
+    Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { useTheme } from '../context/ThemeContext';
 import { PickerModal } from '../components/PickerModal';
 import { AppDialog } from '../components/AppDialog';
+import { t, getCurrentLanguage, SUPPORTED_LANGUAGES, LanguageCode } from '../services/i18nService';
+import { RootStackParamList } from '../types';
 
 const SETTINGS_KEY = '@general_settings';
 
@@ -50,10 +54,11 @@ const defaultSettings: GeneralSettings = {
 
 export const GeneralSettingsScreen: React.FC = () => {
     const { theme } = useTheme();
-    const navigation = useNavigation();
+    const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
     const [settings, setSettings] = useState<GeneralSettings>(defaultSettings);
     const [showSortPicker, setShowSortPicker] = useState(false);
+    const [currentLang, setCurrentLang] = useState<LanguageCode>(getCurrentLanguage());
     const [dialog, setDialog] = useState<DialogState>({ visible: false, title: '', message: '', buttons: [] });
 
     useEffect(() => {
@@ -146,7 +151,7 @@ export const GeneralSettingsScreen: React.FC = () => {
         if (Platform.OS === 'ios') {
             ActionSheetIOS.showActionSheetWithOptions(
                 {
-                    options: ['Cancel', 'Ascending', 'Descending'],
+                    options: [t('common.cancel'), 'Ascending', 'Descending'],
                     cancelButtonIndex: 0,
                 },
                 (buttonIndex) => {
@@ -157,6 +162,10 @@ export const GeneralSettingsScreen: React.FC = () => {
         } else {
             setShowSortPicker(true);
         }
+    };
+
+    const navigateToLanguageSettings = () => {
+        navigation.navigate('LanguageSettings');
     };
 
     const renderStepper = (
@@ -241,20 +250,35 @@ export const GeneralSettingsScreen: React.FC = () => {
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
                     <Ionicons name={Platform.OS === 'ios' ? 'chevron-back' : 'arrow-back'} size={28} color={theme.primary} />
-                    <Text style={[styles.backText, { color: theme.primary }]}>Settings</Text>
+                    <Text style={[styles.backText, { color: theme.primary }]}>{t('generalSettings.backToSettings')}</Text>
                 </TouchableOpacity>
-                <Text style={[styles.headerTitle, { color: theme.text }]}>General Settings</Text>
+                <Text style={[styles.headerTitle, { color: theme.text }]}>{t('generalSettings.title')}</Text>
                 <View style={{ width: 80 }} />
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
 
+                {/* Language - Android only (iOS uses system settings) */}
+                {Platform.OS === 'android' && (
+                    <View style={styles.section}>
+                        {renderSectionHeader(t('settings.language').toUpperCase())}
+                        <View style={[styles.sectionContent, { backgroundColor: theme.card }]}>
+                            {renderItem({
+                                title: t('settings.language'),
+                                value: SUPPORTED_LANGUAGES[currentLang].nativeName,
+                                showChevron: true,
+                                onPress: navigateToLanguageSettings
+                            })}
+                        </View>
+                    </View>
+                )}
+
                 {/* Items Per Row */}
                 <View style={styles.section}>
-                    {renderSectionHeader('ITEMS PER ROW')}
+                    {renderSectionHeader(t('generalSettings.itemsPerRow'))}
                     <View style={[styles.sectionContent, { backgroundColor: theme.card }]}>
                         {renderItem({
-                            title: 'Portrait',
+                            title: t('generalSettings.portrait'),
                             value: settings.portraitColumns,
                             valueColor: theme.error,
                             rightElement: renderStepper(
@@ -264,7 +288,7 @@ export const GeneralSettingsScreen: React.FC = () => {
                             )
                         })}
                         {renderItem({
-                            title: 'Landscape',
+                            title: t('generalSettings.landscape'),
                             value: settings.landscapeColumns,
                             valueColor: theme.error,
                             rightElement: renderStepper(
@@ -276,18 +300,18 @@ export const GeneralSettingsScreen: React.FC = () => {
                     </View>
                     {settings.portraitColumns > 3 && (
                         <Text style={[styles.warningText, { color: '#FF9500' }]}>
-                            ⚠️ More than 3 columns in portrait mode may make covers too small on phones
+                            {t('generalSettings.portraitWarning')}
                         </Text>
                     )}
                 </View>
 
                 {/* Chapter List Sort */}
                 <View style={styles.section}>
-                    {renderSectionHeader('CHAPTER LIST SORT')}
+                    {renderSectionHeader(t('generalSettings.chapterListSort'))}
                     <View style={[styles.sectionContent, { backgroundColor: theme.card }]}>
                         {renderItem({
-                            title: 'Chapter List Sort',
-                            value: settings.chapterListSort === 'ascending' ? 'Ascending' : 'Descending',
+                            title: t('generalSettings.chapterSort'),
+                            value: settings.chapterListSort === 'ascending' ? t('generalSettings.ascending') : t('generalSettings.descending'),
                             showChevron: true,
                             onPress: showSortOptions
                         })}
@@ -296,22 +320,22 @@ export const GeneralSettingsScreen: React.FC = () => {
 
                 {/* Content Filtering */}
                 <View style={styles.section}>
-                    {renderSectionHeader('CONTENT FILTERING')}
+                    {renderSectionHeader(t('generalSettings.contentFiltering'))}
                     <View style={[styles.sectionContent, { backgroundColor: theme.card }]}>
                         {renderItem({
-                            title: 'Content Settings Unavailable',
+                            title: t('generalSettings.contentUnavailable'),
                             disabled: true
                         })}
                     </View>
-                    {renderFooter('Manage content filtering on your Paperback account')}
+                    {renderFooter(t('generalSettings.contentFilteringHint'))}
                 </View>
 
                 {/* Interactive Update Checking */}
                 <View style={styles.section}>
-                    {renderSectionHeader('INTERACTIVE UPDATE CHECKING')}
+                    {renderSectionHeader(t('generalSettings.interactiveUpdates'))}
                     <View style={[styles.sectionContent, { backgroundColor: theme.card }]}>
                         {renderItem({
-                            title: 'Interactive Updates',
+                            title: t('generalSettings.interactiveUpdatesTitle'),
                             rightElement: (
                                 <Switch
                                     value={settings.interactiveUpdates}
@@ -322,15 +346,15 @@ export const GeneralSettingsScreen: React.FC = () => {
                             )
                         })}
                     </View>
-                    {renderFooter('Run the updater in the background to allow browsing the app normally (STILL REQUIRES THE APP TO BE OPEN).\n\nNOTE: This creates a new instance of the source in order to bypass request manager saturation. This might break sources which store in-memory data per their lifecycle.')}
+                    {renderFooter(t('generalSettings.interactiveUpdatesHint'))}
                 </View>
 
                 {/* Security */}
                 <View style={styles.section}>
-                    {renderSectionHeader('SECURITY')}
+                    {renderSectionHeader(t('generalSettings.security'))}
                     <View style={[styles.sectionContent, { backgroundColor: theme.card }]}>
                         {renderItem({
-                            title: 'Library Requires Authentication',
+                            title: t('generalSettings.libraryAuth'),
                             rightElement: (
                                 <Switch
                                     value={settings.libraryAuth}
@@ -341,7 +365,7 @@ export const GeneralSettingsScreen: React.FC = () => {
                             )
                         })}
                         {renderItem({
-                            title: 'History Requires Authentication',
+                            title: t('generalSettings.historyAuth'),
                             rightElement: (
                                 <Switch
                                     value={settings.historyAuth}
@@ -352,15 +376,15 @@ export const GeneralSettingsScreen: React.FC = () => {
                             )
                         })}
                     </View>
-                    {renderFooter('Ask for Pin/TouchID/FaceID when opening Library or History')}
+                    {renderFooter(t('generalSettings.securityHint'))}
                 </View>
 
                 {/* Update Checking */}
                 <View style={styles.section}>
-                    {renderSectionHeader('UPDATE CHECKING')}
+                    {renderSectionHeader(t('generalSettings.updateChecking'))}
                     <View style={[styles.sectionContent, { backgroundColor: theme.card }]}>
                         {renderItem({
-                            title: 'Hide Update Modal',
+                            title: t('generalSettings.hideUpdateModal'),
                             rightElement: (
                                 <Switch
                                     value={settings.hideUpdateModal}
@@ -371,15 +395,15 @@ export const GeneralSettingsScreen: React.FC = () => {
                             )
                         })}
                     </View>
-                    {renderFooter('When enabled, the app will not show update notifications on startup')}
+                    {renderFooter(t('generalSettings.updateCheckingHint'))}
                 </View>
 
                 {/* Manga Preview */}
                 <View style={styles.section}>
-                    {renderSectionHeader('MANGA PREVIEW')}
+                    {renderSectionHeader(t('generalSettings.mangaPreview'))}
                     <View style={[styles.sectionContent, { backgroundColor: theme.card }]}>
                         {renderItem({
-                            title: Platform.OS === 'android' ? 'Preview on Long Press (Experimental)' : 'Preview on Long Press',
+                            title: Platform.OS === 'android' ? t('generalSettings.previewExperimental') : t('generalSettings.previewOnLongPress'),
                             rightElement: (
                                 <Switch
                                     value={settings.mangaPreviewEnabled}
@@ -391,8 +415,8 @@ export const GeneralSettingsScreen: React.FC = () => {
                         })}
                     </View>
                     {renderFooter(Platform.OS === 'android'
-                        ? '⚡ EXPERIMENTAL: Long press on manga cards to preview details. This feature is experimental on Android.'
-                        : 'Long press on manga cards to preview details, chapters, and actions without navigating away.')}
+                        ? t('generalSettings.mangaPreviewHintAndroid')
+                        : t('generalSettings.mangaPreviewHint'))}
                 </View>
 
             </ScrollView>

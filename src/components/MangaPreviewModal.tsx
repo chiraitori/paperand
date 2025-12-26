@@ -18,6 +18,7 @@ import { useTheme } from '../context/ThemeContext';
 import { Manga } from '../types';
 import { getMangaDetails, getChapters } from '../services/sourceService';
 import * as Haptics from 'expo-haptics';
+import { t } from '../services/i18nService';
 
 interface MangaPreviewModalProps {
     visible: boolean;
@@ -165,28 +166,28 @@ export const MangaPreviewModal: React.FC<MangaPreviewModalProps> = ({
     const actionItems: ActionItem[] = [
         {
             icon: 'information-circle-outline',
-            label: 'View Details',
+            label: t('manga.viewDetails'),
             onPress: handleViewDetails,
         },
         {
             icon: chapters.length > 0 ? 'book' : 'book-outline',
-            label: chapters.length > 0 ? 'Start Reading' : 'Loading...',
+            label: chapters.length > 0 ? t('manga.startReading') : t('common.loading'),
             onPress: handleReadNow,
             disabled: chapters.length === 0,
         },
         {
             icon: isFavorite ? 'heart' : 'heart-outline',
-            label: isFavorite ? 'Remove from Favorites' : 'Add to Favorites',
+            label: isFavorite ? t('library.removeFromFavorites') : t('library.addToFavorites'),
             onPress: handleToggleFavorite,
         },
         isInLibrary ? {
             icon: 'trash-outline',
-            label: 'Remove from Library',
+            label: t('library.removeFromLibrary'),
             onPress: handleRemoveFromLibrary,
             destructive: true,
         } : {
             icon: 'add-circle-outline',
-            label: 'Add to Library',
+            label: t('library.addToLibrary'),
             onPress: handleAddToLibrary,
         },
     ];
@@ -222,11 +223,11 @@ export const MangaPreviewModal: React.FC<MangaPreviewModalProps> = ({
                                     {manga.title}
                                 </Text>
                                 <Text style={[styles.author, { color: theme.textSecondary }]} numberOfLines={1}>
-                                    {manga.author || 'Unknown Author'}
+                                    {manga.author || t('manga.unknownAuthor')}
                                 </Text>
                                 <View style={[styles.statusBadge, { backgroundColor: getStatusColor() }]}>
                                     <Text style={styles.statusText}>
-                                        {manga.status?.toUpperCase() || 'UNKNOWN'}
+                                        {manga.status ? t(`manga.${manga.status.toLowerCase()}`).toUpperCase() : t('manga.unknown').toUpperCase()}
                                     </Text>
                                 </View>
 
@@ -234,7 +235,7 @@ export const MangaPreviewModal: React.FC<MangaPreviewModalProps> = ({
                                 <View style={styles.statsRow}>
                                     <Ionicons name="book-outline" size={14} color={theme.textSecondary} />
                                     <Text style={[styles.statsText, { color: theme.textSecondary }]}>
-                                        {loading ? 'Loading...' : `${totalChapters > 0 ? totalChapters : manga.chapters?.length || '?'} chapters`}
+                                        {loading ? t('common.loading') : t('manga.chaptersCount', { count: totalChapters > 0 ? totalChapters : manga.chapters?.length || '?' })}
                                     </Text>
                                 </View>
                             </View>
@@ -245,7 +246,7 @@ export const MangaPreviewModal: React.FC<MangaPreviewModalProps> = ({
                             <View style={styles.loadingContainer}>
                                 <ActivityIndicator size="small" color={theme.primary} />
                                 <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
-                                    Loading...
+                                    {t('common.loading')}
                                 </Text>
                             </View>
                         ) : description ? (
@@ -294,7 +295,7 @@ export const MangaPreviewModal: React.FC<MangaPreviewModalProps> = ({
                         activeOpacity={0.6}
                     >
                         <Text style={[styles.cancelText, { color: theme.primary }]}>
-                            Cancel
+                            {t('common.cancel')}
                         </Text>
                     </TouchableOpacity>
                 </View>

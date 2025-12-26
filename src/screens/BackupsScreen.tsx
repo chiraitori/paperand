@@ -11,6 +11,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
+import { t } from '../services/i18nService';
 
 interface Backup {
   id: string;
@@ -30,21 +31,21 @@ export const BackupsScreen: React.FC = () => {
       date: new Date().toISOString(),
     };
     setBackups([newBackup, ...backups]);
-    Alert.alert('Backup Created', 'Your backup has been created successfully.');
+    Alert.alert(t('backups.backupCreated'), t('backups.backupCreatedMessage'));
   };
 
   const handleExportBackup = (backup: Backup) => {
-    Alert.alert('Export Backup', `Exporting "${backup.name}"...`);
+    Alert.alert(t('backups.exportBackup'), t('backups.exportMessage', { name: backup.name }));
   };
 
   const handleDeleteBackup = (backup: Backup) => {
     Alert.alert(
-      'Delete Backup',
-      `Are you sure you want to delete "${backup.name}"?`,
+      t('backups.deleteTitle'),
+      t('backups.deleteConfirm', { name: backup.name }),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Delete',
+          text: t('common.delete'),
           style: 'destructive',
           onPress: () => {
             setBackups(backups.filter(b => b.id !== backup.id));
@@ -79,21 +80,21 @@ export const BackupsScreen: React.FC = () => {
           onPress={() => navigation.goBack()}
         >
           <Ionicons name={Platform.OS === 'ios' ? 'chevron-back' : 'arrow-back'} size={28} color={theme.primary} />
-          <Text style={[styles.backText, { color: theme.primary }]}>Settings</Text>
+          <Text style={[styles.backText, { color: theme.primary }]}>{t('settings.title')}</Text>
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: theme.text }]}>Backups</Text>
+        <Text style={[styles.headerTitle, { color: theme.text }]}>{t('backups.title')}</Text>
         <TouchableOpacity
           style={styles.newBackupButton}
           onPress={handleNewBackup}
         >
-          <Text style={[styles.newBackupText, { color: theme.primary }]}>New Backup</Text>
+          <Text style={[styles.newBackupText, { color: theme.primary }]}>{t('backups.newBackup')}</Text>
         </TouchableOpacity>
       </View>
 
       {/* Content */}
       <View style={styles.content}>
         <Text style={[styles.sectionHeader, { color: theme.textSecondary }]}>
-          Select a backup to export
+          {t('backups.selectToExport')}
         </Text>
 
         {backups.length > 0 ? (

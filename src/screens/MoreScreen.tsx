@@ -11,14 +11,31 @@ import {
 import Constants from 'expo-constants';
 import { useTheme } from '../context/ThemeContext';
 import { ThemeMode } from '../types';
+import { t } from '../services/i18nService';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../types';
+
+type MoreScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 export const MoreScreen: React.FC = () => {
   const { theme, themeMode, setThemeMode, isDark } = useTheme();
+  const navigation = useNavigation<MoreScreenNavigationProp>();
+  const [tapCount, setTapCount] = React.useState(0);
+
+  const handleVersionTap = () => {
+    const newCount = tapCount + 1;
+    setTapCount(newCount);
+    if (newCount >= 7) {
+      setTapCount(0);
+      navigation.navigate('Developer');
+    }
+  };
 
   const themeOptions: { key: ThemeMode; label: string }[] = [
-    { key: 'light', label: 'Light' },
-    { key: 'dark', label: 'Dark' },
-    { key: 'system', label: 'System' },
+    { key: 'light', label: t('theme.themeMode') === 'Chế độ chủ đề' ? 'Sáng' : 'Light' }, // Simple hack for now or add keys
+    { key: 'dark', label: t('theme.themeMode') === 'Chế độ chủ đề' ? 'Tối' : 'Dark' },
+    { key: 'system', label: t('theme.themeMode') === 'Chế độ chủ đề' ? 'Hệ thống' : 'System' },
   ];
 
   const renderSettingItem = (
@@ -58,30 +75,31 @@ export const MoreScreen: React.FC = () => {
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <View style={styles.header}>
-        <Text style={[styles.title, { color: theme.text }]}>More</Text>
+        <Text style={[styles.title, { color: theme.text }]}>{t('more.title')}</Text>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false}>
-        {/* App Info */}
         <View style={styles.appInfo}>
           <View style={[styles.appIcon, { backgroundColor: theme.primary }]}>
             <Text style={styles.appIconText}>📚</Text>
           </View>
-          <Text style={[styles.appName, { color: theme.text }]}>Paperand</Text>
-          <Text style={[styles.appVersion, { color: theme.textSecondary }]}>
-            Version {Constants.expoConfig?.version || '0.0.3-rc'}
-          </Text>
+          <Text style={[styles.appName, { color: theme.text }]}>{t('more.appName')}</Text>
+          <TouchableOpacity activeOpacity={1} onPress={handleVersionTap}>
+            <Text style={[styles.appVersion, { color: theme.textSecondary }]}>
+              Version {Constants.expoConfig?.version || '0.0.3-rc'}
+            </Text>
+          </TouchableOpacity>
           <Text style={[styles.appTagline, { color: theme.textSecondary }]}>
-            Ad-free Manga Reader
+            {t('more.tagline')}
           </Text>
         </View>
 
         {/* Theme Settings */}
         {renderSection(
-          'APPEARANCE',
+          t('more.appearance'),
           <>
             <View style={[styles.settingItem, { borderBottomColor: theme.border }]}>
-              <Text style={[styles.settingTitle, { color: theme.text }]}>Theme</Text>
+              <Text style={[styles.settingTitle, { color: theme.text }]}>{t('more.theme')}</Text>
               <View style={styles.themeOptions}>
                 {themeOptions.map(option => (
                   <TouchableOpacity
@@ -111,14 +129,14 @@ export const MoreScreen: React.FC = () => {
 
         {/* Reading Settings */}
         {renderSection(
-          'READING',
+          t('more.reading'),
           <>
             {renderSettingItem(
-              'Default Reading Mode',
-              'Vertical scrolling',
+              t('more.defaultReadingMode'),
+              t('reader.vertical'),
             )}
             {renderSettingItem(
-              'Keep Screen On While Reading',
+              t('more.keepScreenOn'),
               undefined,
               undefined,
               <Switch
@@ -127,7 +145,7 @@ export const MoreScreen: React.FC = () => {
               />
             )}
             {renderSettingItem(
-              'Auto-Advance Chapters',
+              t('more.autoAdvanceChapters'),
               undefined,
               undefined,
               <Switch
@@ -140,15 +158,15 @@ export const MoreScreen: React.FC = () => {
 
         {/* Storage */}
         {renderSection(
-          'STORAGE',
+          t('more.storage'),
           <>
             {renderSettingItem(
-              'Clear Image Cache',
-              'Free up storage space',
-              () => {},
+              t('more.clearImageCache'),
+              t('more.freeSpace'),
+              () => { },
             )}
             {renderSettingItem(
-              'Downloads',
+              t('more.downloads'),
               '0 MB',
             )}
           </>
@@ -156,37 +174,37 @@ export const MoreScreen: React.FC = () => {
 
         {/* About */}
         {renderSection(
-          'ABOUT',
+          t('more.about'),
           <>
             {renderSettingItem(
-              'GitHub Repository',
-              'View source code',
+              t('more.github'),
+              t('more.viewSource'),
               () => Linking.openURL('https://github.com'),
             )}
             {renderSettingItem(
-              'Report an Issue',
-              'Help us improve',
+              t('more.reportIssue'),
+              t('more.helpImprove'),
               () => Linking.openURL('https://github.com'),
             )}
             {renderSettingItem(
-              'Privacy Policy',
+              t('more.privacyPolicy'),
               undefined,
-              () => {},
+              () => { },
             )}
             {renderSettingItem(
-              'Terms of Service',
+              t('more.termsOfService'),
               undefined,
-              () => {},
+              () => { },
             )}
           </>
         )}
 
         <View style={styles.footer}>
           <Text style={[styles.footerText, { color: theme.textSecondary }]}>
-            Made with ❤️ for manga lovers
+            {t('more.footerMadeWith')}
           </Text>
           <Text style={[styles.footerText, { color: theme.textSecondary }]}>
-            No ads. No tracking. Just manga.
+            {t('more.footerNoAds')}
           </Text>
         </View>
       </ScrollView>

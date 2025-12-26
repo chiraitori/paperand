@@ -22,6 +22,7 @@ import {
   updateExtensionSetting,
   invokeExtensionSettingAction,
 } from '../services/sourceService';
+import { t } from '../services/i18nService';
 
 type ExtensionSettingsScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'ExtensionSettings'>;
 type ExtensionSettingsScreenRouteProp = RouteProp<RootStackParamList, 'ExtensionSettings'>;
@@ -130,12 +131,12 @@ export const ExtensionSettingsScreen: React.FC = () => {
         if (success) {
           // Reload settings to update the form (e.g., login status)
           await loadSettings();
-          Alert.alert('Success', `${row.label} completed`);
+          Alert.alert(t('extensionSettings.success'), t('extensionSettings.completed', { label: row.label }));
         } else {
-          Alert.alert('Error', `Failed to execute ${row.label}`);
+          Alert.alert(t('common.error'), t('extensionSettings.failedToExecute', { label: row.label }));
         }
       } catch (error) {
-        Alert.alert('Error', `Failed to execute ${row.label}`);
+        Alert.alert(t('common.error'), t('extensionSettings.failedToExecute', { label: row.label }));
       }
     }
   };
@@ -424,14 +425,14 @@ export const ExtensionSettingsScreen: React.FC = () => {
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={theme.primary} />
           <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
-            Loading settings...
+            {t('extensionSettings.loading')}
           </Text>
         </View>
       ) : !settings || sectionsToRender.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Ionicons name="settings-outline" size={64} color={theme.textSecondary} />
           <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-            No settings available for this extension
+            {t('extensionSettings.noSettings')}
           </Text>
         </View>
       ) : (

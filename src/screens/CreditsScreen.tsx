@@ -13,6 +13,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
+import { t } from '../services/i18nService';
 
 interface Contributor {
   name: string;
@@ -81,9 +82,10 @@ export const CreditsScreen: React.FC = () => {
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <Ionicons name={Platform.OS === 'ios' ? 'chevron-back' : 'arrow-back'} size={28} color={theme.primary} />
-          <Text style={[styles.backText, { color: theme.primary }]}>Settings</Text>
+          <Ionicons name={Platform.OS === 'ios' ? 'chevron-back' : 'arrow-back'} size={28} color={theme.primary} />
+          <Text style={[styles.backText, { color: theme.primary }]}>{t('settings.title')}</Text>
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: theme.text }]}>Credits</Text>
+        <Text style={[styles.headerTitle, { color: theme.text }]}>{t('credits.title')}</Text>
         <View style={styles.headerSpacer} />
       </View>
 
@@ -93,27 +95,27 @@ export const CreditsScreen: React.FC = () => {
           <View style={[styles.appIcon, { backgroundColor: theme.primary }]}>
             <Ionicons name="book" size={48} color="#FFF" />
           </View>
-          <Text style={[styles.appName, { color: theme.text }]}>Paperand</Text>
+          <Text style={[styles.appName, { color: theme.text }]}>{t('more.appName')}</Text>
           <Text style={[styles.appTagline, { color: theme.textSecondary }]}>
-            Ad-Free Manga Reader
+            {t('credits.adFree')}
           </Text>
         </View>
 
         {/* Core Team */}
         {renderSection(
-          'DEVELOPER',
+          t('credits.developer'),
           CORE_TEAM.map(renderContributor)
         )}
 
         {/* Inspirations */}
         {renderSection(
-          'INSPIRED BY (PAPERBACK TEAM)',
+          t('credits.inspiredBy'),
           INSPIRATIONS.map(renderContributor)
         )}
 
         {/* Special Thanks */}
         {renderSection(
-          'SPECIAL THANKS',
+          t('credits.specialThanks'),
           SPECIAL_THANKS.map((thanks, index) => (
             <View
               key={index}
@@ -127,29 +129,29 @@ export const CreditsScreen: React.FC = () => {
 
         {/* Links */}
         {renderSection(
-          'LINKS',
+          t('credits.links'),
           <>
             <TouchableOpacity
               style={[styles.linkItem, { borderBottomColor: theme.border }]}
               onPress={() => Linking.openURL('https://github.com/chiraitori/paperand')}
             >
               <Ionicons name="logo-github" size={24} color={theme.text} />
-              <Text style={[styles.linkText, { color: theme.text }]}>GitHub Repository</Text>
+              <Text style={[styles.linkText, { color: theme.text }]}>{t('more.github')}</Text>
               <Ionicons name="open-outline" size={20} color={theme.textSecondary} />
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.linkItem, { borderBottomColor: theme.border }]}
-              onPress={() => Alert.alert('Discord', 'Discord server coming soon!')}
+              onPress={() => Alert.alert(t('credits.discordAlert'), t('credits.discordMessage'))}
             >
               <Ionicons name="logo-discord" size={24} color={theme.text} />
-              <Text style={[styles.linkText, { color: theme.text }]}>Discord Server (Coming Soon)</Text>
+              <Text style={[styles.linkText, { color: theme.text }]}>{t('credits.discord')}</Text>
               <Ionicons name="open-outline" size={20} color={theme.textSecondary} />
             </TouchableOpacity>
           </>
         )}
 
         <Text style={[styles.copyright, { color: theme.textSecondary }]}>
-          Made with ❤️ by Chiraitori
+          {t('credits.madeWith')}
         </Text>
       </ScrollView>
     </View>

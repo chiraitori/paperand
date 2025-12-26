@@ -10,6 +10,7 @@
 import { I18n } from 'i18n-js';
 import * as Localization from 'expo-localization';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 import { en, vi, zh, de, id, ja, ms, ru, es, th, el, hi, hu, it, lo, pt } from '../locales';
 
 // Supported languages with display names
@@ -66,9 +67,19 @@ i18n.locale = deviceLocale in SUPPORTED_LANGUAGES ? deviceLocale : 'en';
 
 /**
  * Initialize i18n with saved language preference
+ * On iOS: Always use device locale (system settings)
+ * On Android: Use saved preference or device locale
  */
 export const initializeI18n = async (): Promise<void> => {
     try {
+        // iOS always follows system settings
+        if (Platform.OS === 'ios') {
+            const locale = Localization.getLocales()[0]?.languageCode || 'en';
+            i18n.locale = locale in SUPPORTED_LANGUAGES ? locale : 'en';
+            return;
+        }
+
+        // Android: check for saved preference
         const savedLanguage = await AsyncStorage.getItem(LANGUAGE_STORAGE_KEY);
         if (savedLanguage && savedLanguage in SUPPORTED_LANGUAGES) {
             i18n.locale = savedLanguage;

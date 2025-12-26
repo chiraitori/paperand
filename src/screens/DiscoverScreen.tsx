@@ -27,6 +27,7 @@ import {
   Tag,
 } from '../services/sourceService';
 import { RootStackParamList } from '../types';
+import { t } from '../services/i18nService';
 
 type DiscoverScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -192,13 +193,13 @@ export const DiscoverScreen: React.FC = () => {
       return (
         <View style={[styles.noExtensionsContainer, { borderBottomColor: theme.border }]}>
           <Text style={[styles.noExtensionsText, { color: theme.textSecondary }]}>
-            No extensions installed
+            {t('discover.noExtensionsInstalled')}
           </Text>
           <TouchableOpacity
             style={[styles.addExtensionButton, { backgroundColor: theme.primary }]}
             onPress={() => navigation.navigate('Extensions' as any)}
           >
-            <Text style={styles.addExtensionText}>Add Extensions</Text>
+            <Text style={styles.addExtensionText}>{t('discover.addExtensions')}</Text>
           </TouchableOpacity>
         </View>
       );
@@ -274,14 +275,14 @@ export const DiscoverScreen: React.FC = () => {
                   }}
                 >
                   <Ionicons name="bookmark-outline" size={16} color="#fff" />
-                  <Text style={styles.addButtonText}>Add to Library</Text>
+                  <Text style={styles.addButtonText}>{t('discover.addToLibrary')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.featuredButton, styles.readNowButton]}
                   onPress={() => navigateToManga(manga)}
                 >
                   <Ionicons name="book-outline" size={16} color={theme.primary} />
-                  <Text style={[styles.readButtonText, { color: theme.primary }]}>Read Now</Text>
+                  <Text style={[styles.readButtonText, { color: theme.primary }]}>{t('discover.readNow')}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -337,7 +338,7 @@ export const DiscoverScreen: React.FC = () => {
     return (
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>Genres</Text>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>{t('discover.genres')}</Text>
           {tags.length > 6 && (
             <TouchableOpacity
               style={[styles.expandButton, { backgroundColor: theme.card }]}
@@ -427,7 +428,7 @@ export const DiscoverScreen: React.FC = () => {
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerSpacer} />
-        <Text style={[styles.headerTitle, { color: theme.text }]}>Discover</Text>
+        <Text style={[styles.headerTitle, { color: theme.text }]}>{t('discover.title')}</Text>
         <TouchableOpacity
           style={styles.globeButton}
           onPress={() => navigation.navigate('Extensions' as any)}
@@ -441,14 +442,14 @@ export const DiscoverScreen: React.FC = () => {
 
       {/* Content */}
       {loading ? (
-        <LoadingIndicator message="Loading..." />
+        <LoadingIndicator message={t('common.loading')} />
       ) : sections.length === 0 && tags.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Ionicons name="library-outline" size={64} color={theme.textSecondary} />
           <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
             {installedExtensions.length === 0
-              ? 'Install extensions to discover manga'
-              : 'No content available'}
+              ? t('discover.installExtensions')
+              : t('discover.noContent')}
           </Text>
         </View>
       ) : (

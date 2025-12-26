@@ -21,6 +21,7 @@ import { EmptyState, LoadingIndicator, MangaPreviewModal } from '../components';
 import { getInstalledExtensions, searchManga, InstalledExtension, SourceManga, SearchResult } from '../services/sourceService';
 import { RootStackParamList, Manga } from '../types';
 import { getGeneralSettings, GeneralSettings, defaultSettings } from '../services/settingsService';
+import { t } from '../services/i18nService';
 
 type SearchScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type SearchScreenRouteProp = RouteProp<RootStackParamList, 'Search'>;
@@ -353,7 +354,7 @@ export const SearchScreen: React.FC = () => {
           styles.sourceName,
           { color: activeSource === null ? theme.primary : theme.text }
         ]} numberOfLines={1}>
-          All
+          {t('search.all')}
         </Text>
       </TouchableOpacity>
 
@@ -394,9 +395,9 @@ export const SearchScreen: React.FC = () => {
       <View style={styles.recentContainer}>
         <View style={[styles.recentCard, { backgroundColor: theme.card }]}>
           <View style={styles.recentHeader}>
-            <Text style={[styles.recentTitle, { color: theme.textSecondary }]}>RECENT SEARCHES</Text>
+            <Text style={[styles.recentTitle, { color: theme.textSecondary }]}>{t('search.recentSearches')}</Text>
             <TouchableOpacity onPress={clearRecentSearches}>
-              <Text style={[styles.clearText, { color: theme.error }]}>CLEAR</Text>
+              <Text style={[styles.clearText, { color: theme.error }]}>{t('search.clear')}</Text>
             </TouchableOpacity>
           </View>
           {recentSearches.map((item, index) => (
@@ -519,9 +520,9 @@ export const SearchScreen: React.FC = () => {
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={[styles.title, { color: theme.text }]}>Search Everything</Text>
+        <Text style={[styles.title, { color: theme.text }]}>{t('search.searchEverything')}</Text>
         <TouchableOpacity onPress={() => performSearch(query)}>
-          <Text style={[styles.searchButton, { color: theme.primary }]}>Search</Text>
+          <Text style={[styles.searchButton, { color: theme.primary }]}>{t('search.title')}</Text>
         </TouchableOpacity>
       </View>
 
@@ -531,7 +532,7 @@ export const SearchScreen: React.FC = () => {
           <Ionicons name="search" size={20} color={theme.textSecondary} style={styles.searchIcon} />
           <TextInput
             style={[styles.searchInput, { color: theme.text }]}
-            placeholder="Search"
+            placeholder={t('search.placeholder')}
             placeholderTextColor={theme.textSecondary}
             value={query}
             onChangeText={setQuery}
@@ -550,13 +551,13 @@ export const SearchScreen: React.FC = () => {
 
       {/* Content */}
       {loading ? (
-        <LoadingIndicator message="Searching..." />
+        <LoadingIndicator message={t('common.searching')} />
       ) : hasSearched ? (
         !hasResults ? (
           <EmptyState
             icon="search"
-            title="No results found"
-            description={`No manga found for "${query}"`}
+            title={t('common.noResults')}
+            description={t('search.noResultsFor', { query })}
           />
         ) : activeSource ? (
           // Single source - grid view with pagination
@@ -574,13 +575,13 @@ export const SearchScreen: React.FC = () => {
                 <View style={styles.loadingMore}>
                   <ActivityIndicator size="small" color={theme.primary} />
                   <Text style={[styles.loadingMoreText, { color: theme.textSecondary }]}>
-                    Loading more...
+                    {t('common.loadingMore')}
                   </Text>
                 </View>
               ) : !hasMoreResults && results.length > 0 ? (
                 <View style={styles.endOfResults}>
                   <Text style={[styles.endOfResultsText, { color: theme.textSecondary }]}>
-                    No more results
+                    {t('search.noMoreResults')}
                   </Text>
                 </View>
               ) : null
@@ -597,7 +598,7 @@ export const SearchScreen: React.FC = () => {
           ) : (
             <View style={styles.noExtensions}>
               <Text style={[styles.noExtensionsText, { color: theme.textSecondary }]}>
-                No extensions installed. Go to Settings → Extensions to install some.
+                {t('search.noExtensionsHint')}
               </Text>
             </View>
           )}

@@ -266,8 +266,8 @@ export const LibraryScreen: React.FC = () => {
       {filteredLibrary.length === 0 ? (
         <EmptyState
           icon="🔖"
-          title="Your library is empty"
-          description="Add manga from the Discover tab to start building your collection"
+          title={t('library.empty')}
+          description={t('library.emptyHint')}
         />
       ) : (
         <FlatList

@@ -14,13 +14,14 @@ import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { PickerModal } from '../components';
+import { t } from '../services/i18nService';
 
 export const ThemeSettingsScreen: React.FC = () => {
-  const { 
-    theme, 
-    themeMode, 
-    setThemeMode, 
-    customThemes, 
+  const {
+    theme,
+    themeMode,
+    setThemeMode,
+    customThemes,
     activeCustomThemeId,
     setActiveCustomTheme,
     importTheme,
@@ -31,23 +32,23 @@ export const ThemeSettingsScreen: React.FC = () => {
 
   const getThemeLabel = (mode: string) => {
     switch (mode) {
-      case 'light': return 'Light';
-      case 'dark': return 'Dark';
-      case 'system': return 'System';
-      default: return 'System';
+      case 'light': return t('theme.themeMode') === 'Chế độ chủ đề' ? 'Sáng' : 'Light'; // Using simple check or add specific keys for modes
+      case 'dark': return t('theme.themeMode') === 'Chế độ chủ đề' ? 'Tối' : 'Dark';
+      case 'system': return t('theme.themeMode') === 'Chế độ chủ đề' ? 'Hệ thống' : 'System';
+      default: return t('theme.themeMode') === 'Chế độ chủ đề' ? 'Hệ thống' : 'System';
     }
   };
 
   const showThemePicker = () => {
     const options = ['Light', 'Dark', 'System'];
     const values: ('light' | 'dark' | 'system')[] = ['light', 'dark', 'system'];
-    
+
     if (Platform.OS === 'ios') {
       ActionSheetIOS.showActionSheetWithOptions(
         {
-          options: [...options, 'Cancel'],
+          options: [...options, t('common.cancel')],
           cancelButtonIndex: options.length,
-          title: 'Theme Mode',
+          title: t('theme.themeMode'),
         },
         (buttonIndex) => {
           if (buttonIndex < options.length) {
@@ -74,19 +75,19 @@ export const ThemeSettingsScreen: React.FC = () => {
       const importedTheme = await importTheme();
       if (importedTheme) {
         Alert.alert(
-          'Theme Imported',
-          `"${importedTheme.name}" has been imported successfully. Would you like to apply it now?`,
+          t('theme.importedTitle'),
+          t('theme.importedMessage', { name: importedTheme.name }),
           [
-            { text: 'Not Now', style: 'cancel' },
-            { 
-              text: 'Apply', 
+            { text: t('theme.notNow'), style: 'cancel' },
+            {
+              text: t('theme.apply'),
               onPress: () => setActiveCustomTheme(importedTheme.id)
             },
           ]
         );
       }
     } catch (error: any) {
-      Alert.alert('Import Failed', error.message || 'Failed to import theme file');
+      Alert.alert(t('theme.importFailed'), error.message || 'Failed to import theme file');
     }
   };
 
@@ -96,12 +97,12 @@ export const ThemeSettingsScreen: React.FC = () => {
 
   const handleDeleteTheme = (themeId: string, themeName: string) => {
     Alert.alert(
-      'Delete Theme',
-      `Are you sure you want to delete "${themeName}"?`,
+      t('theme.deleteTitle'),
+      t('theme.deleteConfirm', { name: themeName }),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Delete',
+          text: t('common.delete'),
           style: 'destructive',
           onPress: () => deleteCustomTheme(themeId),
         },
@@ -111,12 +112,12 @@ export const ThemeSettingsScreen: React.FC = () => {
 
   const handleResetTheme = () => {
     Alert.alert(
-      'Reset Theme',
-      'This will reset to the default Paperback theme.',
+      t('theme.resetTitle'),
+      t('theme.resetConfirm'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Reset',
+          text: t('common.reset'), // Make sure to add this common key if missing, or use 'common.delete' logic
           style: 'destructive',
           onPress: () => setActiveCustomTheme(null),
         },
@@ -233,18 +234,18 @@ export const ThemeSettingsScreen: React.FC = () => {
           onPress={() => navigation.goBack()}
         >
           <Ionicons name={Platform.OS === 'ios' ? 'chevron-back' : 'arrow-back'} size={28} color={theme.primary} />
-          <Text style={[styles.backText, { color: theme.primary }]}>Settings</Text>
+          <Text style={[styles.backText, { color: theme.primary }]}>{t('settings.title')}</Text>
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: theme.text }]}>Theme Settings</Text>
+        <Text style={[styles.headerTitle, { color: theme.text }]}>{t('theme.title')}</Text>
         <View style={styles.headerSpacer} />
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Theme Mode */}
         {renderSection(
-          'APPEARANCE',
+          t('theme.appearance'), // reuse more.appearance or theme.appearance if added. using more.appearance (APPEARANCE)
           renderSettingItem({
-            title: 'Theme Mode',
+            title: t('theme.themeMode'),
             value: getThemeLabel(themeMode),
             onPress: showThemePicker,
             showSelector: true,
@@ -253,9 +254,9 @@ export const ThemeSettingsScreen: React.FC = () => {
 
         {/* Built-in Theme */}
         {renderSection(
-          'THEME',
+          'THEME', // Adding key recommended, using literal for now or 'theme.theme'
           renderSettingItem({
-            title: 'Default (Paperback)',
+            title: t('theme.default'),
             onPress: () => handleSelectTheme(null),
             isSelected: activeCustomThemeId === null,
           })
@@ -263,7 +264,7 @@ export const ThemeSettingsScreen: React.FC = () => {
 
         {/* Custom Themes */}
         {customThemes.length > 0 && renderSection(
-          'CUSTOM THEMES',
+          t('theme.customThemes'),
           <>
             {customThemes.map((customTheme, index) => (
               <View key={customTheme.id}>
@@ -281,15 +282,15 @@ export const ThemeSettingsScreen: React.FC = () => {
 
         {/* Import/Export */}
         {renderSection(
-          'MANAGE',
+          t('theme.manage'),
           <>
             {renderSettingItem({
-              title: 'Import Theme (.pbcolors)',
+              title: t('theme.importTheme'),
               onPress: handleImportTheme,
               centered: true,
             })}
             {activeCustomThemeId && renderSettingItem({
-              title: 'Reset to Default',
+              title: t('theme.resetToDefault'),
               onPress: handleResetTheme,
               isDestructive: true,
               centered: true,
@@ -299,7 +300,7 @@ export const ThemeSettingsScreen: React.FC = () => {
 
         <View style={styles.infoContainer}>
           <Text style={[styles.infoText, { color: theme.textSecondary }]}>
-            Import Paperback theme files (.pbcolors) to customize the app's appearance.
+            {t('theme.importHint')}
           </Text>
         </View>
       </ScrollView>
@@ -307,9 +308,9 @@ export const ThemeSettingsScreen: React.FC = () => {
       {/* Theme Mode Picker Modal for Android */}
       <PickerModal
         visible={showThemeModePicker}
-        title="Theme Mode"
-        subtitle="Choose your preferred theme"
-        options={['Light', 'Dark', 'System']}
+        title={t('theme.themeMode')}
+        subtitle={t('theme.themeMode')} // or duplicate title or generic hint
+        options={['Light', 'Dark', 'System']} // These should be localized values if they affect display, but logic uses indices or map
         selectedValue={getThemeLabel(themeMode)}
         onSelect={handleThemeModeSelect}
         onClose={() => setShowThemeModePicker(false)}

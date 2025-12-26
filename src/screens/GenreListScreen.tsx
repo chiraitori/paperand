@@ -12,6 +12,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { RootStackParamList } from '../types';
+import { t } from '../services/i18nService';
 
 type GenreListScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'GenreList'>;
 type GenreListScreenRouteProp = RouteProp<RootStackParamList, 'GenreList'>;
@@ -55,7 +56,7 @@ export const GenreListScreen: React.FC = () => {
 
   const renderGenreCard = (tag: { id: string; label: string }, index: number) => {
     const color = GENRE_COLORS[index % GENRE_COLORS.length];
-    
+
     return (
       <TouchableOpacity
         key={tag.id}
@@ -73,13 +74,13 @@ export const GenreListScreen: React.FC = () => {
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
           <Ionicons name="chevron-back" size={28} color={theme.text} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: theme.text }]}>All Genres</Text>
+        <Text style={[styles.headerTitle, { color: theme.text }]}>{t('category.allGenres')}</Text>
         <View style={styles.headerSpacer} />
       </View>
 

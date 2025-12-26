@@ -178,6 +178,15 @@ MIT License - feel free to use this project for personal or commercial purposes.
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
+### Translations 🌐
+
+Help us translate Paperand into your language! We use Crowdin for localization.
+[**Contribute Translations on Crowdin**](https://crowdin.com/project/paperand)
+
+### Developer Menu 🛠️
+
+Hidden debug features can be accessed by tapping the Version number in **More > About** 7 times.
+
 ## Credits
 
 - Inspired by [Paperback](https://paperback.moe/)

@@ -86,6 +86,7 @@ export type RootStackParamList = {
   Search: undefined;
   Settings: undefined;
   GeneralSettings: undefined;
+  LanguageSettings: undefined;
   ThemeSettings: undefined;
   Backups: undefined;
   Extensions: undefined;

@@ -17,6 +17,7 @@ import { useTheme } from '../context/ThemeContext';
 import { RootStackParamList } from '../types';
 import { ExtensionSource, ExtensionRepository, DEFAULT_REPOSITORIES, getTagColor } from '../services/extensionService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { t } from '../services/i18nService';
 
 const INSTALLED_EXTENSIONS_KEY = '@installed_extensions_data';
 const ADDED_REPOS_KEY = '@added_repositories';
@@ -63,7 +64,7 @@ export const ExtensionsScreen: React.FC = () => {
       if (storedRepos) {
         const parsed: ExtensionRepository[] = JSON.parse(storedRepos);
         // Add any new default repos that aren't in stored
-        const newDefaults = DEFAULT_REPOSITORIES.filter(def => 
+        const newDefaults = DEFAULT_REPOSITORIES.filter(def =>
           !parsed.some((repo: ExtensionRepository) => repo.id === def.id)
         );
         const mergedRepos = [...parsed, ...newDefaults];
@@ -84,12 +85,12 @@ export const ExtensionsScreen: React.FC = () => {
 
   const handleRemoveExtension = (ext: InstalledExtension) => {
     Alert.alert(
-      'Remove Extension',
-      `Are you sure you want to remove ${ext.name}?`,
+      t('extensions.removeExtension'),
+      t('extensions.removeExtensionConfirm', { name: ext.name }),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Remove',
+          text: t('common.delete'),
           style: 'destructive',
           onPress: async () => {
             const updated = installedExtensions.filter((e) => e.id !== ext.id);
@@ -103,12 +104,12 @@ export const ExtensionsScreen: React.FC = () => {
 
   const handleRemoveRepo = (repo: ExtensionRepository) => {
     Alert.alert(
-      'Remove Repository',
-      `Are you sure you want to remove ${repo.name}?`,
+      t('extensions.removeRepo'),
+      t('extensions.removeRepoConfirm', { name: repo.name }),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Remove',
+          text: t('common.delete'),
           style: 'destructive',
           onPress: async () => {
             const updated = addedRepos.filter((r) => r.id !== repo.id);
@@ -126,78 +127,78 @@ export const ExtensionsScreen: React.FC = () => {
 
   const renderExtensionItem = (ext: InstalledExtension) => {
     // Build icon URL if we have repo info
-    const iconUrl = ext.repoBaseUrl && ext.icon 
+    const iconUrl = ext.repoBaseUrl && ext.icon
       ? `${ext.repoBaseUrl}/${ext.id}/includes/${ext.icon}`
       : null;
 
     return (
-    <View key={ext.id} style={[styles.extensionRow, { borderBottomColor: theme.border }]}>
-      {isEditing && (
-        <TouchableOpacity
-          style={styles.deleteButton}
-          onPress={() => handleRemoveExtension(ext)}
-        >
-          <Ionicons name="remove-circle" size={24} color={theme.error} />
-        </TouchableOpacity>
-      )}
-      <TouchableOpacity
-        style={styles.extensionItem}
-        activeOpacity={0.7}
-        onPress={() => !isEditing && navigation.navigate('ExtensionDetail', { extension: ext })}
-        onLongPress={() => !isEditing && handleRemoveExtension(ext)}
-        disabled={isEditing}
-      >
-        {/* Extension Icon */}
-        <View style={[styles.iconContainer, { backgroundColor: '#1C1C1E' }]}>
-          {iconUrl ? (
-            <Image
-              source={{ uri: iconUrl }}
-              style={styles.iconImage}
-              defaultSource={require('../../assets/icon.png')}
-            />
-          ) : (
-            <Ionicons name="extension-puzzle" size={24} color="#FFF" />
-          )}
-        </View>
-
-        <View style={styles.extensionContent}>
-          <Text style={[styles.extensionName, { color: theme.text }]}>{ext.name}</Text>
-          <Text style={[styles.extensionAuthor, { color: theme.textSecondary }]}>
-            {ext.author} | {ext.version}
-          </Text>
-          <View style={styles.tagsRow}>
-            {/* Action buttons */}
-            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#007AFF' }]}>
-              <Ionicons name="list" size={12} color="#FFF" />
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#FF2D55' }]}>
-              <Ionicons name="paper-plane" size={12} color="#FFF" />
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#1C1C1E' }]}>
-              <Ionicons name="options" size={12} color="#FFF" />
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#5856D6' }]}>
-              <Ionicons name="globe-outline" size={12} color="#FFF" />
-            </TouchableOpacity>
-            {/* Tags */}
-            {ext.tags?.map((tag, idx) => {
-              const colors = getTagColor(tag.type);
-              return (
-                <View key={idx} style={[styles.tag, { backgroundColor: colors.bg }]}>
-                  <Text style={[styles.tagText, { color: colors.text }]}>{tag.text}</Text>
-                </View>
-              );
-            })}
-          </View>
-        </View>
-        {isEditing ? (
-          <Ionicons name="menu" size={24} color={theme.textSecondary} style={styles.dragHandle} />
-        ) : (
-          <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} style={styles.chevron} />
+      <View key={ext.id} style={[styles.extensionRow, { borderBottomColor: theme.border }]}>
+        {isEditing && (
+          <TouchableOpacity
+            style={styles.deleteButton}
+            onPress={() => handleRemoveExtension(ext)}
+          >
+            <Ionicons name="remove-circle" size={24} color={theme.error} />
+          </TouchableOpacity>
         )}
-      </TouchableOpacity>
-    </View>
-  );
+        <TouchableOpacity
+          style={styles.extensionItem}
+          activeOpacity={0.7}
+          onPress={() => !isEditing && navigation.navigate('ExtensionDetail', { extension: ext })}
+          onLongPress={() => !isEditing && handleRemoveExtension(ext)}
+          disabled={isEditing}
+        >
+          {/* Extension Icon */}
+          <View style={[styles.iconContainer, { backgroundColor: '#1C1C1E' }]}>
+            {iconUrl ? (
+              <Image
+                source={{ uri: iconUrl }}
+                style={styles.iconImage}
+                defaultSource={require('../../assets/icon.png')}
+              />
+            ) : (
+              <Ionicons name="extension-puzzle" size={24} color="#FFF" />
+            )}
+          </View>
+
+          <View style={styles.extensionContent}>
+            <Text style={[styles.extensionName, { color: theme.text }]}>{ext.name}</Text>
+            <Text style={[styles.extensionAuthor, { color: theme.textSecondary }]}>
+              {ext.author} | {ext.version}
+            </Text>
+            <View style={styles.tagsRow}>
+              {/* Action buttons */}
+              <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#007AFF' }]}>
+                <Ionicons name="list" size={12} color="#FFF" />
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#FF2D55' }]}>
+                <Ionicons name="paper-plane" size={12} color="#FFF" />
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#1C1C1E' }]}>
+                <Ionicons name="options" size={12} color="#FFF" />
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#5856D6' }]}>
+                <Ionicons name="globe-outline" size={12} color="#FFF" />
+              </TouchableOpacity>
+              {/* Tags */}
+              {ext.tags?.map((tag, idx) => {
+                const colors = getTagColor(tag.type);
+                return (
+                  <View key={idx} style={[styles.tag, { backgroundColor: colors.bg }]}>
+                    <Text style={[styles.tagText, { color: colors.text }]}>{tag.text}</Text>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+          {isEditing ? (
+            <Ionicons name="menu" size={24} color={theme.textSecondary} style={styles.dragHandle} />
+          ) : (
+            <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} style={styles.chevron} />
+          )}
+        </TouchableOpacity>
+      </View>
+    );
   };
 
   return (
@@ -211,13 +212,13 @@ export const ExtensionsScreen: React.FC = () => {
         ) : (
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
             <Ionicons name={Platform.OS === 'ios' ? 'chevron-back' : 'arrow-back'} size={28} color={theme.primary} />
-            <Text style={[styles.backText, { color: theme.primary }]}>Settings</Text>
+            <Text style={[styles.backText, { color: theme.primary }]}>{t('settings.title')}</Text>
           </TouchableOpacity>
         )}
-        <Text style={[styles.headerTitle, { color: theme.text }]}>Extensions</Text>
+        <Text style={[styles.headerTitle, { color: theme.text }]}>{t('extensions.title')}</Text>
         <TouchableOpacity onPress={() => setIsEditing(!isEditing)} style={styles.editButtonContainer}>
           <Text style={[styles.editButton, { color: theme.primary }]}>
-            {isEditing ? 'Done' : 'Edit'}
+            {isEditing ? t('common.done') : t('common.edit')}
           </Text>
         </TouchableOpacity>
       </View>
@@ -231,7 +232,7 @@ export const ExtensionsScreen: React.FC = () => {
           {/* Enabled Extensions */}
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
-              Enabled Extensions
+              {t('extensions.enabled')}
             </Text>
             <View style={[styles.sectionContent, { backgroundColor: theme.card }]}>
               {installedExtensions.length > 0 ? (
@@ -239,7 +240,7 @@ export const ExtensionsScreen: React.FC = () => {
               ) : (
                 <View style={styles.emptyContainer}>
                   <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-                    No extensions installed
+                    {t('extensions.noExtensions')}
                   </Text>
                 </View>
               )}
@@ -249,7 +250,7 @@ export const ExtensionsScreen: React.FC = () => {
           {/* Available Repositories */}
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
-              Available Repositories
+              {t('extensions.availableRepositories')}
             </Text>
             <View style={[styles.sectionContent, { backgroundColor: theme.card }]}>
               {/* Browse All Repositories - only show when not editing */}
@@ -259,7 +260,7 @@ export const ExtensionsScreen: React.FC = () => {
                   activeOpacity={0.7}
                   onPress={() => navigation.navigate('BrowseAllRepositories')}
                 >
-                  <Text style={[styles.repoName, { color: theme.text }]}>Browse All Repositories</Text>
+                  <Text style={[styles.repoName, { color: theme.text }]}>{t('extensions.browseAll')}</Text>
                   <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
                 </TouchableOpacity>
               )}
@@ -292,7 +293,7 @@ export const ExtensionsScreen: React.FC = () => {
                     })}
                     disabled={isEditing}
                   >
-                    <Text style={[styles.repoName, { color: theme.text }]}>Browse {repo.name}</Text>
+                    <Text style={[styles.repoName, { color: theme.text }]}>{t('extensions.browseRepo', { name: repo.name })}</Text>
                     {!isEditing && (
                       <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
                     )}

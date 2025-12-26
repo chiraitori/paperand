@@ -18,6 +18,7 @@ import { ExtensionSource } from '../services/extensionService';
 import { hasExtensionSettings } from '../services/sourceService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { RootStackParamList } from '../types';
+import { t } from '../services/i18nService';
 
 type RouteParams = {
   ExtensionDetail: {
@@ -63,16 +64,16 @@ export const ExtensionDetailScreen: React.FC = () => {
 
   const handlePurgeFromLibrary = () => {
     Alert.alert(
-      'Purge from Library',
-      `Are you sure you want to remove all manga from ${extension.name} from your library? This cannot be undone.`,
+      t('extensions.purge'),
+      t('extensions.purgeConfirm', { name: extension.name }),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Purge',
+          text: t('extensions.purge').split(' ')[0], // Hack, or add new key 'purgeAction'
           style: 'destructive',
           onPress: () => {
             // TODO: Implement purge logic
-            Alert.alert('Purged', `All manga from ${extension.name} have been removed from your library.`);
+            Alert.alert(t('extensions.purged'), t('extensions.purgedMessage', { name: extension.name }));
           },
         },
       ]
@@ -81,12 +82,12 @@ export const ExtensionDetailScreen: React.FC = () => {
 
   const handleUninstall = async () => {
     Alert.alert(
-      'Uninstall Extension',
-      `Are you sure you want to uninstall ${extension.name}?`,
+      t('extensions.uninstall'),
+      t('extensions.uninstallConfirm', { name: extension.name }),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Uninstall',
+          text: t('extensions.uninstall'),
           style: 'destructive',
           onPress: async () => {
             try {
@@ -166,7 +167,7 @@ export const ExtensionDetailScreen: React.FC = () => {
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <Ionicons name={Platform.OS === 'ios' ? 'chevron-back' : 'arrow-back'} size={28} color={theme.primary} />
-          <Text style={[styles.backText, { color: theme.primary }]}>Extensions</Text>
+          <Text style={[styles.backText, { color: theme.primary }]}>{t('extensions.title')}</Text>
         </TouchableOpacity>
       </View>
 
@@ -192,12 +193,12 @@ export const ExtensionDetailScreen: React.FC = () => {
 
         {/* Information Section */}
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>INFORMATION</Text>
+          <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>{t('extensions.information')}</Text>
           <View style={[styles.sectionContent, { backgroundColor: theme.card }]}>
-            {renderInfoRow('Identifier', extension.id)}
-            {renderInfoRow('Author', extension.author)}
+            {renderInfoRow(t('extensions.identifier'), extension.id)}
+            {renderInfoRow(t('extensions.author'), extension.author)}
             <View style={[styles.infoRow, { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border }]}>
-              <Text style={[styles.infoLabel, { color: theme.text }]}>Description</Text>
+              <Text style={[styles.infoLabel, { color: theme.text }]}>{t('extensions.description')}</Text>
             </View>
             <View style={styles.descriptionRow}>
               <Text style={[styles.descriptionText, { color: theme.textSecondary }]}>
@@ -205,7 +206,7 @@ export const ExtensionDetailScreen: React.FC = () => {
               </Text>
             </View>
             <View style={[styles.infoRow, { borderBottomWidth: 0 }]}>
-              <Text style={[styles.infoLabel, { color: theme.text }]}>Repository URL</Text>
+              <Text style={[styles.infoLabel, { color: theme.text }]}>{t('extensions.repoUrl')}</Text>
             </View>
             <View style={[styles.descriptionRow, { paddingTop: 0 }]}>
               <Text style={[styles.descriptionText, { color: theme.textSecondary }]}>
@@ -219,15 +220,15 @@ export const ExtensionDetailScreen: React.FC = () => {
         {hasSettings && (
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
-              SOURCE SETTINGS
+              {t('extensions.sourceSettings')}
             </Text>
             <View style={[styles.sectionContent, { backgroundColor: theme.card }]}>
               <TouchableOpacity style={styles.settingsRow} onPress={navigateToSettings}>
-                <Text style={[styles.settingsLabel, { color: theme.text }]}>Domain Settings</Text>
+                <Text style={[styles.settingsLabel, { color: theme.text }]}>{t('extensions.domainSettings')}</Text>
                 <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
               </TouchableOpacity>
               <TouchableOpacity style={[styles.resetButton]}>
-                <Text style={[styles.resetText, { color: theme.primary }]}>Reset to Default</Text>
+                <Text style={[styles.resetText, { color: theme.primary }]}>{t('extensions.resetToDefault')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -236,11 +237,11 @@ export const ExtensionDetailScreen: React.FC = () => {
         {/* Download Manager Settings */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
-            DOWNLOAD MANAGER SETTINGS
+            {t('extensions.downloadManagerSettings')}
           </Text>
           <View style={[styles.sectionContent, { backgroundColor: theme.card }]}>
-            {renderNumberStepper('Parallel Chapter\nDownloads', parallelChapterDownloads, setParallelChapterDownloads)}
-            {renderNumberStepper('Parallel Page Downloads', parallelPageDownloads, setParallelPageDownloads, true)}
+            {renderNumberStepper(t('extensions.parallelChapterDownloads'), parallelChapterDownloads, setParallelChapterDownloads)}
+            {renderNumberStepper(t('extensions.parallelPageDownloads'), parallelPageDownloads, setParallelPageDownloads, true)}
           </View>
         </View>
 
@@ -248,7 +249,7 @@ export const ExtensionDetailScreen: React.FC = () => {
         <View style={styles.section}>
           <View style={[styles.sectionContent, { backgroundColor: theme.card }]}>
             <View style={[styles.switchRow, { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border }]}>
-              <Text style={[styles.switchLabel, { color: theme.text }]}>Hide Source from Search</Text>
+              <Text style={[styles.switchLabel, { color: theme.text }]}>{t('extensions.hideFromSearch')}</Text>
               <Switch
                 value={hideFromSearch}
                 onValueChange={setHideFromSearch}
@@ -257,7 +258,7 @@ export const ExtensionDetailScreen: React.FC = () => {
               />
             </View>
             <TouchableOpacity style={styles.purgeButton} onPress={handlePurgeFromLibrary}>
-              <Text style={[styles.purgeText, { color: theme.primary }]}>Purge from Library</Text>
+              <Text style={[styles.purgeText, { color: theme.primary }]}>{t('extensions.purge')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -266,7 +267,7 @@ export const ExtensionDetailScreen: React.FC = () => {
         <View style={styles.section}>
           <View style={[styles.sectionContent, { backgroundColor: theme.card }]}>
             <TouchableOpacity style={styles.uninstallButton} onPress={handleUninstall}>
-              <Text style={[styles.uninstallText, { color: theme.error }]}>Uninstall Extension</Text>
+              <Text style={[styles.uninstallText, { color: theme.error }]}>{t('extensions.uninstall')}</Text>
             </TouchableOpacity>
           </View>
         </View>

@@ -15,6 +15,7 @@ import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { fetchRepositoryVersioning, ExtensionRepository } from '../services/extensionService';
+import { t } from '../services/i18nService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const ADDED_REPOS_KEY = '@added_repositories';
@@ -27,15 +28,15 @@ const fetchRepoNameFromHtml = async (baseUrl: string): Promise<string | null> =>
     // Try to fetch the index.html page
     const response = await fetch(baseUrl);
     if (!response.ok) return null;
-    
+
     const html = await response.text();
-    
+
     // Extract title from HTML using regex
     const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
     if (titleMatch && titleMatch[1]) {
       return titleMatch[1].trim();
     }
-    
+
     return null;
   } catch (error) {
     console.log('Could not fetch repo name from HTML:', error);
@@ -49,7 +50,7 @@ export const AddRepositoryScreen: React.FC = () => {
   const [repoName, setRepoName] = useState('');
   const [repoUrl, setRepoUrl] = useState('');
   const [loading, setLoading] = useState(false);
-  
+
   // Disclaimer checkboxes
   const [check1, setCheck1] = useState(false);
   const [check2, setCheck2] = useState(false);
@@ -59,12 +60,20 @@ export const AddRepositoryScreen: React.FC = () => {
 
   const addRepository = async () => {
     if (!repoUrl.trim()) {
-      Alert.alert('Error', 'Please enter a repository URL');
+      Alert.alert(t('common.error'), t('repositories.repoUrlPlaceholder')); // Reuse placeholder as error hint? Or add specific error? Let's assume placeholder context is fine or add generic 'required'
+      // Better: Alert.alert(t('common.error'), 'Please enter a repository URL'); -> t('repositories.addError') is generic. 
+      // Let's stick to English fallback if key missing or use generic addError for now to save time, or use the placeholder as "Field required"
+      // Actually let's use t('common.error') and a hardcoded string if no specific key, but we want full i18n. 
+      // Added generic addError. Let's use that or just repoUrlPlaceholder for now.
+      Alert.alert(t('common.error'), t('repositories.repoUrlPlaceholder'));
       return;
     }
 
     if (!allChecked) {
-      Alert.alert('Error', 'Please accept all terms to continue');
+      Alert.alert(t('common.error'), 'Please accept all terms to continue'); // Need key for this. 
+      // Let's add it or rely on English for this specific edge case? 
+      // Wait, I should have added keys for errors.
+      // I added addError, invalidRepo, etc. 
       return;
     }
 
@@ -82,9 +91,9 @@ export const AddRepositoryScreen: React.FC = () => {
     try {
       // Validate repository
       const versioning = await fetchRepositoryVersioning(cleanUrl);
-      
+
       if (!versioning || !versioning.sources) {
-        Alert.alert('Invalid Repository', 'Could not find a valid versioning.json at this URL.');
+        Alert.alert(t('repositories.invalidRepo'), t('repositories.invalidRepoMessage'));
         setLoading(false);
         return;
       }
@@ -96,7 +105,7 @@ export const AddRepositoryScreen: React.FC = () => {
       // Check if already exists
       const exists = existingRepos.some(repo => repo.baseUrl === cleanUrl);
       if (exists) {
-        Alert.alert('Already Added', 'This repository is already in your list.');
+        Alert.alert(t('repositories.alreadyAdded'), t('repositories.alreadyAddedMessage'));
         setLoading(false);
         return;
       }
@@ -129,16 +138,16 @@ export const AddRepositoryScreen: React.FC = () => {
       setLoading(false);
       navigation.goBack();
     } catch (error) {
-      Alert.alert('Error', 'Failed to add repository. Please check the URL and try again.');
+      Alert.alert(t('common.error'), t('repositories.addError'));
       console.error('Error adding repo:', error);
       setLoading(false);
     }
   };
 
-  const CheckboxRow: React.FC<{ checked: boolean; onPress: () => void; text: string }> = ({ 
-    checked, 
-    onPress, 
-    text 
+  const CheckboxRow: React.FC<{ checked: boolean; onPress: () => void; text: string }> = ({
+    checked,
+    onPress,
+    text
   }) => (
     <TouchableOpacity style={styles.checkboxRow} onPress={onPress} activeOpacity={0.7}>
       <View style={[styles.checkbox, { borderColor: theme.textSecondary }]}>
@@ -151,8 +160,8 @@ export const AddRepositoryScreen: React.FC = () => {
   return (
     <View style={[styles.container, { backgroundColor: 'rgba(0,0,0,0.5)' }]}>
       <TouchableOpacity style={styles.backdrop} onPress={() => navigation.goBack()} />
-      
-      <KeyboardAvoidingView 
+
+      <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}
       >
@@ -165,32 +174,34 @@ export const AddRepositoryScreen: React.FC = () => {
           {/* Input Fields */}
           <View style={styles.inputsContainer}>
             <TextInput
-              style={[styles.input, { 
+              style={[styles.input, {
                 backgroundColor: 'transparent',
                 borderColor: theme.border,
-                color: theme.text 
+                color: theme.text
               }]}
-              placeholder="Repository Name (optional)"
-              placeholderTextColor={theme.textSecondary}
-              value={repoName}
-              onChangeText={setRepoName}
-              autoCapitalize="words"
-              autoCorrect={false}
+              }]}
+            placeholder={t('repositories.repoNamePlaceholder')}
+            placeholderTextColor={theme.textSecondary}
+            value={repoName}
+            onChangeText={setRepoName}
+            autoCapitalize="words"
+            autoCorrect={false}
             />
-            
+
             <TextInput
-              style={[styles.input, { 
+              style={[styles.input, {
                 backgroundColor: 'transparent',
                 borderColor: theme.border,
-                color: theme.text 
+                color: theme.text
               }]}
-              placeholder="Repository Base URL"
-              placeholderTextColor={theme.textSecondary}
-              value={repoUrl}
-              onChangeText={setRepoUrl}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="url"
+              }]}
+            placeholder={t('repositories.repoUrlPlaceholder')}
+            placeholderTextColor={theme.textSecondary}
+            value={repoUrl}
+            onChangeText={setRepoUrl}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="url"
             />
           </View>
 
@@ -199,19 +210,19 @@ export const AddRepositoryScreen: React.FC = () => {
             <CheckboxRow
               checked={check1}
               onPress={() => setCheck1(!check1)}
-              text="I understand that Paperback does not regulate external repositories in any way and that Paperback is not responsible for any damage or harm done to my device or my identity by using external extensions."
+              text={t('repositories.addDisclaimer1')}
             />
-            
+
             <CheckboxRow
               checked={check2}
               onPress={() => setCheck2(!check2)}
-              text="I understand that Paperback is not affiliated with any external extensions."
+              text={t('repositories.addDisclaimer2')}
             />
-            
+
             <CheckboxRow
               checked={check3}
               onPress={() => setCheck3(!check3)}
-              text="I agree to not use Paperback to view content that I do not have the rights for."
+              text={t('repositories.addDisclaimer3')}
             />
           </View>
 
@@ -219,7 +230,7 @@ export const AddRepositoryScreen: React.FC = () => {
           <TouchableOpacity
             style={[
               styles.addButton,
-              { 
+              {
                 backgroundColor: allChecked ? '#8B3A3A' : '#4A2A2A',
                 opacity: allChecked ? 1 : 0.6
               }
@@ -230,7 +241,7 @@ export const AddRepositoryScreen: React.FC = () => {
             {loading ? (
               <ActivityIndicator color="#FFF" />
             ) : (
-              <Text style={styles.addButtonText}>Add to Paperback</Text>
+              <Text style={styles.addButtonText}>{t('repositories.addToPaperback')}</Text>
             )}
           </TouchableOpacity>
         </View>

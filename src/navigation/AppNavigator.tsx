@@ -3,7 +3,7 @@ import { NavigationContainer, createNavigationContainerRef } from '@react-naviga
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useTheme } from '../context/ThemeContext';
 import { BottomTabNavigator } from './BottomTabNavigator';
-import { MangaDetailScreen, ReaderScreen, GeneralSettingsScreen, ThemeSettingsScreen, BackupsScreen, ExtensionsScreen, ExtensionDetailScreen, ExtensionSettingsScreen, AddRepositoryScreen, BrowseRepositoryScreen, BrowseAllRepositoriesScreen, DeveloperScreen, CreditsScreen, CategoryScreen, SearchResultsScreen, GenreListScreen } from '../screens';
+import { MangaDetailScreen, ReaderScreen, GeneralSettingsScreen, LanguageSettingsScreen, ThemeSettingsScreen, BackupsScreen, ExtensionsScreen, ExtensionDetailScreen, ExtensionSettingsScreen, AddRepositoryScreen, BrowseRepositoryScreen, BrowseAllRepositoriesScreen, DeveloperScreen, CreditsScreen, CategoryScreen, SearchResultsScreen, GenreListScreen } from '../screens';
 import { RootStackParamList } from '../types';
 
 export const navigationRef = createNavigationContainerRef<RootStackParamList>();
@@ -24,6 +24,7 @@ export const AppNavigator: React.FC = () => {
         <Stack.Screen name="MangaDetail" component={MangaDetailScreen} />
         <Stack.Screen name="Reader" component={ReaderScreen} />
         <Stack.Screen name="GeneralSettings" component={GeneralSettingsScreen} />
+        <Stack.Screen name="LanguageSettings" component={LanguageSettingsScreen} />
         <Stack.Screen name="ThemeSettings" component={ThemeSettingsScreen} />
         <Stack.Screen name="Backups" component={BackupsScreen} />
         <Stack.Screen name="Extensions" component={ExtensionsScreen} />

@@ -74,3 +74,15 @@ npx expo prebuild    # Generate native projects
 - Native modules require `npx expo prebuild --clean` + rebuild
 - Codemagic builds unsigned IPA (requires sideloading)
 - App uses Material You design language on Android
+
+## Internationalization (i18n)
+- **Strict Rule:** NEVER hardcode strings in UI components. Always use `t('section.key')`.
+- **Service**: Use `import { t } from '../services/i18nService'`
+- **Files**:
+  - `src/locales/en.json` (Source of truth)
+  - `src/locales/vi.json` (Vietnamese translation)
+- **Workflow**:
+  1. Add key to `en.json` (e.g., `"home": { "title": "Home" }`)
+  2. Add key to `vi.json` with translation
+  3. Use `t('home.title')` in component
+- **Exceptions**: Technical logs, developer debug info, or non-user-facing strings.

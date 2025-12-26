@@ -167,7 +167,7 @@ export const HistoryScreen: React.FC = () => {
       />
       {item.progress && (
         <Text style={[styles.progressText, { color: theme.textSecondary }]}>
-          Ch. {getChapterNumber(item)} • {formatDate(item.progress.lastRead)}
+          {t('reader.chapter')} {getChapterNumber(item)} • {formatDate(item.progress.lastRead)}
         </Text>
       )}
     </View>
@@ -216,22 +216,22 @@ export const HistoryScreen: React.FC = () => {
     return (
       <View style={[styles.container, { backgroundColor: theme.background }]}>
         <View style={styles.header}>
-          <Text style={[styles.title, { color: theme.text }]}>History</Text>
+          <Text style={[styles.title, { color: theme.text }]}>{t('history.title')}</Text>
         </View>
         <View style={styles.lockedContainer}>
           <Ionicons name="lock-closed" size={64} color={theme.textSecondary} />
           <Text style={[styles.lockedTitle, { color: theme.text }]}>
-            History is Locked
+            {t('history.locked')}
           </Text>
           <Text style={[styles.lockedDescription, { color: theme.textSecondary }]}>
-            Authenticate to view your reading history
+            {t('history.lockedHint')}
           </Text>
           <TouchableOpacity
             style={[styles.unlockButton, { backgroundColor: theme.primary }]}
             onPress={handleRetryAuth}
           >
             <Ionicons name="finger-print" size={20} color="#fff" />
-            <Text style={styles.unlockButtonText}>Unlock</Text>
+            <Text style={styles.unlockButtonText}>{t('history.unlock')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -241,7 +241,7 @@ export const HistoryScreen: React.FC = () => {
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <View style={styles.header}>
-        <Text style={[styles.title, { color: theme.text }]}>History</Text>
+        <Text style={[styles.title, { color: theme.text }]}>{t('history.title')}</Text>
         {readingHistory.length > 0 && isAuthenticated && (
           <TouchableOpacity
             style={styles.clearButton}
@@ -255,8 +255,8 @@ export const HistoryScreen: React.FC = () => {
       {readingHistory.length === 0 ? (
         <EmptyState
           icon="📖"
-          title="No reading history"
-          description="Start reading some manga and your history will appear here"
+          title={t('history.empty')}
+          description={t('history.emptyHint')}
         />
       ) : (
         <FlatList

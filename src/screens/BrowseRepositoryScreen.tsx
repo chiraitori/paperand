@@ -20,6 +20,7 @@ import {
   getTagColor,
 } from '../services/extensionService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { t } from '../services/i18nService';
 
 type RouteParams = {
   BrowseRepository: {
@@ -136,10 +137,10 @@ export const BrowseRepositoryScreen: React.FC = () => {
         JSON.stringify(newInstalled)
       );
 
-      showAppDialog('Installed', `${ext.name} has been installed successfully.`);
+      showAppDialog(t('repositories.installSuccess'), t('repositories.installSuccessMessage', { name: ext.name }));
     } catch (error) {
       console.error('Error installing extension:', error);
-      showAppDialog('Error', `Failed to install ${ext.name}: ${error}`);
+      showAppDialog(t('common.error'), t('repositories.installErrorMessage', { name: ext.name, error: String(error) }));
     }
 
     setLoadingIds((prev) => {
@@ -161,17 +162,17 @@ export const BrowseRepositoryScreen: React.FC = () => {
       return next;
     });
 
-    showAppDialog('Reloaded', `${ext.name} has been reloaded.`);
+    showAppDialog(t('repositories.reloaded'), t('repositories.reloadedMessage', { name: ext.name }));
   };
 
   const handleUninstall = async (ext: ExtensionSource) => {
     showAppDialog(
-      'Uninstall Extension',
-      `Are you sure you want to uninstall ${ext.name}?`,
+      t('repositories.uninstallTitle'),
+      t('repositories.uninstallConfirm', { name: ext.name }),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Uninstall',
+          text: t('repositories.uninstall'),
           style: 'destructive',
           onPress: async () => {
             const newInstalled = installedExtensions.filter(e => e.id !== ext.id);
@@ -262,7 +263,7 @@ export const BrowseRepositoryScreen: React.FC = () => {
                 { color: isInstalled ? theme.primary : '#FFF' },
               ]}
             >
-              {isInstalled ? 'RELOAD' : 'GET'}
+              {isInstalled ? t('repositories.reload') : t('repositories.get')}
             </Text>
           )}
         </TouchableOpacity>
@@ -276,7 +277,7 @@ export const BrowseRepositoryScreen: React.FC = () => {
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <Ionicons name={Platform.OS === 'ios' ? 'chevron-back' : 'arrow-back'} size={28} color={theme.primary} />
-          <Text style={[styles.backText, { color: theme.primary }]}>Extensions</Text>
+          <Text style={[styles.backText, { color: theme.primary }]}>{t('repositories.browseRepoTitle')}</Text>
         </TouchableOpacity>
       </View>
 
@@ -284,7 +285,7 @@ export const BrowseRepositoryScreen: React.FC = () => {
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={theme.primary} />
           <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
-            Loading extensions...
+            {t('repositories.loading')}
           </Text>
         </View>
       ) : (
@@ -300,7 +301,7 @@ export const BrowseRepositoryScreen: React.FC = () => {
               ) : (
                 <View style={styles.emptyContainer}>
                   <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-                    No extensions available
+                    {t('repositories.noExtensions')}
                   </Text>
                 </View>
               )}

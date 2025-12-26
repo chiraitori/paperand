@@ -4,6 +4,7 @@ export { LibraryScreen } from './LibraryScreen';
 export { HistoryScreen } from './HistoryScreen';
 export * from './SettingsScreen';
 export * from './GeneralSettingsScreen';
+export * from './LanguageSettingsScreen';
 export * from './ThemeSettingsScreen';
 export * from './BackupsScreen';
 export * from './ExtensionsScreen';

@@ -23,7 +23,7 @@ import { PickerModal } from '../components';
 import Constants from 'expo-constants';
 import * as Sharing from 'expo-sharing';
 import { Paths, File } from 'expo-file-system';
-import { t, getCurrentLanguage, setLanguage, SUPPORTED_LANGUAGES, LanguageCode } from '../services/i18nService';
+import { t } from '../services/i18nService';
 
 export const SettingsScreen: React.FC = () => {
   const { theme } = useTheme();
@@ -35,8 +35,6 @@ export const SettingsScreen: React.FC = () => {
   const [isClearing, setIsClearing] = useState(false);
   const [cacheLimit, setCacheLimitState] = useState<CacheLimitOption>('500MB');
   const [showCachePicker, setShowCachePicker] = useState(false);
-  const [showLanguagePicker, setShowLanguagePicker] = useState(false);
-  const [currentLang, setCurrentLang] = useState<LanguageCode>(getCurrentLanguage());
 
   const loadCacheSize = useCallback(async () => {
     const size = await getImageCacheSize();
@@ -52,17 +50,17 @@ export const SettingsScreen: React.FC = () => {
     useCallback(() => {
       loadCacheSize();
       loadCacheLimit();
-      setCurrentLang(getCurrentLanguage());
     }, [loadCacheSize, loadCacheLimit])
   );
 
   const handleCacheLimitChange = () => {
     const options: CacheLimitOption[] = ['No Cache', '300MB', '500MB', '1GB', '3GB', '5GB', '10GB'];
+    const displayOptions = options.map(opt => opt === 'No Cache' ? t('settings.noCache') : opt);
 
     if (Platform.OS === 'ios') {
       ActionSheetIOS.showActionSheetWithOptions(
         {
-          options: [...options, t('common.cancel')],
+          options: [...displayOptions, t('common.cancel')],
           cancelButtonIndex: options.length,
           title: t('settings.imageCacheSize'),
         },
@@ -75,46 +73,20 @@ export const SettingsScreen: React.FC = () => {
         }
       );
     } else {
+    } else {
       setShowCachePicker(true);
     }
   };
 
-  const handleCacheLimitSelect = (option: CacheLimitOption) => {
-    setCacheLimitState(option);
-    setCacheLimit(option);
-  };
-
-  const handleLanguageChange = () => {
-    const langCodes = Object.keys(SUPPORTED_LANGUAGES) as LanguageCode[];
-    const options = langCodes.map(code => SUPPORTED_LANGUAGES[code].nativeName);
-
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options: [...options, t('common.cancel')],
-          cancelButtonIndex: options.length,
-          title: t('settings.language'),
-        },
-        (buttonIndex) => {
-          if (buttonIndex < langCodes.length) {
-            handleLanguageSelect(langCodes[buttonIndex]);
-          }
-        }
-      );
-    } else {
-      setShowLanguagePicker(true);
+  const handleCacheLimitSelect = (displayValue: string) => {
+    const options: CacheLimitOption[] = ['No Cache', '300MB', '500MB', '1GB', '3GB', '5GB', '10GB'];
+    const displayOptions = options.map(opt => opt === 'No Cache' ? t('settings.noCache') : opt);
+    const index = displayOptions.indexOf(displayValue);
+    if (index !== -1) {
+      const option = options[index];
+      setCacheLimitState(option);
+      setCacheLimit(option);
     }
-  };
-
-  const handleLanguageSelect = async (langCode: LanguageCode) => {
-    await setLanguage(langCode);
-    setCurrentLang(langCode);
-    // Force re-render by navigating away and back, or show alert
-    Alert.alert(
-      t('settings.languageChanged'),
-      t('settings.restartRequired'),
-      [{ text: t('common.ok') }]
-    );
   };
 
   const handleClearCache = async () => {
@@ -213,11 +185,6 @@ export const SettingsScreen: React.FC = () => {
     </View>
   );
 
-  const languageOptions = Object.entries(SUPPORTED_LANGUAGES).map(([code, lang]) => ({
-    value: code,
-    label: lang.nativeName,
-  }));
-
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <View style={styles.header}>
@@ -261,11 +228,6 @@ export const SettingsScreen: React.FC = () => {
         {renderSection(
           t('settings.settingsSection'),
           <>
-            {renderSettingItem({
-              title: t('settings.language'),
-              value: SUPPORTED_LANGUAGES[currentLang].nativeName,
-              onPress: handleLanguageChange,
-            })}
             {renderSettingItem({
               title: t('settings.errorPopups'),
               rightElement: (
@@ -331,7 +293,7 @@ export const SettingsScreen: React.FC = () => {
           <>
             {renderSettingItem({
               title: t('settings.imageCacheSize'),
-              value: cacheLimit,
+              value: cacheLimit === 'No Cache' ? t('settings.noCache') : cacheLimit,
               onPress: handleCacheLimitChange,
             })}
             {renderSettingItem({
@@ -417,22 +379,10 @@ export const SettingsScreen: React.FC = () => {
         visible={showCachePicker}
         title={t('settings.imageCacheSize')}
         subtitle={t('settings.imageCacheSizeHint')}
-        options={['No Cache', '300MB', '500MB', '1GB', '3GB', '5GB', '10GB'] as CacheLimitOption[]}
-        selectedValue={cacheLimit}
+        options={['No Cache', '300MB', '500MB', '1GB', '3GB', '5GB', '10GB'].map(opt => opt === 'No Cache' ? t('settings.noCache') : opt)}
+        selectedValue={cacheLimit === 'No Cache' ? t('settings.noCache') : cacheLimit}
         onSelect={handleCacheLimitSelect}
         onClose={() => setShowCachePicker(false)}
-      />
-
-      {/* Language Picker Modal for Android */}
-      <PickerModal
-        visible={showLanguagePicker}
-        title={t('settings.language')}
-        subtitle={t('settings.selectLanguage')}
-        options={Object.keys(SUPPORTED_LANGUAGES) as LanguageCode[]}
-        selectedValue={currentLang}
-        onSelect={handleLanguageSelect}
-        onClose={() => setShowLanguagePicker(false)}
-        renderOption={(option) => SUPPORTED_LANGUAGES[option as LanguageCode].nativeName}
       />
     </View>
   );

@@ -18,6 +18,7 @@ import { useLibrary } from '../context/LibraryContext';
 import { ChapterListItem, LoadingIndicator } from '../components';
 import { getMangaDetails, getChapters } from '../services/sourceService';
 import { getGeneralSettings, updateGeneralSetting } from '../services/settingsService';
+import { t } from '../services/i18nService';
 import { Manga, RootStackParamList } from '../types';
 
 type MangaDetailRouteProp = RouteProp<RootStackParamList, 'MangaDetail'>;
@@ -267,14 +268,14 @@ export const MangaDetailScreen: React.FC = () => {
   };
 
   if (loading) {
-    return <LoadingIndicator fullScreen message="Loading manga details..." />;
+    return <LoadingIndicator fullScreen message={t('manga.loading')} />;
   }
 
   if (!manga) {
     return (
       <View style={[styles.container, { backgroundColor: theme.background }]}>
         <Text style={[styles.errorText, { color: theme.error }]}>
-          Manga not found
+          {t('manga.notFound')}
         </Text>
       </View>
     );
@@ -312,7 +313,7 @@ export const MangaDetailScreen: React.FC = () => {
               <Text style={styles.mangaTitle}>{manga.title}</Text>
               <Text style={styles.mangaAuthor}>{manga.author}</Text>
               {manga.artist && manga.artist !== manga.author && (
-                <Text style={styles.mangaArtist}>Art: {manga.artist}</Text>
+                <Text style={styles.mangaArtist}>{t('manga.artWithArtist', { artist: manga.artist })}</Text>
               )}
               <View style={styles.statusContainer}>
                 <View style={[
@@ -338,7 +339,7 @@ export const MangaDetailScreen: React.FC = () => {
             onPress={continueReading}
           >
             <Text style={styles.actionButtonText}>
-              {progress ? 'Continue Reading' : 'Start Reading'}
+              {progress ? t('manga.continueReading') : t('manga.startReading')}
             </Text>
           </TouchableOpacity>
 
@@ -386,7 +387,7 @@ export const MangaDetailScreen: React.FC = () => {
         {/* Description */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>
-            Synopsis
+            {t('manga.synopsis')}
           </Text>
           <TouchableOpacity onPress={() => setShowFullDescription(!showFullDescription)}>
             <LinkifiedText
@@ -395,7 +396,7 @@ export const MangaDetailScreen: React.FC = () => {
               numberOfLines={showFullDescription ? undefined : 3}
             />
             <Text style={[styles.showMore, { color: theme.primary }]}>
-              {showFullDescription ? 'Show less' : 'Show more'}
+              {showFullDescription ? t('manga.showLess') : t('manga.showMore')}
             </Text>
           </TouchableOpacity>
         </View>
@@ -404,11 +405,11 @@ export const MangaDetailScreen: React.FC = () => {
         <View style={styles.section}>
           <View style={styles.chapterHeader}>
             <Text style={[styles.sectionTitle, { color: theme.text }]}>
-              Chapters ({manga.chapters.length})
+              {t('manga.chapters')} ({manga.chapters.length})
             </Text>
             <TouchableOpacity onPress={handleSortToggle}>
               <Text style={[styles.sortButton, { color: theme.primary }]}>
-                {sortDescending ? '↓ Newest' : '↑ Oldest'}
+                {sortDescending ? `↓ ${t('manga.newest')}` : `↑ ${t('manga.oldest')}`}
               </Text>
             </TouchableOpacity>
           </View>

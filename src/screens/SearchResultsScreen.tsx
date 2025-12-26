@@ -18,6 +18,7 @@ import { LoadingIndicator } from '../components';
 import { searchManga, SourceManga } from '../services/sourceService';
 import { getGeneralSettings, GeneralSettings, defaultSettings } from '../services/settingsService';
 import { RootStackParamList } from '../types';
+import { t } from '../services/i18nService';
 
 type SearchResultsScreenRouteProp = RouteProp<RootStackParamList, 'SearchResults'>;
 type SearchResultsScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -173,12 +174,12 @@ export const SearchResultsScreen: React.FC = () => {
 
       {/* Content */}
       {loading && results.length === 0 ? (
-        <LoadingIndicator message="Searching..." />
+        <LoadingIndicator message={t('common.searching')} />
       ) : results.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Ionicons name="search-outline" size={64} color={theme.textSecondary} />
           <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-            No results found
+            {t('common.noResults')}
           </Text>
         </View>
       ) : (
@@ -197,13 +198,13 @@ export const SearchResultsScreen: React.FC = () => {
               <View style={styles.loadingMore}>
                 <ActivityIndicator size="small" color={theme.primary} />
                 <Text style={[styles.loadingMoreText, { color: theme.textSecondary }]}>
-                  Loading more...
+                  {t('common.loadingMore')}
                 </Text>
               </View>
             ) : !hasMoreResults && results.length > 0 ? (
               <View style={styles.endOfResults}>
                 <Text style={[styles.endOfResultsText, { color: theme.textSecondary }]}>
-                  No more results
+                  {t('search.noMoreResults')}
                 </Text>
               </View>
             ) : null

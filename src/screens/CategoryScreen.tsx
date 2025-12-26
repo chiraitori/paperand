@@ -18,6 +18,7 @@ import { LoadingIndicator } from '../components';
 import { getViewMoreItems, searchByTag, SourceManga } from '../services/sourceService';
 import { getGeneralSettings, GeneralSettings, defaultSettings } from '../services/settingsService';
 import { RootStackParamList } from '../types';
+import { t } from '../services/i18nService';
 
 type CategoryScreenRouteProp = RouteProp<RootStackParamList, 'Category'>;
 type CategoryScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -177,12 +178,12 @@ export const CategoryScreen: React.FC = () => {
 
       {/* Content */}
       {loading && results.length === 0 ? (
-        <LoadingIndicator message="Loading..." />
+        <LoadingIndicator message={t('common.loading')} />
       ) : results.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Ionicons name="albums-outline" size={64} color={theme.textSecondary} />
           <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-            No items found
+            {t('category.noItems')}
           </Text>
         </View>
       ) : (
@@ -201,13 +202,13 @@ export const CategoryScreen: React.FC = () => {
               <View style={styles.loadingMore}>
                 <ActivityIndicator size="small" color={theme.primary} />
                 <Text style={[styles.loadingMoreText, { color: theme.textSecondary }]}>
-                  Loading more...
+                  {t('category.loadingMore')}
                 </Text>
               </View>
             ) : !hasMoreResults && results.length > 0 ? (
               <View style={styles.endOfResults}>
                 <Text style={[styles.endOfResultsText, { color: theme.textSecondary }]}>
-                  No more results
+                  {t('category.noMoreResults')}
                 </Text>
               </View>
             ) : null
