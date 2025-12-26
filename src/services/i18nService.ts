@@ -10,7 +10,7 @@
 import { I18n } from 'i18n-js';
 import * as Localization from 'expo-localization';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { en, vi, zh, de, id, ja, ms, ru, es, th } from '../locales';
+import { en, vi, zh, de, id, ja, ms, ru, es, th, el, hi, hu, it, lo, pt } from '../locales';
 
 // Supported languages with display names
 export const SUPPORTED_LANGUAGES = {
@@ -18,9 +18,15 @@ export const SUPPORTED_LANGUAGES = {
     vi: { name: 'Vietnamese', nativeName: 'Tiếng Việt' },
     zh: { name: 'Chinese (Simplified)', nativeName: '简体中文' },
     de: { name: 'German', nativeName: 'Deutsch' },
+    el: { name: 'Greek', nativeName: 'Ελληνικά' },
+    hi: { name: 'Hindi', nativeName: 'हिन्दी' },
+    hu: { name: 'Hungarian', nativeName: 'Magyar' },
     id: { name: 'Indonesian', nativeName: 'Bahasa Indonesia' },
+    it: { name: 'Italian', nativeName: 'Italiano' },
     ja: { name: 'Japanese', nativeName: '日本語' },
+    lo: { name: 'Lao', nativeName: 'ລາວ' },
     ms: { name: 'Malay', nativeName: 'Bahasa Melayu' },
+    pt: { name: 'Portuguese', nativeName: 'Português' },
     ru: { name: 'Russian', nativeName: 'Русский' },
     es: { name: 'Spanish', nativeName: 'Español' },
     th: { name: 'Thai', nativeName: 'ไทย' },
@@ -36,9 +42,15 @@ const i18n = new I18n({
     vi,
     zh,
     de,
+    el,
+    hi,
+    hu,
     id,
+    it,
     ja,
+    lo,
     ms,
+    pt,
     ru,
     es,
     th,

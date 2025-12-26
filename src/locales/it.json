@@ -1,0 +1,114 @@
+{
+    "common": {
+        "loading": "Loading...",
+        "error": "Error",
+        "retry": "Retry",
+        "cancel": "Cancel",
+        "ok": "OK",
+        "save": "Save",
+        "delete": "Delete",
+        "edit": "Edit",
+        "done": "Done",
+        "search": "Search",
+        "noResults": "No results found",
+        "pullToRefresh": "Pull to refresh"
+    },
+    "tabs": {
+        "discover": "Discover",
+        "library": "Library",
+        "history": "History",
+        "search": "Search",
+        "settings": "Settings"
+    },
+    "library": {
+        "title": "Library",
+        "empty": "Your library is empty",
+        "emptyHint": "Add manga from extensions to get started",
+        "favorites": "Favorites",
+        "allManga": "All Manga",
+        "removeFromLibrary": "Remove from Library",
+        "addToLibrary": "Add to Library"
+    },
+    "history": {
+        "title": "History",
+        "empty": "No reading history",
+        "emptyHint": "Start reading manga to see your history here",
+        "clearHistory": "Clear History",
+        "clearHistoryConfirm": "Are you sure you want to clear all reading history?"
+    },
+    "reader": {
+        "chapter": "Chapter",
+        "page": "Page",
+        "nextChapter": "Next Chapter",
+        "previousChapter": "Previous Chapter",
+        "noNextChapter": "No next chapter available",
+        "noPreviousChapter": "No previous chapter available",
+        "settings": "Reader Settings",
+        "vertical": "Vertical",
+        "horizontal": "Horizontal",
+        "leftToRight": "Left to Right",
+        "rightToLeft": "Right to Left",
+        "pagePadding": "Page Padding"
+    },
+    "manga": {
+        "synopsis": "Synopsis",
+        "chapters": "Chapters",
+        "startReading": "Start Reading",
+        "continueReading": "Continue Reading",
+        "author": "Author",
+        "artist": "Artist",
+        "status": "Status",
+        "ongoing": "Ongoing",
+        "completed": "Completed",
+        "hiatus": "Hiatus",
+        "unknown": "Unknown"
+    },
+    "extensions": {
+        "title": "Extensions",
+        "installed": "Installed",
+        "browse": "Browse",
+        "repositories": "Repositories",
+        "addRepository": "Add Repository",
+        "noExtensions": "No extensions installed",
+        "install": "Install",
+        "uninstall": "Uninstall",
+        "update": "Update"
+    },
+    "settings": {
+        "title": "Settings",
+        "general": "General",
+        "appearance": "Appearance",
+        "theme": "Theme",
+        "darkMode": "Dark Mode",
+        "lightMode": "Light Mode",
+        "systemDefault": "System Default",
+        "language": "Language",
+        "libraryAuth": "Library Authentication",
+        "historyAuth": "History Authentication",
+        "biometricAuth": "Biometric Authentication",
+        "about": "About",
+        "version": "Version",
+        "developer": "Developer Options",
+        "backups": "Backups",
+        "credits": "Credits"
+    },
+    "update": {
+        "available": "Update Available!",
+        "whatsNew": "What's New",
+        "downloadApk": "Download APK",
+        "viewOnGitHub": "View on GitHub",
+        "skipVersion": "Skip This Version",
+        "later": "Later",
+        "downloading": "Downloading...",
+        "installing": "Installing...",
+        "installUpdate": "Install Update",
+        "iosNote": "Automatic installation is not available on iOS. Please download the IPA from GitHub and sideload with AltStore or Sideloadly."
+    },
+    "auth": {
+        "authenticate": "Authenticate",
+        "authRequired": "Authentication Required",
+        "authFailed": "Authentication Failed",
+        "tryAgain": "Try Again",
+        "usePasscode": "Use Passcode"
+    }
+}
