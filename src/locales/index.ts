@@ -1,0 +1,10 @@
+export { default as en } from './en.json';
+export { default as vi } from './vi.json';
+export { default as zh } from './zh.json';
+export { default as de } from './de.json';
+export { default as id } from './id.json';
+export { default as ja } from './ja.json';
+export { default as ms } from './ms.json';
+export { default as ru } from './ru.json';
+export { default as es } from './es.json';
+export { default as th } from './th.json';

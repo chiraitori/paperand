@@ -121,7 +121,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
     const lines = releaseInfo.releaseNotes.split('\n');
     return lines.map((line, index) => {
       const trimmedLine = line.trim();
-      
+
       // Heading
       if (trimmedLine.startsWith('## ')) {
         return (
@@ -130,7 +130,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
           </Text>
         );
       }
-      
+
       // List item
       if (trimmedLine.startsWith('- ') || trimmedLine.startsWith('* ')) {
         return (
@@ -139,7 +139,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
           </Text>
         );
       }
-      
+
       // Regular text
       if (trimmedLine) {
         return (
@@ -148,7 +148,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
           </Text>
         );
       }
-      
+
       // Empty line
       return <View key={index} style={styles.releaseNotesSpacer} />;
     });
@@ -308,7 +308,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
           {/* Platform Note for iOS */}
           {Platform.OS === 'ios' && (
             <Text style={[styles.platformNote, { color: colors.textSecondary }]}>
-              Automatic installation is not available on iOS. Please download from the App Store or GitHub.
+              Automatic installation is not available on iOS. Please download the IPA from GitHub and sideload with AltStore or Sideloadly.
             </Text>
           )}
         </View>

@@ -1,0 +1,114 @@
+{
+    "common": {
+        "loading": "Đang tải...",
+        "error": "Lỗi",
+        "retry": "Thử lại",
+        "cancel": "Hủy",
+        "ok": "OK",
+        "save": "Lưu",
+        "delete": "Xóa",
+        "edit": "Sửa",
+        "done": "Xong",
+        "search": "Tìm kiếm",
+        "noResults": "Không tìm thấy kết quả",
+        "pullToRefresh": "Kéo để làm mới"
+    },
+    "tabs": {
+        "discover": "Khám phá",
+        "library": "Thư viện",
+        "history": "Lịch sử",
+        "search": "Tìm kiếm",
+        "settings": "Cài đặt"
+    },
+    "library": {
+        "title": "Thư viện",
+        "empty": "Thư viện trống",
+        "emptyHint": "Thêm truyện từ extensions để bắt đầu",
+        "favorites": "Yêu thích",
+        "allManga": "Tất cả truyện",
+        "removeFromLibrary": "Xóa khỏi thư viện",
+        "addToLibrary": "Thêm vào thư viện"
+    },
+    "history": {
+        "title": "Lịch sử",
+        "empty": "Chưa có lịch sử đọc",
+        "emptyHint": "Bắt đầu đọc truyện để xem lịch sử tại đây",
+        "clearHistory": "Xóa lịch sử",
+        "clearHistoryConfirm": "Bạn có chắc muốn xóa toàn bộ lịch sử đọc?"
+    },
+    "reader": {
+        "chapter": "Chương",
+        "page": "Trang",
+        "nextChapter": "Chương tiếp",
+        "previousChapter": "Chương trước",
+        "noNextChapter": "Không có chương tiếp theo",
+        "noPreviousChapter": "Không có chương trước",
+        "settings": "Cài đặt đọc truyện",
+        "vertical": "Dọc",
+        "horizontal": "Ngang",
+        "leftToRight": "Trái sang phải",
+        "rightToLeft": "Phải sang trái",
+        "pagePadding": "Khoảng cách trang"
+    },
+    "manga": {
+        "synopsis": "Tóm tắt",
+        "chapters": "Danh sách chương",
+        "startReading": "Bắt đầu đọc",
+        "continueReading": "Đọc tiếp",
+        "author": "Tác giả",
+        "artist": "Họa sĩ",
+        "status": "Trạng thái",
+        "ongoing": "Đang tiến hành",
+        "completed": "Hoàn thành",
+        "hiatus": "Tạm ngưng",
+        "unknown": "Không rõ"
+    },
+    "extensions": {
+        "title": "Tiện ích mở rộng",
+        "installed": "Đã cài đặt",
+        "browse": "Duyệt",
+        "repositories": "Kho tiện ích",
+        "addRepository": "Thêm kho",
+        "noExtensions": "Chưa cài tiện ích nào",
+        "install": "Cài đặt",
+        "uninstall": "Gỡ cài đặt",
+        "update": "Cập nhật"
+    },
+    "settings": {
+        "title": "Cài đặt",
+        "general": "Chung",
+        "appearance": "Giao diện",
+        "theme": "Chủ đề",
+        "darkMode": "Chế độ tối",
+        "lightMode": "Chế độ sáng",
+        "systemDefault": "Theo hệ thống",
+        "language": "Ngôn ngữ",
+        "libraryAuth": "Xác thực thư viện",
+        "historyAuth": "Xác thực lịch sử",
+        "biometricAuth": "Xác thực sinh trắc học",
+        "about": "Thông tin",
+        "version": "Phiên bản",
+        "developer": "Tùy chọn nhà phát triển",
+        "backups": "Sao lưu",
+        "credits": "Ghi công"
+    },
+    "update": {
+        "available": "Có bản cập nhật mới!",
+        "whatsNew": "Có gì mới",
+        "downloadApk": "Tải APK",
+        "viewOnGitHub": "Xem trên GitHub",
+        "skipVersion": "Bỏ qua phiên bản này",
+        "later": "Để sau",
+        "downloading": "Đang tải...",
+        "installing": "Đang cài đặt...",
+        "installUpdate": "Cài đặt bản cập nhật",
+        "iosNote": "iOS không hỗ trợ cài đặt tự động. Vui lòng tải IPA từ GitHub và sideload bằng AltStore hoặc Sideloadly."
+    },
+    "auth": {
+        "authenticate": "Xác thực",
+        "authRequired": "Yêu cầu xác thực",
+        "authFailed": "Xác thực thất bại",
+        "tryAgain": "Thử lại",
+        "usePasscode": "Dùng mật khẩu"
+    }
+}
