@@ -16,7 +16,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { useLibrary } from '../context/LibraryContext';
 import { ChapterListItem, LoadingIndicator } from '../components';
-import { getMangaById } from '../data/mockData';
 import { getMangaDetails, getChapters } from '../services/sourceService';
 import { getGeneralSettings, updateGeneralSetting } from '../services/settingsService';
 import { Manga, RootStackParamList } from '../types';
@@ -216,11 +215,8 @@ export const MangaDetailScreen: React.FC = () => {
           setManga(mangaData);
         }
       } else {
-        // Fallback to mock data
-        const data = await getMangaById(mangaId);
-        if (data) {
-          setManga(data);
-        }
+        // No sourceId provided - cannot fetch manga
+        console.error('[MangaDetail] No sourceId provided for manga:', mangaId);
       }
     } catch (error) {
       console.error('Failed to load manga:', error);

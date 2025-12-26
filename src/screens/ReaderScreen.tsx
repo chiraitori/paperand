@@ -23,7 +23,6 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { useLibrary } from '../context/LibraryContext';
-import { getMangaById, getChapterById } from '../data/mockData';
 import { getChapterPages, getMangaDetails, getChapters, decryptDrmImage } from '../services/sourceService';
 import { Manga, Chapter, Page, RootStackParamList } from '../types';
 
@@ -746,20 +745,8 @@ export const ReaderScreen: React.FC = () => {
           setAllPagesLoaded(pageData.length <= 3);
         }
       } else {
-        // Fallback to mock data
-        const [mangaData, chapterData] = await Promise.all([
-          getMangaById(mangaId),
-          getChapterById(mangaId, chapterId),
-        ]);
-
-        if (mangaData && chapterData) {
-          setManga(mangaData);
-          setChapter(chapterData);
-          const pageData = chapterData.pages || [];
-          setPages(pageData);
-          setLoadedPages(pageData.slice(0, 3));
-          setAllPagesLoaded(pageData.length <= 3);
-        }
+        // No sourceId provided - cannot load chapter
+        console.error('[Reader] No sourceId provided for chapter:', mangaId, chapterId);
       }
     } catch (error) {
       console.error('Failed to load reader data:', error);
