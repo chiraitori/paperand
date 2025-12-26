@@ -12,6 +12,8 @@ jobs:
   synchronize-with-crowdin:
     name: Sync with Crowdin
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -33,6 +35,9 @@ jobs:
     name: Download Translations
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
