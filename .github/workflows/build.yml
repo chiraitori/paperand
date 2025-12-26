@@ -120,12 +120,6 @@ jobs:
     outputs:
       ipa_downloaded: ${{ steps.download.outputs.downloaded }}
     steps:
-      - name: Wait for Codemagic build to complete
-        id: wait
-        run: |
-          echo "Waiting 5 minutes for Codemagic to build..."
-          sleep 300
-          
       - name: Download IPA from Codemagic
         id: download
         env:
