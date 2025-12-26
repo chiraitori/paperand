@@ -77,6 +77,7 @@ export default function App() {
             libraryAuth: settings.libraryAuth || false,
             historyAuth: settings.historyAuth || false,
           });
+          console.log('[Privacy] Auth settings loaded:', settings.libraryAuth, settings.historyAuth);
         }
       } catch (error) {
         console.error('Failed to load auth settings:', error);
@@ -90,6 +91,7 @@ export default function App() {
     const unsubscribe = navigationRef.addListener('state', () => {
       if (navigationRef.isReady()) {
         const route = navigationRef.getCurrentRoute();
+        console.log('[Privacy] Current route:', route?.name);
         setCurrentRoute(route?.name || null);
       }
     });
@@ -99,8 +101,17 @@ export default function App() {
   // Listen for app state changes to show privacy overlay
   useEffect(() => {
     const subscription = AppState.addEventListener('change', async (nextAppState: AppStateStatus) => {
-      // When going to background, reload settings to get latest values
+      console.log('[Privacy] AppState changed to:', nextAppState);
+
+      // When going to background, reload settings and get current route
       if (nextAppState === 'background' || nextAppState === 'inactive') {
+        // Get current route immediately
+        if (navigationRef.isReady()) {
+          const route = navigationRef.getCurrentRoute();
+          console.log('[Privacy] Route when going inactive:', route?.name);
+          setCurrentRoute(route?.name || null);
+        }
+
         try {
           const savedSettings = await AsyncStorage.getItem(SETTINGS_KEY);
           if (savedSettings) {
@@ -109,6 +120,7 @@ export default function App() {
               libraryAuth: settings.libraryAuth || false,
               historyAuth: settings.historyAuth || false,
             });
+            console.log('[Privacy] Settings when inactive:', settings.libraryAuth, settings.historyAuth);
           }
         } catch (error) { }
         setIsAppInactive(true);
@@ -128,6 +140,8 @@ export default function App() {
     (currentRoute === 'Library' && authSettings.libraryAuth) ||
     (currentRoute === 'History' && authSettings.historyAuth)
   );
+
+  console.log('[Privacy] Should show overlay:', shouldShowPrivacyOverlay, 'Route:', currentRoute, 'Inactive:', isAppInactive, 'LibAuth:', authSettings.libraryAuth, 'HistAuth:', authSettings.historyAuth);
 
   // Check for updates on app start
   useEffect(() => {
