@@ -21,6 +21,7 @@ import { useLibrary } from '../context/LibraryContext';
 import { MangaCard, EmptyState, MangaPreviewModal } from '../components';
 import { RootStackParamList, LibraryEntry, Manga } from '../types';
 import { getGeneralSettings, GeneralSettings, defaultSettings } from '../services/settingsService';
+import { t } from '../services/i18nService';
 
 type LibraryScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -55,8 +56,8 @@ export const LibraryScreen: React.FC = () => {
     if (loadedSettings.libraryAuth) {
       // Require authentication - will use biometric or device PIN/passcode
       const result = await LocalAuthentication.authenticateAsync({
-        promptMessage: 'Authenticate to view Library',
-        fallbackLabel: 'Use Passcode',
+        promptMessage: t('auth.authRequired'),
+        fallbackLabel: t('auth.usePasscode'),
         disableDeviceFallback: false,
       });
 
@@ -131,10 +132,10 @@ export const LibraryScreen: React.FC = () => {
   const filteredLibrary = getFilteredLibrary();
 
   const filters: { key: FilterType; label: string }[] = [
-    { key: 'all', label: 'All' },
-    { key: 'favorites', label: 'Favorites' },
-    { key: 'reading', label: 'Reading' },
-    { key: 'completed', label: 'Completed' },
+    { key: 'all', label: t('library.all') },
+    { key: 'favorites', label: t('library.favorites') },
+    { key: 'reading', label: t('library.reading') },
+    { key: 'completed', label: t('library.completed') },
   ];
 
   const navigateToManga = (entry: LibraryEntry) => {
@@ -179,8 +180,8 @@ export const LibraryScreen: React.FC = () => {
 
   const handleRetryAuth = async () => {
     const result = await LocalAuthentication.authenticateAsync({
-      promptMessage: 'Authenticate to view Library',
-      fallbackLabel: 'Use Passcode',
+      promptMessage: t('auth.authRequired'),
+      fallbackLabel: t('auth.usePasscode'),
       disableDeviceFallback: false,
     });
 
@@ -192,7 +193,7 @@ export const LibraryScreen: React.FC = () => {
     return (
       <View style={[styles.container, { backgroundColor: theme.background }]}>
         <View style={styles.header}>
-          <Text style={[styles.title, { color: theme.text }]}>Library</Text>
+          <Text style={[styles.title, { color: theme.text }]}>{t('library.title')}</Text>
         </View>
       </View>
     );
@@ -203,22 +204,22 @@ export const LibraryScreen: React.FC = () => {
     return (
       <View style={[styles.container, { backgroundColor: theme.background }]}>
         <View style={styles.header}>
-          <Text style={[styles.title, { color: theme.text }]}>Library</Text>
+          <Text style={[styles.title, { color: theme.text }]}>{t('library.title')}</Text>
         </View>
         <View style={styles.lockedContainer}>
           <Ionicons name="lock-closed" size={64} color={theme.textSecondary} />
           <Text style={[styles.lockedTitle, { color: theme.text }]}>
-            Library is Locked
+            {t('library.locked')}
           </Text>
           <Text style={[styles.lockedDescription, { color: theme.textSecondary }]}>
-            Authenticate to view your manga library
+            {t('library.lockedHint')}
           </Text>
           <TouchableOpacity
             style={[styles.unlockButton, { backgroundColor: theme.primary }]}
             onPress={handleRetryAuth}
           >
             <Ionicons name="finger-print" size={20} color="#fff" />
-            <Text style={styles.unlockButtonText}>Unlock</Text>
+            <Text style={styles.unlockButtonText}>{t('library.unlock')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -228,7 +229,7 @@ export const LibraryScreen: React.FC = () => {
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <View style={styles.header}>
-        <Text style={[styles.title, { color: theme.text }]}>Library</Text>
+        <Text style={[styles.title, { color: theme.text }]}>{t('library.title')}</Text>
       </View>
 
       <View style={styles.filterContainer}>

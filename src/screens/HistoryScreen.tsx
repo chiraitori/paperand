@@ -20,6 +20,7 @@ import { useLibrary } from '../context/LibraryContext';
 import { MangaCard, EmptyState, MangaPreviewModal } from '../components';
 import { RootStackParamList, LibraryEntry, Manga } from '../types';
 import { getGeneralSettings, GeneralSettings, defaultSettings } from '../services/settingsService';
+import { t } from '../services/i18nService';
 
 type HistoryScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -48,8 +49,8 @@ export const HistoryScreen: React.FC = () => {
     if (loadedSettings.historyAuth) {
       // Require authentication - will use biometric or device PIN/passcode
       const result = await LocalAuthentication.authenticateAsync({
-        promptMessage: 'Authenticate to view History',
-        fallbackLabel: 'Use Passcode',
+        promptMessage: t('auth.authRequired'),
+        fallbackLabel: t('auth.usePasscode'),
         disableDeviceFallback: false,
       });
 
@@ -110,12 +111,12 @@ export const HistoryScreen: React.FC = () => {
 
   const handleClearHistory = () => {
     Alert.alert(
-      'Clear Reading History',
-      'Are you sure you want to clear all reading history? This will remove all entries except favorites. This cannot be undone.',
+      t('history.clearHistory'),
+      t('history.clearHistoryConfirm'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Clear',
+          text: t('common.delete'),
           style: 'destructive',
           onPress: async () => {
             await clearHistory();
@@ -184,15 +185,15 @@ export const HistoryScreen: React.FC = () => {
     const diffTime = Math.abs(now.getTime() - date.getTime());
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-    if (diffDays === 0) return 'Today';
-    if (diffDays === 1) return 'Yesterday';
-    if (diffDays < 7) return `${diffDays} days ago`;
+    if (diffDays === 0) return t('history.today');
+    if (diffDays === 1) return t('history.yesterday');
+    if (diffDays < 7) return t('history.daysAgo', { count: diffDays });
     return date.toLocaleDateString();
   };
   const handleRetryAuth = async () => {
     const result = await LocalAuthentication.authenticateAsync({
-      promptMessage: 'Authenticate to view History',
-      fallbackLabel: 'Use Passcode',
+      promptMessage: t('auth.authRequired'),
+      fallbackLabel: t('auth.usePasscode'),
       disableDeviceFallback: false,
     });
 

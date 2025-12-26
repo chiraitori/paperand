@@ -26,17 +26,29 @@
         "title": "Thư viện",
         "empty": "Thư viện trống",
         "emptyHint": "Thêm truyện từ tiện ích mở rộng để bắt đầu",
+        "all": "Tất cả",
         "favorites": "Yêu thích",
+        "reading": "Đang đọc",
+        "completed": "Hoàn thành",
         "allManga": "Tất cả truyện",
         "removeFromLibrary": "Xóa khỏi thư viện",
-        "addToLibrary": "Thêm vào thư viện"
+        "addToLibrary": "Thêm vào thư viện",
+        "locked": "Thư viện đã khóa",
+        "lockedHint": "Xác thực để xem thư viện truyện của bạn",
+        "unlock": "Mở khóa"
     },
     "history": {
         "title": "Lịch sử",
         "empty": "Chưa có lịch sử đọc",
         "emptyHint": "Bắt đầu đọc truyện để xem lịch sử tại đây",
         "clearHistory": "Xóa lịch sử",
-        "clearHistoryConfirm": "Bạn có chắc muốn xóa toàn bộ lịch sử đọc?"
+        "clearHistoryConfirm": "Bạn có chắc muốn xóa toàn bộ lịch sử đọc? Thao tác này sẽ xóa tất cả ngoại trừ mục yêu thích. Không thể hoàn tác.",
+        "today": "Hôm nay",
+        "yesterday": "Hôm qua",
+        "daysAgo": "{{count}} ngày trước",
+        "locked": "Lịch sử đã khóa",
+        "lockedHint": "Xác thực để xem lịch sử đọc của bạn",
+        "unlock": "Mở khóa"
     },
     "reader": {
         "chapter": "Chương",

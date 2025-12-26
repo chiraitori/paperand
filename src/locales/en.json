@@ -26,17 +26,29 @@
         "title": "Library",
         "empty": "Your library is empty",
         "emptyHint": "Add manga from extensions to get started",
+        "all": "All",
         "favorites": "Favorites",
+        "reading": "Reading",
+        "completed": "Completed",
         "allManga": "All Manga",
         "removeFromLibrary": "Remove from Library",
-        "addToLibrary": "Add to Library"
+        "addToLibrary": "Add to Library",
+        "locked": "Library is Locked",
+        "lockedHint": "Authenticate to view your manga library",
+        "unlock": "Unlock"
     },
     "history": {
         "title": "History",
         "empty": "No reading history",
         "emptyHint": "Start reading manga to see your history here",
         "clearHistory": "Clear History",
-        "clearHistoryConfirm": "Are you sure you want to clear all reading history?"
+        "clearHistoryConfirm": "Are you sure you want to clear all reading history? This will remove all entries except favorites. This cannot be undone.",
+        "today": "Today",
+        "yesterday": "Yesterday",
+        "daysAgo": "{{count}} days ago",
+        "locked": "History is Locked",
+        "lockedHint": "Authenticate to view your reading history",
+        "unlock": "Unlock"
     },
     "reader": {
         "chapter": "Chapter",
