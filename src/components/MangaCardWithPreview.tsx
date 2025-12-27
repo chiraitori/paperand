@@ -54,8 +54,11 @@ export const MangaCardWithPreview: React.FC<MangaCardWithPreviewProps> = ({
 }) => {
     const { theme } = useTheme();
 
+    // TEMPORARILY DISABLED: ContextMenuView causing black screen issue
+    // TODO: Re-enable after fixing or testing on real device
     // Use native iOS context menu on iOS production builds
-    if (Platform.OS === 'ios' && ContextMenuView && !isExpoGo) {
+    const useNativeContextMenu = false; // Disabled for debugging
+    if (useNativeContextMenu && Platform.OS === 'ios' && ContextMenuView && !isExpoGo) {
         // Build menu items dynamically based on props
         const menuItems: any[] = [];
 
