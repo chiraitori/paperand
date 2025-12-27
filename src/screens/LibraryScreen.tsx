@@ -47,6 +47,7 @@ export const LibraryScreen: React.FC = () => {
   // Authentication state
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
+  const [settingsLoaded, setSettingsLoaded] = useState(false); // Track if settings have been loaded
 
   // Track app state for re-auth on resume
   const appState = useRef(AppState.currentState);
@@ -55,6 +56,7 @@ export const LibraryScreen: React.FC = () => {
   const performAuthCheck = useCallback(async () => {
     const loadedSettings = await getGeneralSettings();
     setSettings(loadedSettings);
+    setSettingsLoaded(true); // Mark settings as loaded
 
     if (loadedSettings.libraryAuth) {
       // Require authentication - will use biometric or device PIN/passcode
@@ -94,8 +96,8 @@ export const LibraryScreen: React.FC = () => {
     };
   }, [performAuthCheck]);
 
-  // Prevent screen capture when library auth is enabled (disabled in Expo Go)
-  usePreventScreenCapture(!isExpoGo && settings.libraryAuth ? 'library_auth' : undefined);
+  // DISABLED: Screen capture prevention causing issues
+  // usePreventScreenCapture(!isExpoGo && settingsLoaded && settings.libraryAuth ? 'library_auth' : undefined);
 
   // Load settings and check auth when screen is focused
   useFocusEffect(

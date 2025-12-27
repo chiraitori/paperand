@@ -35,6 +35,7 @@ export const HistoryScreen: React.FC = () => {
   const { width, height } = useWindowDimensions();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
+  const [settingsLoaded, setSettingsLoaded] = useState(false); // Track if settings loaded
 
   // Preview modal state
   const [previewVisible, setPreviewVisible] = useState(false);
@@ -48,6 +49,7 @@ export const HistoryScreen: React.FC = () => {
   const performAuthCheck = useCallback(async () => {
     const loadedSettings = await getGeneralSettings();
     setSettings(loadedSettings);
+    setSettingsLoaded(true); // Mark settings as loaded
 
     if (loadedSettings.historyAuth) {
       // Require authentication - will use biometric or device PIN/passcode
@@ -87,8 +89,8 @@ export const HistoryScreen: React.FC = () => {
     };
   }, [performAuthCheck]);
 
-  // Prevent screen capture when history auth is enabled
-  usePreventScreenCapture(!isExpoGo && settings.historyAuth ? 'history_auth' : undefined);
+  // DISABLED: Screen capture prevention causing issues
+  // usePreventScreenCapture(!isExpoGo && settingsLoaded && settings.historyAuth ? 'history_auth' : undefined);
 
   // Load settings and check auth when screen is focused
   useFocusEffect(
