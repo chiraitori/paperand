@@ -70,40 +70,26 @@ export const HistoryScreen: React.FC = () => {
   const isLandscape = width > height;
   const numColumns = isLandscape ? settings.landscapeColumns : settings.portraitColumns;
 
-  // Listen for app state changes to re-lock when coming from background
+  // Auth check only runs once when component mounts
   useEffect(() => {
-    const subscription = AppState.addEventListener('change', async (nextAppState: AppStateStatus) => {
-      // When app comes back from background to active
-      if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
-        // Reset and re-authenticate
-        setIsAuthenticated(false);
-        setAuthChecked(false);
-        // Trigger re-auth
-        await performAuthCheck();
-      }
-      appState.current = nextAppState;
-    });
+    performAuthCheck();
+  }, []); // Only run once on mount
 
+  // Prevent screen capture when history auth is enabled using imperative API
+  useEffect(() => {
+    const ScreenCapture = require('expo-screen-capture');
+
+    if (!isExpoGo && settingsLoaded && settings.historyAuth) {
+      ScreenCapture.preventScreenCaptureAsync('history_auth');
+    } else {
+      ScreenCapture.allowScreenCaptureAsync('history_auth');
+    }
+
+    // Cleanup on unmount
     return () => {
-      subscription.remove();
+      ScreenCapture.allowScreenCaptureAsync('history_auth');
     };
-  }, [performAuthCheck]);
-
-  // DISABLED: Screen capture prevention causing issues
-  // usePreventScreenCapture(!isExpoGo && settingsLoaded && settings.historyAuth ? 'history_auth' : undefined);
-
-  // Load settings and check auth when screen is focused
-  useFocusEffect(
-    useCallback(() => {
-      performAuthCheck();
-
-      // Reset auth when leaving screen
-      return () => {
-        setIsAuthenticated(false);
-        setAuthChecked(false);
-      };
-    }, [performAuthCheck])
-  );
+  }, [settingsLoaded, settings.historyAuth]);
 
   // Filter and sort by last read
   const readingHistory = library

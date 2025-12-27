@@ -15,7 +15,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import * as LocalAuthentication from 'expo-local-authentication';
-import { usePreventScreenCapture } from 'expo-screen-capture';
+import { usePreventScreenCapture } from 'expo-screen-capture'; // Keep for type, using imperative API
 import { useTheme } from '../context/ThemeContext';
 import { useLibrary } from '../context/LibraryContext';
 import { MangaCard, EmptyState, MangaPreviewModal, MangaCardWithPreview } from '../components';
@@ -77,40 +77,26 @@ export const LibraryScreen: React.FC = () => {
   const isLandscape = width > height;
   const numColumns = isLandscape ? settings.landscapeColumns : settings.portraitColumns;
 
-  // Listen for app state changes to re-lock when coming from background
+  // Auth check only runs once when component mounts or settings change
   useEffect(() => {
-    const subscription = AppState.addEventListener('change', async (nextAppState: AppStateStatus) => {
-      // When app comes back from background to active
-      if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
-        // Reset and re-authenticate
-        setIsAuthenticated(false);
-        setAuthChecked(false);
-        // Trigger re-auth
-        await performAuthCheck();
-      }
-      appState.current = nextAppState;
-    });
+    performAuthCheck();
+  }, []); // Only run once on mount
 
+  // Prevent screen capture when library auth is enabled using imperative API
+  useEffect(() => {
+    const ScreenCapture = require('expo-screen-capture');
+
+    if (!isExpoGo && settingsLoaded && settings.libraryAuth) {
+      ScreenCapture.preventScreenCaptureAsync('library_auth');
+    } else {
+      ScreenCapture.allowScreenCaptureAsync('library_auth');
+    }
+
+    // Cleanup on unmount
     return () => {
-      subscription.remove();
+      ScreenCapture.allowScreenCaptureAsync('library_auth');
     };
-  }, [performAuthCheck]);
-
-  // DISABLED: Screen capture prevention causing issues
-  // usePreventScreenCapture(!isExpoGo && settingsLoaded && settings.libraryAuth ? 'library_auth' : undefined);
-
-  // Load settings and check auth when screen is focused
-  useFocusEffect(
-    useCallback(() => {
-      performAuthCheck();
-
-      // Reset auth when leaving screen
-      return () => {
-        setIsAuthenticated(false);
-        setAuthChecked(false);
-      };
-    }, [performAuthCheck])
-  );
+  }, [settingsLoaded, settings.libraryAuth]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
