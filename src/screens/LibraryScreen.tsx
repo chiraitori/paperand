@@ -82,7 +82,18 @@ export const LibraryScreen: React.FC = () => {
     performAuthCheck();
   }, []); // Only run once on mount
 
-  // NOTE: Screen capture prevention removed - was causing black screen issues
+  // Block screenshots only when showing locked screen (auth required but not authenticated)
+  useEffect(() => {
+    if (!isExpoGo && settings.libraryAuth && authChecked && !isAuthenticated) {
+      // User needs to authenticate - block screenshots while locked
+      const ScreenCapture = require('expo-screen-capture');
+      ScreenCapture.preventScreenCaptureAsync();
+
+      return () => {
+        ScreenCapture.allowScreenCaptureAsync();
+      };
+    }
+  }, [settings.libraryAuth, authChecked, isAuthenticated]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
