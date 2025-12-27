@@ -5,31 +5,19 @@ import { useTheme } from '../context/ThemeContext';
 import { t } from '../services/i18nService';
 import Constants from 'expo-constants';
 
-// Conditionally import zeego - will fail in Expo Go but work in dev/prod builds
-let DropdownMenuRoot: any = null;
-let DropdownMenuTrigger: any = null;
-let DropdownMenuContent: any = null;
-let DropdownMenuLabel: any = null;
-let DropdownMenuCheckboxItem: any = null;
-let DropdownMenuItemIndicator: any = null;
-let DropdownMenuItemTitle: any = null;
+// Conditionally import react-native-ios-context-menu
+let ContextMenuButton: any = null;
 
 // Check if running in Expo Go
 const isExpoGo = Constants.appOwnership === 'expo';
 
-// Only try to load zeego if not in Expo Go
+// Only try to load native module if not in Expo Go
 if (!isExpoGo && Platform.OS === 'ios') {
     try {
-        const zeego = require('zeego/dropdown-menu');
-        DropdownMenuRoot = zeego.Root;
-        DropdownMenuTrigger = zeego.Trigger;
-        DropdownMenuContent = zeego.Content;
-        DropdownMenuLabel = zeego.Label;
-        DropdownMenuCheckboxItem = zeego.CheckboxItem;
-        DropdownMenuItemIndicator = zeego.ItemIndicator;
-        DropdownMenuItemTitle = zeego.ItemTitle;
+        const contextMenu = require('react-native-ios-context-menu');
+        ContextMenuButton = contextMenu.ContextMenuButton;
     } catch (e) {
-        // zeego not available, will use fallback
+        // native module not available
     }
 }
 
@@ -48,7 +36,7 @@ interface NativeDropdownProps {
 
 /**
  * Native dropdown menu component
- * - iOS (production build): Uses native pull-down menu via zeego
+ * - iOS (production build): Uses native UIMenu via ContextMenuButton (isMenuPrimaryAction=true)
  * - iOS (Expo Go) / Android: Uses modal picker fallback
  */
 export const NativeDropdown: React.FC<NativeDropdownProps> = ({
@@ -61,29 +49,25 @@ export const NativeDropdown: React.FC<NativeDropdownProps> = ({
     const { theme } = useTheme();
     const [showPicker, setShowPicker] = useState(false);
 
-    // Use native zeego dropdown on iOS production builds
-    if (Platform.OS === 'ios' && DropdownMenuRoot && !isExpoGo) {
+    // Use native ContextMenuButton on iOS production builds for standard pull-down menu
+    if (Platform.OS === 'ios' && ContextMenuButton && !isExpoGo) {
         return (
-            <DropdownMenuRoot>
-                <DropdownMenuTrigger>
-                    {children}
-                </DropdownMenuTrigger>
-
-                <DropdownMenuContent>
-                    {title && <DropdownMenuLabel>{title}</DropdownMenuLabel>}
-
-                    {options.map((option) => (
-                        <DropdownMenuCheckboxItem
-                            key={option.value}
-                            value={selectedValue === option.value ? 'on' : 'off'}
-                            onValueChange={() => onSelect(option.value)}
-                        >
-                            <DropdownMenuItemIndicator />
-                            <DropdownMenuItemTitle>{option.label}</DropdownMenuItemTitle>
-                        </DropdownMenuCheckboxItem>
-                    ))}
-                </DropdownMenuContent>
-            </DropdownMenuRoot>
+            <ContextMenuButton
+                isMenuPrimaryAction={true}
+                menuConfig={{
+                    menuTitle: title || '',
+                    menuItems: options.map((option) => ({
+                        actionKey: option.value,
+                        actionTitle: option.label,
+                        actionState: selectedValue === option.value ? 'on' : 'off',
+                    })),
+                }}
+                onPressMenuItem={({ nativeEvent }: any) => {
+                    onSelect(nativeEvent.actionKey);
+                }}
+            >
+                {children}
+            </ContextMenuButton>
         );
     }
 
