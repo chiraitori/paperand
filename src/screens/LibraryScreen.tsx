@@ -18,7 +18,7 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import { usePreventScreenCapture } from 'expo-screen-capture';
 import { useTheme } from '../context/ThemeContext';
 import { useLibrary } from '../context/LibraryContext';
-import { MangaCard, EmptyState, MangaPreviewModal } from '../components';
+import { MangaCard, EmptyState, MangaPreviewModal, MangaCardWithPreview } from '../components';
 import { RootStackParamList, LibraryEntry, Manga } from '../types';
 import { getGeneralSettings, GeneralSettings, defaultSettings } from '../services/settingsService';
 import { t } from '../services/i18nService';
@@ -169,10 +169,15 @@ export const LibraryScreen: React.FC = () => {
   };
 
   const renderItem = ({ item }: { item: LibraryEntry }) => (
-    <MangaCard
+    <MangaCardWithPreview
       manga={item.manga}
       onPress={() => navigateToManga(item)}
       onLongPress={() => handleLongPress(item)}
+      onViewDetails={() => handlePreviewViewDetails(item.manga)}
+      onRemoveFromLibrary={() => removeFromLibrary(item.manga.id)}
+      onToggleFavorite={() => toggleFavorite(item.manga.id)}
+      isInLibrary={true}
+      isFavorite={isFavorite(item.manga.id)}
       compact
       columns={numColumns}
     />

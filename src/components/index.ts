@@ -7,5 +7,6 @@ export { PickerModal } from './PickerModal';
 export { UpdateModal } from './UpdateModal';
 export { AppDialog, showAlert } from './AppDialog';
 export { MangaPreviewModal } from './MangaPreviewModal';
+export { MangaCardWithPreview } from './MangaCardWithPreview';
 export { NativeDropdown } from './NativeDropdown';
 
