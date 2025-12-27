@@ -239,20 +239,18 @@ export const GeneralSettingsScreen: React.FC = () => {
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
 
-                {/* Language - Android only (iOS uses system settings) */}
-                {Platform.OS === 'android' && (
-                    <View style={styles.section}>
-                        {renderSectionHeader(t('settings.language').toUpperCase())}
-                        <View style={[styles.sectionContent, { backgroundColor: theme.card }]}>
-                            {renderItem({
-                                title: t('settings.language'),
-                                value: SUPPORTED_LANGUAGES[currentLang].nativeName,
-                                showChevron: true,
-                                onPress: navigateToLanguageSettings
-                            })}
-                        </View>
+                {/* Language */}
+                <View style={styles.section}>
+                    {renderSectionHeader(t('settings.language').toUpperCase())}
+                    <View style={[styles.sectionContent, { backgroundColor: theme.card }]}>
+                        {renderItem({
+                            title: t('settings.language'),
+                            value: SUPPORTED_LANGUAGES[currentLang].nativeName,
+                            showChevron: true,
+                            onPress: navigateToLanguageSettings
+                        })}
                     </View>
-                )}
+                </View>
 
                 {/* Items Per Row */}
                 <View style={styles.section}>
