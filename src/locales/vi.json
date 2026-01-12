@@ -194,6 +194,7 @@
         "imageCacheSize": "Dung lượng cache ảnh",
         "imageCacheSizeHint": "Chọn dung lượng tối đa cho ảnh đệm",
         "clearImageCache": "Xóa cache ảnh",
+        "downloadManager": "Quản lý tải xuống",
         "clearCacheConfirm": "Bạn có chắc muốn xóa {{size}} ảnh đệm? Thao tác này không thể hoàn tác.",
         "cacheClearedSuccess": "Đã xóa cache ảnh thành công",
         "cacheClearFailed": "Không thể xóa cache",
@@ -384,5 +385,9 @@
         "authFailed": "Xác thực thất bại",
         "tryAgain": "Thử lại",
         "usePasscode": "Dùng mật khẩu"
+    },
+    "downloadManager": {
+        "title": "Quản lý tải xuống",
+        "emptyMessage": "Chưa có tải xuống. Các chương đã tải sẽ xuất hiện ở đây."
     }
 }

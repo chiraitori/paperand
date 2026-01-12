@@ -325,6 +325,10 @@ export const SettingsScreen: React.FC = () => {
               onPress: isClearing ? undefined : handleClearCache,
               showChevron: false,
             })}
+            {renderSettingItem({
+              title: t('settings.downloadManager'),
+              onPress: () => navigation.navigate('DownloadManager'),
+            })}
           </>
         )}
 

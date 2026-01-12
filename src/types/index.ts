@@ -96,6 +96,7 @@ export type RootStackParamList = {
   BrowseAllRepositories: undefined;
   BrowseRepository: { repoId: string; repoName: string; repoBaseUrl: string };
   Developer: undefined;
+  DownloadManager: undefined;
   Credits: undefined;
   Category: { sourceId: string; sectionId: string; title: string; initialItems?: any[]; tagId?: string };
   SearchResults: { sourceId: string; sourceName: string; query: string; initialItems?: any[] };

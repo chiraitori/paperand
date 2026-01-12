@@ -14,6 +14,7 @@ export * from './AddRepositoryScreen';
 export * from './BrowseRepositoryScreen';
 export * from './BrowseAllRepositoriesScreen';
 export * from './DeveloperScreen';
+export * from './DownloadManagerScreen';
 export * from './CreditsScreen';
 export { MangaDetailScreen } from './MangaDetailScreen';
 export { ReaderScreen } from './ReaderScreen';

@@ -194,6 +194,7 @@
         "imageCacheSize": "Image Cache Size",
         "imageCacheSizeHint": "Choose maximum storage for cached images",
         "clearImageCache": "Clear image cache",
+        "downloadManager": "Download Manager",
         "clearCacheConfirm": "Are you sure you want to clear {{size}} of cached images? This cannot be undone.",
         "cacheClearedSuccess": "Image cache cleared successfully",
         "cacheClearFailed": "Failed to clear cache",
@@ -384,5 +385,9 @@
         "authFailed": "Authentication Failed",
         "tryAgain": "Try Again",
         "usePasscode": "Use Passcode"
+    },
+    "downloadManager": {
+        "title": "Download Manager",
+        "emptyMessage": "No downloads yet. Downloaded chapters will appear here."
     }
 }
