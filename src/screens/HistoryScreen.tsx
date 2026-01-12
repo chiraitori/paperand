@@ -75,7 +75,17 @@ export const HistoryScreen: React.FC = () => {
     performAuthCheck();
   }, []); // Only run once on mount
 
-  // NOTE: Screen capture blocking removed - expo-screen-capture causes black screen on quick nav switches
+  // Block screenshots when auth is enabled (requires app restart to unblock)
+  useEffect(() => {
+    const enableScreenCapture = async () => {
+      if (!isExpoGo && settings.historyAuth) {
+        const ScreenCapture = require('expo-screen-capture');
+        await ScreenCapture.preventScreenCaptureAsync();
+      }
+    };
+    enableScreenCapture();
+    // NOTE: No cleanup - requires app restart to disable (to avoid async race conditions)
+  }, [settings.historyAuth]);
 
   // Filter and sort by last read
   const readingHistory = library

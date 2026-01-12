@@ -20,7 +20,8 @@
         "comingSoon": "Sắp có",
         "seeAll": "Xem tất cả",
         "viewMore": "Xem thêm",
-        "continue": "Tiếp tục"
+        "continue": "Tiếp tục",
+        "restartRequired": "Cần khởi động lại"
     },
     "tabs": {
         "discover": "Khám phá",
@@ -172,6 +173,7 @@
         "libraryAuth": "Xác thực thư viện",
         "historyAuth": "Xác thực lịch sử",
         "biometricAuth": "Xác thực sinh trắc học",
+        "authRestartWarning": "Vui lòng khởi động lại ứng dụng để tắt hoàn toàn chặn chụp màn hình.",
         "about": "Thông tin",
         "version": "Phiên bản",
         "developer": "Tùy chọn nhà phát triển",

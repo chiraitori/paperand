@@ -82,7 +82,17 @@ export const LibraryScreen: React.FC = () => {
     performAuthCheck();
   }, []); // Only run once on mount
 
-  // NOTE: Screen capture blocking removed - expo-screen-capture causes black screen on quick nav switches
+  // Block screenshots when auth is enabled (requires app restart to unblock)
+  useEffect(() => {
+    const enableScreenCapture = async () => {
+      if (!isExpoGo && settings.libraryAuth) {
+        const ScreenCapture = require('expo-screen-capture');
+        await ScreenCapture.preventScreenCaptureAsync();
+      }
+    };
+    enableScreenCapture();
+    // NOTE: No cleanup - requires app restart to disable (to avoid async race conditions)
+  }, [settings.libraryAuth]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);

@@ -109,6 +109,15 @@ export const GeneralSettingsScreen: React.FC = () => {
 
                 if (result.success) {
                     updateSetting(settingKey, newValue);
+                    // Show restart warning when disabling auth (screenshot protection requires restart to disable)
+                    if (!newValue) {
+                        setDialog({
+                            visible: true,
+                            title: t('common.restartRequired') || 'Restart Required',
+                            message: t('generalSettings.authRestartWarning') || 'Please restart the app to fully disable screenshot protection.',
+                            buttons: [{ text: 'OK' }]
+                        });
+                    }
                 } else {
                     // Authentication failed or cancelled - don't change setting
                     setDialog({

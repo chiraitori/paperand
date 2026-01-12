@@ -20,7 +20,8 @@
         "comingSoon": "Coming Soon",
         "seeAll": "See All",
         "viewMore": "View More",
-        "continue": "Continue"
+        "continue": "Continue",
+        "restartRequired": "Restart Required"
     },
     "tabs": {
         "discover": "Discover",
@@ -172,6 +173,7 @@
         "libraryAuth": "Library Authentication",
         "historyAuth": "History Authentication",
         "biometricAuth": "Biometric Authentication",
+        "authRestartWarning": "Please restart the app to fully disable screenshot protection.",
         "about": "About",
         "version": "Version",
         "developer": "Developer Options",
