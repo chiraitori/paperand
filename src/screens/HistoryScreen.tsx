@@ -75,18 +75,7 @@ export const HistoryScreen: React.FC = () => {
     performAuthCheck();
   }, []); // Only run once on mount
 
-  // Block screenshots only when showing locked screen (auth required but not authenticated)
-  useEffect(() => {
-    if (!isExpoGo && settings.historyAuth && authChecked && !isAuthenticated) {
-      // User needs to authenticate - block screenshots while locked
-      const ScreenCapture = require('expo-screen-capture');
-      ScreenCapture.preventScreenCaptureAsync();
-
-      return () => {
-        ScreenCapture.allowScreenCaptureAsync();
-      };
-    }
-  }, [settings.historyAuth, authChecked, isAuthenticated]);
+  // NOTE: Screen capture blocking removed - expo-screen-capture causes black screen on quick nav switches
 
   // Filter and sort by last read
   const readingHistory = library
