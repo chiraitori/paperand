@@ -109,6 +109,14 @@
         "page": "Page",
         "noNextChapter": "No next chapter available"
     },
+    "chapter": {
+        "options": "Chapter Options",
+        "download": "Download chapter",
+        "markAsRead": "Mark as read",
+        "markAsUnread": "Mark as unread",
+        "markAllAboveAsRead": "Mark all above as read",
+        "markAllBelowAsRead": "Mark all below as read"
+    },
     "search": {
         "title": "Search",
         "searchEverything": "Search Everything",

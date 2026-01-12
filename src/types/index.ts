@@ -54,6 +54,7 @@ export interface LibraryEntry {
   lastReadChapter?: string;
   progress: ReadingProgress | null;
   isFavorite: boolean;
+  readChapters: string[]; // Array of chapter IDs that have been read
 }
 
 // Theme Types

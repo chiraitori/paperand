@@ -109,6 +109,14 @@
         "page": "Trang",
         "noNextChapter": "Không có chương tiếp theo"
     },
+    "chapter": {
+        "options": "Tùy chọn chương",
+        "download": "Tải chương",
+        "markAsRead": "Đánh dấu đã đọc",
+        "markAsUnread": "Đánh dấu chưa đọc",
+        "markAllAboveAsRead": "Đánh dấu tất cả ở trên đã đọc",
+        "markAllBelowAsRead": "Đánh dấu tất cả ở dưới đã đọc"
+    },
     "search": {
         "title": "Tìm kiếm",
         "searchEverything": "Tìm kiếm mọi thứ",

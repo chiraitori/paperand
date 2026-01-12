@@ -129,7 +129,19 @@ export const MangaDetailScreen: React.FC = () => {
   const { theme } = useTheme();
   const route = useRoute<MangaDetailRouteProp>();
   const navigation = useNavigation<MangaDetailNavigationProp>();
-  const { isInLibrary, isFavorite, addToLibrary, removeFromLibrary, toggleFavorite, getProgress } = useLibrary();
+  const {
+    isInLibrary,
+    isFavorite,
+    addToLibrary,
+    removeFromLibrary,
+    toggleFavorite,
+    getProgress,
+    isChapterRead,
+    markChapterAsRead,
+    markChapterAsUnread,
+    markAllAboveAsRead,
+    markAllBelowAsRead,
+  } = useLibrary();
 
   const [manga, setManga] = useState<Manga | null>(null);
   const [loading, setLoading] = useState(true);
@@ -440,14 +452,24 @@ export const MangaDetailScreen: React.FC = () => {
             </TouchableOpacity>
           </View>
 
-          {sortedChapters.map(chapter => (
-            <ChapterListItem
-              key={chapter.id}
-              chapter={chapter}
-              onPress={() => openReader(chapter.id)}
-              isRead={progress?.chapterId === chapter.id}
-            />
-          ))}
+          {sortedChapters.map(chapter => {
+            const chapterIds = sortedChapters.map(c => c.id);
+            return (
+              <ChapterListItem
+                key={chapter.id}
+                chapter={chapter}
+                onPress={() => openReader(chapter.id)}
+                isRead={isChapterRead(manga.id, chapter.id)}
+                onMarkAsRead={() => markChapterAsRead(manga.id, chapter.id, manga)}
+                onMarkAsUnread={() => markChapterAsUnread(manga.id, chapter.id)}
+                onMarkAllAboveAsRead={() => markAllAboveAsRead(manga.id, chapter.id, chapterIds)}
+                onMarkAllBelowAsRead={() => markAllBelowAsRead(manga.id, chapter.id, chapterIds)}
+                onDownload={() => {
+                  // TODO: Implement download
+                }}
+              />
+            );
+          })}
         </View>
       </ScrollView>
     </View>
