@@ -81,7 +81,10 @@
         "artWithArtist": "Vẽ: {{artist}}",
         "viewDetails": "Xem chi tiết",
         "chaptersCount": "{{count}} chương",
-        "unknownAuthor": "Tác giả không rõ"
+        "unknownAuthor": "Tác giả không rõ",
+        "share": "Chia sẻ",
+        "refresh": "Làm mới",
+        "options": "Tùy chọn"
     },
     "reader": {
         "settingsTitle": "Cài đặt trình đọc",
@@ -388,6 +391,13 @@
     },
     "downloadManager": {
         "title": "Quản lý tải xuống",
-        "emptyMessage": "Chưa có tải xuống. Các chương đã tải sẽ xuất hiện ở đây."
+        "emptyMessage": "Chưa có tải xuống. Các chương đã tải sẽ xuất hiện ở đây.",
+        "noDownloads": "Không có tải xuống",
+        "options": "Tùy chọn",
+        "pauseAll": "Tạm dừng tất cả",
+        "resumeAll": "Tiếp tục tất cả",
+        "clearAll": "Xóa tất cả",
+        "clearAllTitle": "Xóa tất cả tải xuống",
+        "clearAllMessage": "Bạn có chắc muốn xóa tất cả tải xuống?"
     }
 }

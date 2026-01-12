@@ -81,7 +81,10 @@
         "artWithArtist": "Art: {{artist}}",
         "viewDetails": "View Details",
         "chaptersCount": "{{count}} chapters",
-        "unknownAuthor": "Unknown Author"
+        "unknownAuthor": "Unknown Author",
+        "share": "Share",
+        "refresh": "Refresh",
+        "options": "Options"
     },
     "reader": {
         "settingsTitle": "Reader Settings",
@@ -388,6 +391,13 @@
     },
     "downloadManager": {
         "title": "Download Manager",
-        "emptyMessage": "No downloads yet. Downloaded chapters will appear here."
+        "emptyMessage": "No downloads yet. Downloaded chapters will appear here.",
+        "noDownloads": "No Downloads",
+        "options": "Options",
+        "pauseAll": "Pause all",
+        "resumeAll": "Resume all",
+        "clearAll": "Clear all",
+        "clearAllTitle": "Clear All Downloads",
+        "clearAllMessage": "Are you sure you want to clear all downloads?"
     }
 }

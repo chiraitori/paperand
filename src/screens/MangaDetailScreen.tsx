@@ -15,7 +15,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { useLibrary } from '../context/LibraryContext';
-import { ChapterListItem, LoadingIndicator } from '../components';
+import { ChapterListItem, LoadingIndicator, NativeDropdown } from '../components';
 import { getMangaDetails, getChapters } from '../services/sourceService';
 import { getGeneralSettings, updateGeneralSetting } from '../services/settingsService';
 import { t } from '../services/i18nService';
@@ -304,6 +304,32 @@ export const MangaDetailScreen: React.FC = () => {
             <Ionicons name={Platform.OS === 'ios' ? 'chevron-back' : 'arrow-back'} size={24} color="#fff" />
           </TouchableOpacity>
 
+          {/* 3-dot menu */}
+          <NativeDropdown
+            options={[
+              { label: t('manga.share') || 'Share', value: 'share' },
+              { label: t('manga.refresh') || 'Refresh', value: 'refresh' },
+            ]}
+            selectedValue=""
+            onSelect={(value) => {
+              switch (value) {
+                case 'share':
+                  // TODO: Implement share functionality
+                  break;
+                case 'refresh':
+                  loadManga();
+                  break;
+              }
+            }}
+            title={t('manga.options') || 'Options'}
+          >
+            <TouchableOpacity
+              style={[styles.menuButton, { backgroundColor: theme.card }]}
+            >
+              <Ionicons name="ellipsis-vertical" size={20} color="#fff" />
+            </TouchableOpacity>
+          </NativeDropdown>
+
           <View style={styles.headerContent}>
             <Image
               source={{ uri: manga.coverImage }}
@@ -458,6 +484,17 @@ const styles = StyleSheet.create({
   },
   backButtonText: {
     fontSize: 24,
+  },
+  menuButton: {
+    position: 'absolute',
+    top: 50,
+    right: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
   },
   headerContent: {
     position: 'absolute',
