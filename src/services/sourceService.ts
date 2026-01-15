@@ -1,11 +1,24 @@
 /**
- * Source Service - WebView-based Extension Runtime
+ * Source Service - Extension Runtime
  * 
  * This service uses a hidden WebView to execute Paperback extension JavaScript.
- * This allows ALL extensions to work without hardcoding API configurations.
+ * When the WebView is unavailable (e.g., during background downloads), it falls back
+ * to a headless runtime that executes extensions directly in the React Native JS engine.
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { headlessRuntime } from './headlessExtensionRuntime';
+import {
+  getInstalledExtensions as getInstalledExtensionsFromStorage,
+  saveInstalledExtensions,
+  downloadSourceJs as downloadSourceJsFromStorage,
+  InstalledExtension,
+} from './extensionStorageService';
+
+// Re-export types and functions for backward compatibility
+export { InstalledExtension } from './extensionStorageService';
+export const getInstalledExtensions = getInstalledExtensionsFromStorage;
+export const downloadSourceJs = downloadSourceJsFromStorage;
 
 // Types
 export interface SourceManga {
@@ -50,22 +63,6 @@ export interface Tag {
   label: string;
 }
 
-export interface InstalledExtension {
-  id: string;
-  name: string;
-  author: string;
-  desc: string;
-  website: string;
-  version: string;
-  icon: string;
-  tags?: { text: string; type: string }[];
-  contentRating?: string;
-  websiteBaseURL?: string;
-  repositoryUrl?: string;
-  repoBaseUrl?: string;
-  sourceJs?: string;
-}
-
 const INSTALLED_EXTENSIONS_KEY = '@installed_extensions_data';
 
 // Global reference to WebView bridge (will be set by ExtensionRunner component)
@@ -91,53 +88,27 @@ export const getExtensionBridge = (): ExtensionBridge | null => {
 
 /**
  * Wait for extension bridge to be available
+ * Returns true if WebView bridge or headless runtime is available
  */
 const waitForBridge = async (maxWaitMs: number = 5000): Promise<boolean> => {
   const startTime = Date.now();
   while (!extensionBridge && Date.now() - startTime < maxWaitMs) {
     await new Promise(resolve => setTimeout(resolve, 100));
   }
-  return extensionBridge !== null;
-};
 
-/**
- * Get all installed extensions
- */
-export const getInstalledExtensions = async (): Promise<InstalledExtension[]> => {
-  try {
-    const data = await AsyncStorage.getItem(INSTALLED_EXTENSIONS_KEY);
-    if (!data) return [];
-    return JSON.parse(data);
-  } catch (error) {
-    console.error('Error getting installed extensions:', error);
-    return [];
-  }
-};
-
-/**
- * Download source.js for an extension
- */
-export const downloadSourceJs = async (ext: InstalledExtension): Promise<string | null> => {
-  const baseUrl = ext.repositoryUrl || ext.repoBaseUrl;
-  if (!baseUrl) {
-    console.error(`No repository URL for extension ${ext.id}`);
-    return null;
+  // If WebView bridge is available, use it
+  if (extensionBridge !== null) {
+    return true;
   }
 
-  const sourceUrl = `${baseUrl}/${ext.id}/source.js`;
-  
-  try {
-    console.log(`Downloading source.js from: ${sourceUrl}`);
-    const response = await fetch(sourceUrl);
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-    return await response.text();
-  } catch (error) {
-    console.error(`Failed to download source.js for ${ext.id}:`, error);
-    return null;
-  }
+  // Fall back to headless runtime (for background downloads)
+  console.log('[SourceService] WebView bridge unavailable, headless runtime available:', headlessRuntime.isAvailable());
+  return headlessRuntime.isAvailable();
 };
+
+
+
+
 
 /**
  * Ensure extension is loaded in the WebView
@@ -158,18 +129,18 @@ const ensureExtensionLoaded = async (ext: InstalledExtension): Promise<boolean> 
   }
 
   let sourceJs: string | undefined = ext.sourceJs;
-  
+
   if (!sourceJs) {
     const downloaded = await downloadSourceJs(ext);
     if (!downloaded) {
       return false;
     }
     sourceJs = downloaded;
-    
+
     // Save the sourceJs for future use
     try {
       const extensions = await getInstalledExtensions();
-      const updated = extensions.map(e => 
+      const updated = extensions.map(e =>
         e.id === ext.id ? { ...e, sourceJs } : e
       );
       await AsyncStorage.setItem(INSTALLED_EXTENSIONS_KEY, JSON.stringify(updated));
@@ -187,7 +158,7 @@ const ensureExtensionLoaded = async (ext: InstalledExtension): Promise<boolean> 
 export const getHomeSections = async (extensionId: string): Promise<HomeSection[]> => {
   const extensions = await getInstalledExtensions();
   const ext = extensions.find(e => e.id === extensionId);
-  
+
   if (!ext) {
     console.error(`Extension ${extensionId} not found`);
     return [];
@@ -225,7 +196,7 @@ export const getHomeSections = async (extensionId: string): Promise<HomeSection[
       'getHomePageSections',
       []
     );
-    
+
     if (!result || !Array.isArray(result)) {
       return [];
     }
@@ -265,7 +236,7 @@ export const getViewMoreItems = async (
 ): Promise<ViewMoreResult> => {
   const extensions = await getInstalledExtensions();
   const ext = extensions.find(e => e.id === extensionId);
-  
+
   if (!ext) return { results: [], metadata: null };
 
   // Wait for bridge if not available
@@ -283,7 +254,7 @@ export const getViewMoreItems = async (
       'getViewMoreItems',
       [sectionId, metadata]
     );
-    
+
     if (!result || !result.results) return { results: [], metadata: null };
 
     const mangaResults = result.results.map((item: any) => ({
@@ -314,13 +285,13 @@ export interface SearchResult {
 }
 
 export const searchManga = async (
-  extensionId: string, 
-  query: string, 
+  extensionId: string,
+  query: string,
   metadata?: any
 ): Promise<SearchResult> => {
   const extensions = await getInstalledExtensions();
   const ext = extensions.find(e => e.id === extensionId);
-  
+
   if (!ext) return { results: [], metadata: null };
 
   // Wait for bridge if not available
@@ -338,7 +309,7 @@ export const searchManga = async (
       'getSearchResults',
       [{ title: query, includedTags: [] }, metadata]
     );
-    
+
     if (!result || !result.results) return { results: [], metadata: null };
 
     const mangaResults = result.results.map((item: any) => ({
@@ -366,7 +337,7 @@ export const searchManga = async (
 export const getMangaDetails = async (extensionId: string, mangaId: string): Promise<MangaDetails | null> => {
   const extensions = await getInstalledExtensions();
   const ext = extensions.find(e => e.id === extensionId);
-  
+
   if (!ext) return null;
 
   // Wait for bridge if not available
@@ -384,7 +355,7 @@ export const getMangaDetails = async (extensionId: string, mangaId: string): Pro
       'getMangaDetails',
       [mangaId]
     );
-    
+
     if (!result) return null;
 
     return {
@@ -409,7 +380,7 @@ export const getMangaDetails = async (extensionId: string, mangaId: string): Pro
 export const getChapters = async (extensionId: string, mangaId: string): Promise<Chapter[]> => {
   const extensions = await getInstalledExtensions();
   const ext = extensions.find(e => e.id === extensionId);
-  
+
   if (!ext) return [];
 
   // Wait for bridge if not available
@@ -427,7 +398,7 @@ export const getChapters = async (extensionId: string, mangaId: string): Promise
       'getChapters',
       [mangaId]
     );
-    
+
     if (!result || !Array.isArray(result)) return [];
 
     return result.map((ch: any) => ({
@@ -446,37 +417,73 @@ export const getChapters = async (extensionId: string, mangaId: string): Promise
 
 /**
  * Get chapter pages
+ * Uses WebView bridge when available, falls back to headless runtime for background downloads
  */
 export const getChapterPages = async (
-  extensionId: string, 
+  extensionId: string,
   mangaId: string,
   chapterId: string
 ): Promise<string[]> => {
   const extensions = await getInstalledExtensions();
   const ext = extensions.find(e => e.id === extensionId);
-  
+
   if (!ext) return [];
 
-  // Wait for bridge if not available
-  if (!extensionBridge) {
-    await waitForBridge(5000);
+  // Try WebView bridge first
+  if (extensionBridge) {
+    const loaded = await ensureExtensionLoaded(ext);
+    if (loaded) {
+      try {
+        const result = await extensionBridge.runExtensionMethod(
+          extensionId,
+          'getChapterDetails',
+          [mangaId, chapterId]
+        );
+
+        if (result?.pages) return result.pages;
+      } catch (error) {
+        console.error(`[SourceService] Error getting chapter pages via WebView:`, error);
+      }
+    }
   }
-  if (!extensionBridge) return [];
 
-  const loaded = await ensureExtensionLoaded(ext);
-  if (!loaded) return [];
+  // Wait for WebView bridge if not available
+  if (!extensionBridge) {
+    console.log('[SourceService] WebView bridge not available, waiting...');
+    await waitForBridge(3000); // Shorter wait for background
+  }
 
+  // If WebView bridge available now, use it
+  if (extensionBridge) {
+    const loaded = await ensureExtensionLoaded(ext);
+    if (loaded) {
+      try {
+        const result = await extensionBridge.runExtensionMethod(
+          extensionId,
+          'getChapterDetails',
+          [mangaId, chapterId]
+        );
+
+        if (result?.pages) return result.pages;
+      } catch (error) {
+        console.error(`[SourceService] Error getting chapter pages via WebView:`, error);
+      }
+    }
+  }
+
+  // Fall back to headless runtime (for background downloads)
+  console.log('[SourceService] Using headless runtime for getChapterPages');
   try {
-    const result = await extensionBridge.runExtensionMethod(
+    const result = await headlessRuntime.runExtensionMethod(
       extensionId,
       'getChapterDetails',
       [mangaId, chapterId]
     );
-    
-    if (!result || !result.pages) return [];
-    return result.pages;
+
+    if (result?.pages) return result.pages;
+    return [];
   } catch (error) {
-    console.error(`Error getting chapter pages:`, error);
+    console.error(`[SourceService] Error getting chapter pages via headless runtime:`, error);
     return [];
   }
 };
@@ -490,7 +497,7 @@ export const decryptDrmImage = async (
 ): Promise<string | null> => {
   const extensions = await getInstalledExtensions();
   const ext = extensions.find(e => e.id === extensionId);
-  
+
   if (!ext) return null;
 
   // Wait for bridge if not available
@@ -508,10 +515,91 @@ export const decryptDrmImage = async (
       'decryptDrmImage',
       [imageUrl]
     );
-    
+
     return result || null;
   } catch (error) {
     console.error(`Error decrypting DRM image:`, error);
+    return null;
+  }
+};
+
+/**
+ * Fetch image through extension (for proper headers/cookies)
+ * Uses WebView bridge when available, falls back to headless runtime for background downloads
+ */
+export const fetchImageThroughExtension = async (
+  extensionId: string,
+  imageUrl: string
+): Promise<string | null> => {
+  const extensions = await getInstalledExtensions();
+  const ext = extensions.find(e => e.id === extensionId);
+
+  if (!ext) return null;
+
+  // Try WebView bridge first
+  if (extensionBridge) {
+    const loaded = await ensureExtensionLoaded(ext);
+    if (loaded) {
+      try {
+        const result = await extensionBridge.runExtensionMethod(
+          extensionId,
+          'fetchImage',
+          [imageUrl]
+        );
+        if (result) return result;
+      } catch (error) {
+        console.error(`[SourceService] Error fetching image via WebView:`, error);
+      }
+    }
+  }
+
+  // Wait for WebView bridge if not available
+  if (!extensionBridge) {
+    console.log('[SourceService] WebView bridge not available for fetchImage, waiting...');
+    await waitForBridge(2000);
+  }
+
+  // If WebView bridge available now, use it
+  if (extensionBridge) {
+    const loaded = await ensureExtensionLoaded(ext);
+    if (loaded) {
+      try {
+        const result = await extensionBridge.runExtensionMethod(
+          extensionId,
+          'fetchImage',
+          [imageUrl]
+        );
+        if (result) return result;
+      } catch (error) {
+        console.error(`[SourceService] Error fetching image via WebView:`, error);
+      }
+    }
+  }
+
+  // Fall back to direct fetch with default headers (headless doesn't support fetchImage yet)
+  console.log('[SourceService] Using direct fetch for image');
+  try {
+    const response = await fetch(imageUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'Accept': 'image/*,*/*',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    const base64 = btoa(binary);
+    return 'data:image/jpeg;base64,' + base64;
+  } catch (error) {
+    console.error(`[SourceService] Error fetching image directly:`, error);
     return null;
   }
 };
@@ -522,7 +610,7 @@ export const decryptDrmImage = async (
 export const getTags = async (extensionId: string): Promise<Tag[]> => {
   const extensions = await getInstalledExtensions();
   const ext = extensions.find(e => e.id === extensionId);
-  
+
   if (!ext) return [];
 
   // Wait for bridge if not available
@@ -540,7 +628,7 @@ export const getTags = async (extensionId: string): Promise<Tag[]> => {
       'getSearchTags',
       []
     );
-    
+
     if (!result || !Array.isArray(result)) return [];
 
     // Flatten tag sections into a single list
@@ -555,7 +643,7 @@ export const getTags = async (extensionId: string): Promise<Tag[]> => {
         }
       }
     }
-    
+
     return allTags;
   } catch (error: any) {
     // Silently return empty array if method doesn't exist (not all extensions support tags)
@@ -577,7 +665,7 @@ export const searchByTag = async (
 ): Promise<SearchResult> => {
   const extensions = await getInstalledExtensions();
   const ext = extensions.find(e => e.id === extensionId);
-  
+
   if (!ext) return { results: [], metadata: null };
 
   // Wait for bridge if not available
@@ -595,7 +683,7 @@ export const searchByTag = async (
       'getSearchResults',
       [{ title: '', includedTags: [{ id: tagId, label: '' }] }, metadata]
     );
-    
+
     if (!result || !result.results) return { results: [], metadata: null };
 
     const mangaResults = result.results.map((item: any) => ({
@@ -690,7 +778,7 @@ export const setExtensionState = async (extensionId: string, key: string, value:
 export const hasExtensionSettings = async (extensionId: string): Promise<boolean> => {
   const extensions = await getInstalledExtensions();
   const ext = extensions.find(e => e.id === extensionId);
-  
+
   if (!ext) return false;
 
   // Wait for bridge if not available
@@ -725,7 +813,7 @@ export const hasExtensionSettings = async (extensionId: string): Promise<boolean
 export const getExtensionSettings = async (extensionId: string): Promise<ExtensionSettings | null> => {
   const extensions = await getInstalledExtensions();
   const ext = extensions.find(e => e.id === extensionId);
-  
+
   if (!ext) return null;
 
   // Wait for bridge if not available
@@ -744,7 +832,7 @@ export const getExtensionSettings = async (extensionId: string): Promise<Extensi
       'getSourceMenu',
       []
     );
-    
+
     if (!result) return null;
 
     // Result is already resolved with structure like:
@@ -778,7 +866,7 @@ export const updateExtensionSetting = async (
 ): Promise<boolean> => {
   const extensions = await getInstalledExtensions();
   const ext = extensions.find(e => e.id === extensionId);
-  
+
   if (!ext) return false;
 
   if (!extensionBridge) {
@@ -811,7 +899,7 @@ export const invokeExtensionSettingAction = async (
 ): Promise<boolean> => {
   const extensions = await getInstalledExtensions();
   const ext = extensions.find(e => e.id === extensionId);
-  
+
   if (!ext) return false;
 
   if (!extensionBridge) {

@@ -12,6 +12,7 @@ export interface GeneralSettings {
     historyAuth: boolean; // Require auth to view History
     hideUpdateModal: boolean;
     mangaPreviewEnabled: boolean; // Long-press preview popup
+    parallelDownloads: number; // Max parallel chapter downloads (1-10)
 }
 
 export const defaultSettings: GeneralSettings = {
@@ -23,6 +24,7 @@ export const defaultSettings: GeneralSettings = {
     historyAuth: false,
     hideUpdateModal: false,
     mangaPreviewEnabled: Platform.OS === 'ios', // Default: enabled on iOS, disabled (experimental) on Android
+    parallelDownloads: 3, // Default 3 parallel downloads
 };
 
 /**

@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
   Image,
   Platform,
 } from 'react-native';
@@ -18,6 +17,8 @@ import { RootStackParamList } from '../types';
 import { ExtensionSource, ExtensionRepository, DEFAULT_REPOSITORIES, getTagColor } from '../services/extensionService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { t } from '../services/i18nService';
+import { AppDialog } from '../components/AppDialog';
+import { useDialog } from '../hooks/useDialog';
 
 const INSTALLED_EXTENSIONS_KEY = '@installed_extensions_data';
 const ADDED_REPOS_KEY = '@added_repositories';
@@ -30,6 +31,7 @@ interface InstalledExtension extends ExtensionSource {
 export const ExtensionsScreen: React.FC = () => {
   const { theme } = useTheme();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { dialogVisible, dialogConfig, showDialog, hideDialog } = useDialog();
   const [loading, setLoading] = useState(true);
   const [installedExtensions, setInstalledExtensions] = useState<InstalledExtension[]>([]);
   const [addedRepos, setAddedRepos] = useState<ExtensionRepository[]>([]);
@@ -84,7 +86,7 @@ export const ExtensionsScreen: React.FC = () => {
   };
 
   const handleRemoveExtension = (ext: InstalledExtension) => {
-    Alert.alert(
+    showDialog(
       t('extensions.removeExtension'),
       t('extensions.removeExtensionConfirm', { name: ext.name }),
       [
@@ -103,7 +105,7 @@ export const ExtensionsScreen: React.FC = () => {
   };
 
   const handleRemoveRepo = (repo: ExtensionRepository) => {
-    Alert.alert(
+    showDialog(
       t('extensions.removeRepo'),
       t('extensions.removeRepoConfirm', { name: repo.name }),
       [
@@ -304,6 +306,15 @@ export const ExtensionsScreen: React.FC = () => {
           </View>
         </ScrollView>
       )}
+
+      {/* Material You Dialog for Android */}
+      <AppDialog
+        visible={dialogVisible}
+        title={dialogConfig.title}
+        message={dialogConfig.message}
+        buttons={dialogConfig.buttons}
+        onDismiss={hideDialog}
+      />
     </View>
   );
 };

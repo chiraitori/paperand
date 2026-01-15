@@ -30,6 +30,7 @@ interface GeneralSettings {
     historyAuth: boolean;
     hideUpdateModal: boolean;
     mangaPreviewEnabled: boolean; // Long-press preview popup
+    parallelDownloads: number; // Max parallel chapter downloads (1-10)
 }
 
 interface DialogState {
@@ -48,6 +49,7 @@ const defaultSettings: GeneralSettings = {
     historyAuth: false,
     hideUpdateModal: false,
     mangaPreviewEnabled: Platform.OS === 'ios', // Default: enabled on iOS, disabled on Android
+    parallelDownloads: 3, // Default 3 parallel downloads
 };
 
 export const GeneralSettingsScreen: React.FC = () => {
@@ -422,6 +424,24 @@ export const GeneralSettingsScreen: React.FC = () => {
                         : t('generalSettings.mangaPreviewHint'))}
                 </View>
 
+                {/* Downloads */}
+                <View style={styles.section}>
+                    {renderSectionHeader(t('generalSettings.downloads') || 'DOWNLOADS')}
+                    <View style={[styles.sectionContent, { backgroundColor: theme.card }]}>
+                        {renderItem({
+                            title: t('generalSettings.parallelDownloads') || 'Parallel Downloads',
+                            value: settings.parallelDownloads || 3,
+                            valueColor: theme.error,
+                            rightElement: renderStepper(
+                                settings.parallelDownloads || 3,
+                                () => updateSetting('parallelDownloads', Math.min(10, (settings.parallelDownloads || 3) + 1)),
+                                () => updateSetting('parallelDownloads', Math.max(1, (settings.parallelDownloads || 3) - 1))
+                            )
+                        })}
+                    </View>
+                    {renderFooter(t('generalSettings.parallelDownloadsHint') || 'Number of chapters to download simultaneously on WiFi. Cellular always uses 1.')}
+                </View>
+
             </ScrollView>
 
 
@@ -531,5 +551,13 @@ const styles = StyleSheet.create({
         marginHorizontal: 16,
         marginTop: 8,
         lineHeight: 18,
+    },
+    textInput: {
+        flex: 1,
+        fontSize: 15,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        borderRadius: 8,
+        borderWidth: 1,
     },
 });

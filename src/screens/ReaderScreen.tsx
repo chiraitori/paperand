@@ -18,12 +18,15 @@ import {
   Switch,
   useWindowDimensions,
 } from 'react-native';
-import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
+import { useRoute, useNavigation, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import { useTheme } from '../context/ThemeContext';
 import { useLibrary } from '../context/LibraryContext';
+import { useDownloads } from '../context/DownloadContext';
 import { getChapterPages, getMangaDetails, getChapters, decryptDrmImage } from '../services/sourceService';
+import { cacheChapterPages, getCachedChapterPages } from '../services/cacheService';
 import { Manga, Chapter, Page, RootStackParamList } from '../types';
 import { t } from '../services/i18nService';
 
@@ -306,37 +309,185 @@ const parseDrmUrl = (url: string): { extensionId: string; actualUrl: string } | 
   };
 };
 
-// Component for auto-sizing images with progressive loading and DRM support
+// Preloaded page type with resolved URL
+interface PreloadedPage extends Page {
+  resolvedUrl: string; // Decrypted or original URL
+  preloaded: boolean;
+  loading?: boolean; // Currently loading
+}
+
+// Preload a single page - decrypt DRM or fetch normal URL
+const preloadSinglePage = async (page: Page): Promise<PreloadedPage> => {
+  const drmInfo = parseDrmUrl(page.imageUrl);
+
+  if (drmInfo) {
+    try {
+      const decryptedUrl = await decryptDrmImage(drmInfo.extensionId, drmInfo.actualUrl);
+      if (decryptedUrl) {
+        // Prefetch the image
+        await Image.prefetch(decryptedUrl);
+        return { ...page, resolvedUrl: decryptedUrl, preloaded: true };
+      }
+    } catch (e) {
+      console.warn('[Reader] Failed to decrypt page', page.pageNumber, e);
+    }
+    return { ...page, resolvedUrl: page.imageUrl, preloaded: false };
+  } else {
+    // Normal URL - just prefetch
+    try {
+      await Image.prefetch(page.imageUrl);
+      return { ...page, resolvedUrl: page.imageUrl, preloaded: true };
+    } catch (e) {
+      return { ...page, resolvedUrl: page.imageUrl, preloaded: false };
+    }
+  }
+};
+
+// Preload all pages with progress callback
+const preloadAllPagesWithProgress = async (
+  pages: Page[],
+  onProgress: (loaded: number, total: number) => void,
+  onPageLoaded: (index: number, page: PreloadedPage) => void
+): Promise<PreloadedPage[]> => {
+  const results: PreloadedPage[] = new Array(pages.length);
+  let loaded = 0;
+
+  // Process in batches for better performance
+  const BATCH_SIZE = 3;
+
+  for (let i = 0; i < pages.length; i += BATCH_SIZE) {
+    const batch = pages.slice(i, Math.min(i + BATCH_SIZE, pages.length));
+    const batchResults = await Promise.all(
+      batch.map(async (page, batchIndex) => {
+        const result = await preloadSinglePage(page);
+        return { index: i + batchIndex, result };
+      })
+    );
+
+    for (const { index, result } of batchResults) {
+      results[index] = result;
+      loaded++;
+      onProgress(loaded, pages.length);
+      onPageLoaded(index, result);
+    }
+  }
+
+  return results;
+};
+
+// Preload all pages - decrypt DRM and prefetch images in parallel (legacy)
+const preloadAllPages = async (pages: Page[]): Promise<PreloadedPage[]> => {
+  const preloadPromises = pages.map(async (page): Promise<PreloadedPage> => {
+    const drmInfo = parseDrmUrl(page.imageUrl);
+
+    if (drmInfo) {
+      try {
+        const decryptedUrl = await decryptDrmImage(drmInfo.extensionId, drmInfo.actualUrl);
+        if (decryptedUrl) {
+          // Prefetch the image
+          await Image.prefetch(decryptedUrl);
+          return { ...page, resolvedUrl: decryptedUrl, preloaded: true };
+        }
+      } catch (e) {
+        console.warn('[Reader] Failed to decrypt page', page.pageNumber, e);
+      }
+      return { ...page, resolvedUrl: page.imageUrl, preloaded: false };
+    } else {
+      // Normal URL - just prefetch
+      try {
+        await Image.prefetch(page.imageUrl);
+        return { ...page, resolvedUrl: page.imageUrl, preloaded: true };
+      } catch (e) {
+        return { ...page, resolvedUrl: page.imageUrl, preloaded: false };
+      }
+    }
+  });
+
+  return Promise.all(preloadPromises);
+};
+
+// Simple image component for preloaded pages
+const PreloadedImage: React.FC<{
+  page: PreloadedPage;
+  onPress: () => void;
+  totalPages: number;
+}> = ({ page, onPress, totalPages }) => {
+  const { width: screenWidth } = useWindowDimensions();
+  const [imageHeight, setImageHeight] = useState(screenWidth * 1.4);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    // Only get size if page is loaded
+    if (!page.loading && page.preloaded) {
+      Image.getSize(
+        page.resolvedUrl,
+        (w, h) => {
+          const ratio = screenWidth / w;
+          setImageHeight(h * ratio);
+        },
+        () => setImageHeight(screenWidth * 1.4)
+      );
+    }
+  }, [page.resolvedUrl, page.loading, page.preloaded, screenWidth]);
+
+  // Show skeleton while page is loading
+  if (page.loading) {
+    return (
+      <TouchableOpacity activeOpacity={1} onPress={onPress}>
+        <View style={{
+          width: screenWidth,
+          height: screenWidth * 1.4,
+          justifyContent: 'center',
+          alignItems: 'center',
+          backgroundColor: '#1a1a1a'
+        }}>
+          <ActivityIndicator size="large" color="#FA6432" />
+          <Text style={{ color: '#666', marginTop: 12, fontSize: 12 }}>
+            {t('reader.loadingPage', { page: page.pageNumber, total: totalPages })}
+          </Text>
+        </View>
+      </TouchableOpacity>
+    );
+  }
+
+  if (error) {
+    return (
+      <TouchableOpacity activeOpacity={1} onPress={onPress}>
+        <View style={{ width: screenWidth, height: screenWidth * 1.4, justifyContent: 'center', alignItems: 'center' }}>
+          <Ionicons name="image-outline" size={40} color="#555" />
+          <Text style={styles.pageErrorText}>{t('reader.failedToLoadPage', { page: page.pageNumber })}</Text>
+        </View>
+      </TouchableOpacity>
+    );
+  }
+
+  return (
+    <TouchableOpacity activeOpacity={1} onPress={onPress}>
+      <Image
+        source={{ uri: page.resolvedUrl }}
+        style={{ width: screenWidth, height: imageHeight }}
+        resizeMode="contain"
+        onError={() => setError(true)}
+      />
+    </TouchableOpacity>
+  );
+};
+
+// Component for fixed-height images with progressive loading and DRM support
+// Uses fixed height to prevent layout shifts during scrolling
 const AutoSizeImage: React.FC<{
   uri: string;
   onPress: () => void;
   pageNumber: number;
   totalPages: number;
 }> = ({ uri, onPress, pageNumber, totalPages }) => {
-  const { width: screenWidth } = useWindowDimensions();
-  const [imageHeight, setImageHeight] = useState(screenWidth * 1.4);
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  // Use fixed height based on screen to prevent layout shifts
+  const fixedHeight = screenHeight;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [actualUri, setActualUri] = useState<string | null>(null);
   const [decrypting, setDecrypting] = useState(false);
-
-  // Update image height when screen width changes (orientation change)
-  useEffect(() => {
-    if (actualUri) {
-      Image.getSize(
-        actualUri,
-        (w, h) => {
-          const ratio = screenWidth / w;
-          setImageHeight(h * ratio);
-        },
-        () => {
-          setImageHeight(screenWidth * 1.4);
-        }
-      );
-    } else {
-      setImageHeight(screenWidth * 1.4);
-    }
-  }, [screenWidth, actualUri]);
 
   useEffect(() => {
     let mounted = true;
@@ -356,21 +507,7 @@ const AutoSizeImage: React.FC<{
 
           if (decryptedUrl) {
             setActualUri(decryptedUrl);
-            // Get image size from decrypted data URL
-            Image.getSize(
-              decryptedUrl,
-              (w, h) => {
-                if (!mounted) return;
-                const ratio = screenWidth / w;
-                setImageHeight(h * ratio);
-                setLoading(false);
-              },
-              () => {
-                if (!mounted) return;
-                setImageHeight(screenWidth * 1.4);
-                setLoading(false);
-              }
-            );
+            setLoading(false);
           } else {
             setError(true);
             setLoading(false);
@@ -383,33 +520,19 @@ const AutoSizeImage: React.FC<{
           if (mounted) setDecrypting(false);
         }
       } else {
-        // Normal URL
+        // Normal URL - just set it directly, no size calculation
         setActualUri(uri);
-        Image.getSize(
-          uri,
-          (w, h) => {
-            if (!mounted) return;
-            const ratio = screenWidth / w;
-            setImageHeight(h * ratio);
-            setLoading(false);
-          },
-          () => {
-            if (!mounted) return;
-            setImageHeight(screenWidth * 1.4);
-            setLoading(false);
-            setError(true);
-          }
-        );
+        setLoading(false);
       }
     };
 
     loadImage();
     return () => { mounted = false; };
-  }, [uri, screenWidth]);
+  }, [uri]);
 
   return (
     <TouchableOpacity activeOpacity={1} onPress={onPress}>
-      <View style={{ width: screenWidth, minHeight: imageHeight, justifyContent: 'center', alignItems: 'center' }}>
+      <View style={{ width: screenWidth, height: fixedHeight, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000' }}>
         {(loading || decrypting) && (
           <View style={styles.pageLoadingContainer}>
             <ActivityIndicator size="small" color="#FA6432" />
@@ -426,7 +549,7 @@ const AutoSizeImage: React.FC<{
         ) : actualUri ? (
           <Image
             source={{ uri: actualUri }}
-            style={{ width: screenWidth, height: imageHeight }}
+            style={{ width: screenWidth, height: fixedHeight }}
             resizeMode="contain"
             onLoad={() => setLoading(false)}
             onError={() => { setLoading(false); setError(true); }}
@@ -519,7 +642,7 @@ const HorizontalPageImage: React.FC<{
   );
 };
 
-// Chapter transition component
+// Chapter transition component - compact version
 const ChapterTransition: React.FC<{
   type: 'previous' | 'next';
   chapter: Chapter | null;
@@ -533,18 +656,8 @@ const ChapterTransition: React.FC<{
     return (
       <View style={styles.transitionContainer}>
         <View style={styles.transitionContent}>
-          <Ionicons
-            name={isPrevious ? "chevron-up" : "checkmark-circle"}
-            size={40}
-            color="#666"
-          />
-          <Text style={styles.transitionTitle}>
-            {isPrevious ? t('reader.noPreviousChapter') : t('reader.caughtUp')}
-          </Text>
-          <Text style={styles.transitionSubtitle}>
-            {isPrevious
-              ? t('reader.firstChapter')
-              : t('reader.latestChapter')}
+          <Text style={styles.transitionLabel}>
+            {isPrevious ? t('reader.noPreviousChapter') : t('reader.noNextChapter')}
           </Text>
         </View>
       </View>
@@ -559,25 +672,15 @@ const ChapterTransition: React.FC<{
     >
       <View style={styles.transitionContent}>
         {isLoading ? (
-          <ActivityIndicator size="large" color="#FA6432" />
+          <ActivityIndicator size="small" color="#FA6432" />
         ) : (
           <>
-            <Ionicons
-              name={isPrevious ? "chevron-up" : "chevron-down"}
-              size={32}
-              color="#FA6432"
-            />
             <Text style={styles.transitionLabel}>
               {isPrevious ? t('reader.previousChapter') : t('reader.nextChapter')}
             </Text>
             <Text style={styles.transitionChapterTitle}>
-              {t('reader.chapter')} {chapter.number}{chapter.title ? ` - ${chapter.title}` : ''}
+              {t('reader.chapter')} {chapter.number}
             </Text>
-            <View style={styles.transitionButton}>
-              <Text style={styles.transitionButtonText}>
-                {isPrevious ? t('reader.goToPrevious') : t('manga.continueReading')}
-              </Text>
-            </View>
           </>
         )}
       </View>
@@ -590,17 +693,18 @@ export const ReaderScreen: React.FC = () => {
   const route = useRoute<ReaderRouteProp>();
   const navigation = useNavigation<ReaderNavigationProp>();
   const { updateProgress, addToLibrary, library } = useLibrary();
+  const { downloads, isChapterDownloaded } = useDownloads();
 
   const [manga, setManga] = useState<Manga | null>(null);
   const [chapter, setChapter] = useState<Chapter | null>(null);
   const [currentPage, setCurrentPage] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadingPages, setLoadingPages] = useState(true); // Still loading individual pages
+  const [loadingProgress, setLoadingProgress] = useState(0); // Preload progress
   const [showControls, setShowControls] = useState(false);
   const [readingMode, setReadingMode] = useState<'vertical' | 'horizontal'>('vertical');
-  const [pages, setPages] = useState<Page[]>([]);
-  const [loadedPages, setLoadedPages] = useState<Page[]>([]); // Progressive loading
+  const [pages, setPages] = useState<PreloadedPage[]>([]);
   const [isTransitioning, setIsTransitioning] = useState(false);
-  const [allPagesLoaded, setAllPagesLoaded] = useState(false);
   const [isBookmarked, setIsBookmarked] = useState(false);
 
   // Modal states
@@ -610,12 +714,76 @@ export const ReaderScreen: React.FC = () => {
   // Reader settings
   const [readingDirection, setReadingDirection] = useState<'ltr' | 'rtl'>('ltr');
   const [pagePadding, setPagePadding] = useState(false);
+  const [orientationLocked, setOrientationLocked] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const flatListRef = useRef<FlatList>(null);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const { mangaId, chapterId, sourceId } = route.params;
+  const { mangaId, chapterId, sourceId, initialPage } = route.params;
+
+  // Handle orientation lock
+  const toggleOrientationLock = useCallback(async () => {
+    try {
+      console.log('[Reader] toggleOrientationLock called, current state:', orientationLocked);
+      if (orientationLocked) {
+        // Unlock orientation
+        await ScreenOrientation.unlockAsync();
+        setOrientationLocked(false);
+        console.log('[Reader] Orientation unlocked');
+      } else {
+        // Lock to current orientation
+        const currentOrientation = await ScreenOrientation.getOrientationAsync();
+        console.log('[Reader] Current orientation:', currentOrientation);
+
+        // Determine if we're in landscape or portrait
+        const isLandscape =
+          currentOrientation === ScreenOrientation.Orientation.LANDSCAPE_LEFT ||
+          currentOrientation === ScreenOrientation.Orientation.LANDSCAPE_RIGHT;
+
+        // Try different lock types - some devices don't support all lock types
+        const lockTypes = isLandscape
+          ? [
+            ScreenOrientation.OrientationLock.LANDSCAPE,
+            ScreenOrientation.OrientationLock.LANDSCAPE_LEFT,
+            ScreenOrientation.OrientationLock.LANDSCAPE_RIGHT,
+          ]
+          : [
+            ScreenOrientation.OrientationLock.PORTRAIT,
+            ScreenOrientation.OrientationLock.PORTRAIT_UP,
+          ];
+
+        let locked = false;
+        for (const lockType of lockTypes) {
+          try {
+            await ScreenOrientation.lockAsync(lockType);
+            setOrientationLocked(true);
+            console.log('[Reader] Orientation locked to:', lockType);
+            locked = true;
+            break;
+          } catch (e) {
+            console.log('[Reader] Lock type not supported:', lockType);
+          }
+        }
+
+        if (!locked) {
+          console.warn('[Reader] Could not lock orientation - device may not support it');
+        }
+      }
+    } catch (error) {
+      console.error('[Reader] Error toggling orientation lock:', error);
+    }
+  }, [orientationLocked]);
+
+  // Unlock orientation when leaving reader
+  useFocusEffect(
+    useCallback(() => {
+      // Unlock when leaving reader
+      return () => {
+        ScreenOrientation.unlockAsync();
+      };
+    }, [])
+  );
 
   // Check if manga is in library
   useEffect(() => {
@@ -628,6 +796,49 @@ export const ReaderScreen: React.FC = () => {
   useEffect(() => {
     loadData();
   }, [mangaId, chapterId]);
+
+  // Scroll to saved page position when resuming reading
+  const hasScrolledToInitialPage = useRef(false);
+
+  useEffect(() => {
+    if (initialPage && initialPage > 0 && pages.length > 0 && !loading && flatListRef.current && !hasScrolledToInitialPage.current) {
+      const targetIndex = Math.min(initialPage, pages.length - 1);
+      console.log('[Reader] Scrolling to saved page:', targetIndex + 1, 'mode:', readingMode);
+      hasScrolledToInitialPage.current = true;
+
+      // Longer delay to ensure content is fully rendered
+      setTimeout(() => {
+        try {
+          if (readingMode === 'horizontal') {
+            // For horizontal mode, use scrollToOffset with screen width
+            const screenWidth = Dimensions.get('window').width;
+            flatListRef.current?.scrollToOffset({
+              offset: targetIndex * screenWidth,
+              animated: false,
+            });
+          } else {
+            // For vertical mode, estimate scroll position based on content
+            // First try scrollToIndex with failure handler
+            flatListRef.current?.scrollToIndex({
+              index: targetIndex,
+              animated: false,
+              viewPosition: 0, // Show at top
+            });
+          }
+          setCurrentPage(targetIndex);
+        } catch (e) {
+          console.log('[Reader] scrollToIndex failed, using scrollToOffset fallback');
+          // Fallback: use scrollToOffset with estimated height
+          const estimatedPageHeight = Dimensions.get('window').height;
+          flatListRef.current?.scrollToOffset({
+            offset: targetIndex * estimatedPageHeight,
+            animated: false,
+          });
+          setCurrentPage(targetIndex);
+        }
+      }, 300);
+    }
+  }, [pages.length, loading, initialPage, readingMode]);
 
   const toggleBookmark = async () => {
     if (!manga) return;
@@ -664,6 +875,84 @@ export const ReaderScreen: React.FC = () => {
       setLoading(true);
 
       console.log('[Reader] loadData called with:', { mangaId, chapterId, sourceId });
+
+      // Check if chapter is downloaded - use local files instead
+      const downloadedChapter = downloads.find(d => d.chapterId === chapterId);
+      if (downloadedChapter && downloadedChapter.pages.length > 0) {
+        console.log('[Reader] Loading from downloaded files:', downloadedChapter.pages.length, 'pages');
+
+        // Try to get full manga info for chapter navigation (in background)
+        let chaptersData: any[] = [];
+        let mangaDetails: any = null;
+        const downloadSourceId = downloadedChapter.sourceId || sourceId;
+
+        if (downloadSourceId) {
+          try {
+            [mangaDetails, chaptersData] = await Promise.all([
+              getMangaDetails(downloadSourceId, downloadedChapter.mangaId).catch(() => null),
+              getChapters(downloadSourceId, downloadedChapter.mangaId).catch(() => []),
+            ]);
+            console.log('[Reader] Fetched manga info for downloaded chapter, chapters:', chaptersData.length);
+          } catch (e) {
+            console.log('[Reader] Failed to fetch manga info, using minimal data');
+          }
+        }
+
+        // Create manga object - use fetched data if available
+        const mangaData: Manga = {
+          id: downloadedChapter.mangaId,
+          title: mangaDetails?.titles?.[0] || downloadedChapter.mangaTitle,
+          author: mangaDetails?.author || '',
+          description: mangaDetails?.desc || '',
+          coverImage: mangaDetails?.image || downloadedChapter.mangaCover,
+          genres: [],
+          status: mangaDetails?.status?.toLowerCase() || 'ongoing',
+          chapters: chaptersData.map((ch: any) => ({
+            id: ch.id,
+            mangaId: downloadedChapter.mangaId,
+            number: ch.chapNum,
+            title: ch.name || `Chapter ${ch.chapNum}`,
+            pages: [],
+            releaseDate: ch.time || new Date().toISOString(),
+            isRead: false,
+          })),
+          lastUpdated: new Date().toISOString(),
+          source: downloadSourceId,
+        };
+        setManga(mangaData);
+
+        // Find chapter number from fetched data if not stored
+        const fetchedChapter = chaptersData.find((ch: any) => ch.id === chapterId);
+
+        // Create chapter object
+        const chapterData: Chapter = {
+          id: downloadedChapter.chapterId,
+          mangaId: downloadedChapter.mangaId,
+          number: fetchedChapter?.chapNum || downloadedChapter.chapterNumber || 1,
+          title: fetchedChapter?.name || downloadedChapter.chapterTitle,
+          pages: [],
+          releaseDate: fetchedChapter?.time || downloadedChapter.downloadedAt,
+          isRead: false,
+        };
+        setChapter(chapterData);
+
+        // Convert local file paths to PreloadedPage objects
+        const preloadedPages: PreloadedPage[] = downloadedChapter.pages.map((filePath, index) => ({
+          id: `${chapterId}-page-${index}`,
+          chapterId: chapterId,
+          pageNumber: index + 1,
+          imageUrl: filePath, // Local file URI
+          resolvedUrl: filePath, // Already a local file
+          preloaded: true, // Already on disk
+          loading: false,
+        }));
+
+        setPages(preloadedPages);
+        setLoadingPages(false);
+        setLoading(false);
+        console.log('[Reader] Loaded downloaded chapter with', preloadedPages.length, 'pages');
+        return;
+      }
 
       // If sourceId is provided, load from extension
       if (sourceId) {
@@ -734,7 +1023,7 @@ export const ReaderScreen: React.FC = () => {
           };
           setChapter(chapterData);
 
-          // Convert page URLs to Page objects - ensure unique keys
+          // Convert page URLs to Page objects
           const pageData: Page[] = pageUrls.map((url, index) => ({
             id: `${chapterId}-page-${index}`,
             chapterId: chapterId,
@@ -742,11 +1031,44 @@ export const ReaderScreen: React.FC = () => {
             imageUrl: url,
           }));
           console.log('[Reader] Created page data:', pageData.length, 'pages');
-          console.log('[Reader] First page:', pageData[0]?.id, pageData[0]?.imageUrl?.substring(0, 50));
-          setPages(pageData);
-          // Start with first 3 pages for progressive loading
-          setLoadedPages(pageData.slice(0, 3));
-          setAllPagesLoaded(pageData.length <= 3);
+
+          // Create skeleton pages immediately so user sees something
+          const skeletonPages: PreloadedPage[] = pageData.map(page => ({
+            ...page,
+            resolvedUrl: page.imageUrl,
+            preloaded: false,
+            loading: true,
+          }));
+          setPages(skeletonPages);
+          setLoadingPages(true);
+          setLoading(false); // Stop main loading, show skeleton
+
+          // Progressively load pages in background
+          console.log('[Reader] Starting progressive page loading...');
+          await preloadAllPagesWithProgress(
+            pageData,
+            // Progress callback
+            (loaded, total) => {
+              console.log(`[Reader] Progress: ${loaded}/${total} pages`);
+            },
+            // Page loaded callback - update individual page
+            (index, loadedPage) => {
+              setPages(prev => {
+                const newPages = [...prev];
+                newPages[index] = loadedPage;
+                return newPages;
+              });
+            }
+          );
+          setLoadingPages(false);
+          console.log('[Reader] All pages loaded');
+
+          // Cache page info for future reference
+          cacheChapterPages(
+            mangaId,
+            chapterId,
+            pageData.map(p => ({ pageNumber: p.pageNumber, imageUrl: p.imageUrl }))
+          ).catch(() => { }); // Fire and forget
         }
       } else {
         // No sourceId provided - cannot load chapter
@@ -788,38 +1110,20 @@ export const ReaderScreen: React.FC = () => {
   const saveProgress = useCallback(async (pageNum: number) => {
     if (!manga || !chapter) return;
 
+    const totalPages = pages.length;
+    // pageNum is 0-indexed from FlatList, convert to 1-indexed for storage
+    const pageNumber = pageNum + 1;
+    const percentage = totalPages > 0 ? Math.round((pageNumber / totalPages) * 100) : 0;
+
     await updateProgress({
       mangaId: manga.id,
       chapterId: chapter.id,
-      pageNumber: pageNum,
+      pageNumber: pageNumber,
+      totalPages,
+      percentage,
       lastRead: new Date().toISOString(),
     }, manga);
-  }, [manga, chapter, updateProgress]);
-
-  // Load more pages progressively as user reads
-  const loadMorePages = useCallback(() => {
-    if (allPagesLoaded || pages.length === 0) return;
-
-    setLoadedPages(prev => {
-      // Check if we already have all pages
-      if (prev.length >= pages.length) {
-        setAllPagesLoaded(true);
-        return prev;
-      }
-
-      const nextBatch = pages.slice(prev.length, prev.length + 3);
-      if (nextBatch.length === 0) {
-        setAllPagesLoaded(true);
-        return prev;
-      }
-
-      const newPages = [...prev, ...nextBatch];
-      if (newPages.length >= pages.length) {
-        setAllPagesLoaded(true);
-      }
-      return newPages;
-    });
-  }, [pages, allPagesLoaded]);
+  }, [manga, chapter, pages.length, updateProgress]);
 
   // Get adjacent chapters
   const getAdjacentChapters = useCallback(() => {
@@ -849,27 +1153,14 @@ export const ReaderScreen: React.FC = () => {
     navigation.replace('Reader', { mangaId: manga.id, chapterId: nextChapter.id, sourceId });
   };
 
-  const renderPage = ({ item, index }: { item: Page; index: number }) => {
-    if (readingMode === 'vertical') {
-      return (
-        <AutoSizeImage
-          key={item.id}
-          uri={item.imageUrl}
-          onPress={toggleControls}
-          pageNumber={item.pageNumber}
-          totalPages={pages.length}
-        />
-      );
-    }
-
-    // Horizontal mode - also need to handle DRM
+  const renderPage = ({ item }: { item: PreloadedPage }) => {
+    // Use preloaded image component for fast rendering
     return (
-      <HorizontalPageImage
+      <PreloadedImage
         key={item.id}
-        uri={item.imageUrl}
-        pageNumber={item.pageNumber}
-        totalPages={pages.length}
+        page={item}
         onPress={toggleControls}
+        totalPages={pages.length}
       />
     );
   };
@@ -896,43 +1187,49 @@ export const ReaderScreen: React.FC = () => {
     />
   );
 
-  // Track page changes and trigger loading more pages
+  // Track page changes - use scroll position for vertical mode
   const saveProgressRef = useRef(saveProgress);
-  const loadMorePagesRef = useRef(loadMorePages);
-  const loadedPagesCountRef = useRef(loadedPages.length);
+  const lastSavedPageRef = useRef(-1);
 
   useEffect(() => {
     saveProgressRef.current = saveProgress;
-    loadMorePagesRef.current = loadMorePages;
-    loadedPagesCountRef.current = loadedPages.length;
-  }, [saveProgress, loadMorePages, loadedPages.length]);
+  }, [saveProgress]);
 
+  // Viewability config for horizontal mode only (vertical uses scroll position)
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
-    if (viewableItems.length > 0) {
-      // Find the first item that's a page (not header/footer)
-      const pageItem = viewableItems.find((item: any) => item.item?.pageNumber !== undefined);
-      if (pageItem) {
-        const newPage = pageItem.index;
-        setCurrentPage(newPage);
-        saveProgressRef.current(newPage);
-
-        // Load more pages when user is near the end of loaded pages
-        if (newPage >= loadedPagesCountRef.current - 2) {
-          loadMorePagesRef.current();
-        }
-      }
-    }
+    // Only use for horizontal mode - vertical mode uses handleScroll
+    // This is kept for FlatList but not actively used for vertical scrolling
   }).current;
 
   const viewabilityConfig = useRef({
     itemVisiblePercentThreshold: 50,
+    minimumViewTime: 0,
   }).current;
 
-  // Handle scroll for chapter transitions (vertical mode)
+  // Handle scroll for vertical mode - calculate page from scroll position
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
     const scrollY = contentOffset.y;
     const maxScrollY = contentSize.height - layoutMeasurement.height;
+
+    // Calculate current page based on scroll position
+    // Each page is exactly one screen height (layoutMeasurement.height)
+    if (pages.length > 0) {
+      const pageHeight = layoutMeasurement.height;
+      // Use the center of the screen to determine which page we're on
+      const centerScrollY = scrollY + (pageHeight / 2);
+      const estimatedPage = Math.floor(centerScrollY / pageHeight);
+      const clampedPage = Math.max(0, Math.min(estimatedPage, pages.length - 1));
+
+      // Update current page display
+      setCurrentPage(clampedPage);
+
+      // Save progress when page changes
+      if (clampedPage !== lastSavedPageRef.current) {
+        lastSavedPageRef.current = clampedPage;
+        saveProgressRef.current(clampedPage);
+      }
+    }
 
     // Check if scrolled past the end (for next chapter)
     if (scrollY > maxScrollY + 100 && nextChapter && !isTransitioning) {
@@ -949,6 +1246,12 @@ export const ReaderScreen: React.FC = () => {
 
     setCurrentPage(currentPageIndex);
 
+    // Save progress when page changes in horizontal mode
+    if (currentPageIndex !== lastSavedPageRef.current && currentPageIndex >= 0 && currentPageIndex < pages.length) {
+      lastSavedPageRef.current = currentPageIndex;
+      saveProgressRef.current(currentPageIndex);
+    }
+
     // Check for chapter transitions at boundaries
     const maxScrollX = contentSize.width - layoutMeasurement.width;
 
@@ -962,9 +1265,19 @@ export const ReaderScreen: React.FC = () => {
     }
   };
 
-  // No loading screen - show content immediately even while loading
-  // Only show error if we've finished loading and have no pages
-  if (!loading && pages.length === 0) {
+  // Show loading screen while fetching chapter info (not page images)
+  if (loading && pages.length === 0) {
+    return (
+      <View style={[styles.container, { backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#FA6432" />
+        <Text style={{ color: '#888', marginTop: 16, fontSize: 14 }}>
+          {t('common.loading')}...
+        </Text>
+      </View>
+    );
+  }
+
+  if (pages.length === 0) {
     return (
       <View style={[styles.container, { backgroundColor: '#000' }]}>
         <TouchableOpacity
@@ -987,7 +1300,7 @@ export const ReaderScreen: React.FC = () => {
 
       <FlatList
         ref={flatListRef}
-        data={readingMode === 'horizontal' ? pages : loadedPages}
+        data={pages}
         renderItem={renderPage}
         keyExtractor={item => item.id}
         horizontal={readingMode === 'horizontal'}
@@ -996,17 +1309,27 @@ export const ReaderScreen: React.FC = () => {
         showsHorizontalScrollIndicator={false}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
-        initialNumToRender={3}
-        maxToRenderPerBatch={3}
-        windowSize={5}
+        initialNumToRender={initialPage && initialPage > 0 ? Math.max(initialPage + 3, 10) : 3}
+        maxToRenderPerBatch={5}
+        windowSize={7}
         removeClippedSubviews={false}
         ListHeaderComponent={readingMode === 'vertical' ? ListHeaderComponent : undefined}
         ListFooterComponent={readingMode === 'vertical' ? ListFooterComponent : undefined}
         onScroll={readingMode === 'horizontal' ? handleHorizontalScroll : handleScroll}
         scrollEventThrottle={16}
         bounces={true}
-        onEndReached={readingMode === 'vertical' ? loadMorePages : undefined}
-        onEndReachedThreshold={0.5}
+        onScrollToIndexFailed={(info) => {
+          console.log('[Reader] scrollToIndex failed:', info);
+          // Wait for more items to render, then retry
+          setTimeout(() => {
+            if (flatListRef.current && info.index < pages.length) {
+              flatListRef.current.scrollToIndex({
+                index: info.index,
+                animated: false,
+              });
+            }
+          }, 500);
+        }}
       />
 
       {/* Back button - always accessible in horizontal mode */}
@@ -1097,6 +1420,20 @@ export const ReaderScreen: React.FC = () => {
 
               <TouchableOpacity
                 style={styles.bottomButton}
+                onPress={() => {
+                  console.log('[Reader] Lock button pressed!');
+                  toggleOrientationLock();
+                }}
+              >
+                <Ionicons
+                  name={orientationLocked ? "lock-closed" : "lock-open-outline"}
+                  size={22}
+                  color={orientationLocked ? "#FA6432" : "#fff"}
+                />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.bottomButton}
                 onPress={() => setShowSettingsModal(true)}
               >
                 <Ionicons name="settings-outline" size={22} color="#fff" />
@@ -1169,6 +1506,35 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000',
   },
+  progressBarContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+  },
+  progressBarBackground: {
+    flex: 1,
+    height: 4,
+    backgroundColor: '#333',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: '#FA6432',
+    borderRadius: 2,
+  },
+  progressBarText: {
+    color: '#888',
+    fontSize: 12,
+    marginLeft: 12,
+    minWidth: 45,
+  },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -1202,40 +1568,39 @@ const styles = StyleSheet.create({
 
   // Transition styles
   transitionContainer: {
-    height: height * 0.4,
+    height: 120,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#111',
+    backgroundColor: '#000',
   },
   transitionContent: {
     alignItems: 'center',
     paddingHorizontal: 40,
   },
   transitionLabel: {
-    fontSize: 13,
-    color: '#888',
-    marginTop: 8,
+    fontSize: 11,
+    color: '#666',
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
   transitionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#fff',
-    marginTop: 12,
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#888',
+    marginTop: 6,
     textAlign: 'center',
   },
   transitionSubtitle: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 4,
+    fontSize: 12,
+    color: '#555',
+    marginTop: 2,
     textAlign: 'center',
   },
   transitionChapterTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
-    color: '#fff',
-    marginTop: 8,
+    color: '#FA6432',
+    marginTop: 4,
     textAlign: 'center',
   },
   transitionButton: {

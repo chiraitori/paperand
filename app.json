@@ -2,7 +2,7 @@
   "expo": {
     "name": "Paperand",
     "slug": "paperback-android",
-    "version": "0.0.12",
+    "version": "0.0.13",
     "scheme": "paperand",
     "orientation": "default",
     "icon": "./assets/icon.png",
@@ -17,13 +17,20 @@
         "backgroundColor": "#1a1a2e"
       }
     },
+    "notification": {
+      "icon": "./assets/notification-icon.png",
+      "color": "#FA6432"
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.chiraitori.paperand.ios",
-      "buildNumber": "12",
+      "buildNumber": "13",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "CFBundleAllowMixedLocalizations": true,
+        "UIBackgroundModes": [
+          "fetch"
+        ],
         "CFBundleLocalizations": [
           "en",
           "vi",
@@ -88,9 +95,11 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.chiraitori.paperand.android",
-      "versionCode": 12,
+      "versionCode": 13,
       "permissions": [
-        "android.permission.REQUEST_INSTALL_PACKAGES"
+        "android.permission.REQUEST_INSTALL_PACKAGES",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_DATA_SYNC"
       ],
       "intentFilters": [
         {
@@ -124,10 +133,13 @@
         "expo-notifications",
         {
           "icon": "./assets/icon.png",
-          "color": "#C0392B"
+          "color": "#FA6432"
         }
       ],
-      "expo-quick-actions"
+      "expo-quick-actions",
+      "expo-font",
+      "expo-live-activity",
+      "./plugins/withBackgroundActionsServiceType"
     ]
   }
 }

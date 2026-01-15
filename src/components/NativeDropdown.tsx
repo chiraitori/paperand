@@ -31,13 +31,18 @@ interface NativeDropdownProps {
     selectedValue: string;
     onSelect: (value: string) => void;
     title?: string;
-    children: React.ReactNode;
+    children: React.ReactNode | ((openMenu: () => void) => React.ReactNode);
+    triggerOnLongPress?: boolean; // Only used when children is ReactNode, not render function
 }
 
 /**
  * Native dropdown menu component
  * - iOS (production build): Uses native UIMenu via ContextMenuButton (isMenuPrimaryAction=true)
  * - iOS (Expo Go) / Android: Uses modal picker fallback
+ * 
+ * Usage:
+ * 1. Simple (tap to open): <NativeDropdown ...><View>...</View></NativeDropdown>
+ * 2. Long press: <NativeDropdown ...>{(openMenu) => <TouchableOpacity onLongPress={openMenu}>...</TouchableOpacity>}</NativeDropdown>
  */
 export const NativeDropdown: React.FC<NativeDropdownProps> = ({
     options,
@@ -45,15 +50,23 @@ export const NativeDropdown: React.FC<NativeDropdownProps> = ({
     onSelect,
     title,
     children,
+    triggerOnLongPress = false,
 }) => {
     const { theme } = useTheme();
     const [showPicker, setShowPicker] = useState(false);
 
+    const openMenu = () => setShowPicker(true);
+
+    // Check if children is a render function
+    const isRenderFunction = typeof children === 'function';
+
     // Use native ContextMenuButton on iOS production builds for standard pull-down menu
     if (Platform.OS === 'ios' && ContextMenuButton && !isExpoGo) {
+        const menuContent = isRenderFunction ? (children as Function)(() => {}) : children;
+        
         return (
             <ContextMenuButton
-                isMenuPrimaryAction={true}
+                isMenuPrimaryAction={!triggerOnLongPress && !isRenderFunction}
                 menuConfig={{
                     menuTitle: title || '',
                     menuItems: options.map((option) => ({
@@ -66,7 +79,7 @@ export const NativeDropdown: React.FC<NativeDropdownProps> = ({
                     onSelect(nativeEvent.actionKey);
                 }}
             >
-                {children}
+                {menuContent}
             </ContextMenuButton>
         );
     }
@@ -77,9 +90,73 @@ export const NativeDropdown: React.FC<NativeDropdownProps> = ({
         setShowPicker(false);
     };
 
+    // If children is a render function, call it with openMenu
+    if (isRenderFunction) {
+        return (
+            <>
+                {(children as Function)(openMenu)}
+
+                <Modal
+                    visible={showPicker}
+                    transparent
+                    animationType="fade"
+                    onRequestClose={() => setShowPicker(false)}
+                >
+                <TouchableWithoutFeedback onPress={() => setShowPicker(false)}>
+                    <View style={styles.overlay}>
+                        <TouchableWithoutFeedback>
+                            <View style={[styles.container, { backgroundColor: theme.card }]}>
+                                {title && (
+                                    <Text style={[styles.title, { color: theme.text }]}>{title}</Text>
+                                )}
+                                <ScrollView style={styles.optionsContainer} bounces={false}>
+                                    {options.map((option, index) => (
+                                        <TouchableOpacity
+                                            key={option.value}
+                                            style={[
+                                                styles.option,
+                                                index < options.length - 1 && { borderBottomColor: theme.border, borderBottomWidth: StyleSheet.hairlineWidth },
+                                            ]}
+                                            onPress={() => handleSelect(option.value)}
+                                        >
+                                            <Text
+                                                style={[
+                                                    styles.optionText,
+                                                    { color: theme.text },
+                                                    selectedValue === option.value && { color: theme.primary, fontWeight: '600' },
+                                                ]}
+                                            >
+                                                {option.label}
+                                            </Text>
+                                            {selectedValue === option.value && (
+                                                <Ionicons name="checkmark" size={22} color={theme.primary} />
+                                            )}
+                                        </TouchableOpacity>
+                                    ))}
+                                </ScrollView>
+                                <TouchableOpacity
+                                    style={[styles.cancelButton, { borderTopColor: theme.border }]}
+                                    onPress={() => setShowPicker(false)}
+                                >
+                                    <Text style={[styles.cancelText, { color: theme.primary }]}>{t('common.cancel')}</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </TouchableWithoutFeedback>
+                    </View>
+                </TouchableWithoutFeedback>
+            </Modal>
+            </>
+        );
+    }
+
+    // Non-function children: use Pressable wrapper
+    const pressableProps = triggerOnLongPress
+        ? { onLongPress: openMenu }
+        : { onPress: openMenu };
+
     return (
         <>
-            <Pressable onPress={() => setShowPicker(true)}>
+            <Pressable {...pressableProps}>
                 {children}
             </Pressable>
 

@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Alert } from 'react-native';
+import { Alert, AppState, AppStateStatus } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ThemeProvider } from './src/context/ThemeContext';
 import { LibraryProvider } from './src/context/LibraryContext';
+import { DownloadProvider } from './src/context/DownloadContext';
 import { AppNavigator, navigationRef } from './src/navigation';
 import { ExtensionRunner, UpdateModal } from './src/components';
 import {
@@ -20,6 +21,8 @@ import {
 import { Action, setItems } from 'expo-quick-actions';
 import { useQuickAction } from 'expo-quick-actions/hooks';
 import { initLogCapture } from './src/services/developerService';
+import { startBackgroundService, stopBackgroundService, isBackgroundServiceRunning } from './src/services/backgroundTaskService';
+import { downloadService } from './src/services/downloadService';
 
 // Initialize log capture immediately so all logs are captured from startup
 initLogCapture();
@@ -113,9 +116,38 @@ export default function App() {
       }
     };
 
+    // Handle app state changes for background downloads
+    const subscription = AppState.addEventListener('change', async (nextAppState: AppStateStatus) => {
+      console.log('[AppState] State changed to:', nextAppState);
+      
+      if (nextAppState === 'background') {
+        // Check if there are active downloads
+        const queue = downloadService.getQueue();
+        const hasActiveDownloads = queue.some(j => j.status === 'downloading' || j.status === 'queued');
+        
+        if (hasActiveDownloads) {
+          console.log('[AppState] App went to background with active downloads, starting background service');
+          startBackgroundService().catch(err => {
+            console.error('[AppState] Failed to start background service:', err);
+          });
+        }
+      } else if (nextAppState === 'active') {
+        // Stop background service when app comes back
+        if (isBackgroundServiceRunning()) {
+          console.log('[AppState] App became active, stopping background service');
+          stopBackgroundService().catch(err => {
+            console.error('[AppState] Failed to stop background service:', err);
+          });
+        }
+      }
+    });
+
     // Delay update check slightly to let app initialize
     const timer = setTimeout(performUpdateCheck, 2000);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      subscription.remove();
+    };
   }, []);
 
   useEffect(() => {
@@ -161,18 +193,20 @@ export default function App() {
     <SafeAreaProvider>
       <ThemeProvider>
         <LibraryProvider>
-          <StatusBar style="auto" />
-          <AppNavigator />
-          <ExtensionRunner />
-          {latestRelease && (
-            <UpdateModal
-              visible={updateModalVisible}
-              currentVersion={currentVersion}
-              releaseInfo={latestRelease}
-              onClose={() => setUpdateModalVisible(false)}
-              onSkip={() => setUpdateModalVisible(false)}
-            />
-          )}
+          <DownloadProvider>
+            <StatusBar style="auto" />
+            <AppNavigator />
+            <ExtensionRunner />
+            {latestRelease && (
+              <UpdateModal
+                visible={updateModalVisible}
+                currentVersion={currentVersion}
+                releaseInfo={latestRelease}
+                onClose={() => setUpdateModalVisible(false)}
+                onSkip={() => setUpdateModalVisible(false)}
+              />
+            )}
+          </DownloadProvider>
         </LibraryProvider>
       </ThemeProvider>
     </SafeAreaProvider>

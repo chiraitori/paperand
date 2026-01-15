@@ -5,7 +5,6 @@ import {
   StyleSheet,
   FlatList,
   TouchableOpacity,
-  Alert,
   useWindowDimensions,
   AppState,
   AppStateStatus,
@@ -21,6 +20,8 @@ import { MangaCard, EmptyState, MangaPreviewModal, MangaCardWithPreview } from '
 import { RootStackParamList, LibraryEntry, Manga } from '../types';
 import { getGeneralSettings, GeneralSettings, defaultSettings } from '../services/settingsService';
 import { t } from '../services/i18nService';
+import { AppDialog } from '../components/AppDialog';
+import { useDialog } from '../hooks/useDialog';
 import Constants from 'expo-constants';
 
 const isExpoGo = Constants.appOwnership === 'expo';
@@ -31,6 +32,7 @@ export const HistoryScreen: React.FC = () => {
   const { theme } = useTheme();
   const { library, clearHistory, addToLibrary, removeFromLibrary, toggleFavorite, isInLibrary, isFavorite } = useLibrary();
   const navigation = useNavigation<HistoryScreenNavigationProp>();
+  const { dialogVisible, dialogConfig, showDialog, hideDialog } = useDialog();
   const [settings, setSettings] = useState<GeneralSettings>(defaultSettings);
   const { width, height } = useWindowDimensions();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -97,7 +99,7 @@ export const HistoryScreen: React.FC = () => {
     });
 
   const handleClearHistory = () => {
-    Alert.alert(
+    showDialog(
       t('history.clearHistory'),
       t('history.clearHistoryConfirm'),
       [
@@ -277,6 +279,15 @@ export const HistoryScreen: React.FC = () => {
         onToggleFavorite={toggleFavorite}
         isInLibrary={previewManga ? isInLibrary(previewManga.id) : false}
         isFavorite={previewManga ? isFavorite(previewManga.id) : false}
+      />
+
+      {/* Material You Dialog for Android */}
+      <AppDialog
+        visible={dialogVisible}
+        title={dialogConfig.title}
+        message={dialogConfig.message}
+        buttons={dialogConfig.buttons}
+        onDismiss={hideDialog}
       />
     </View>
   );

@@ -17,6 +17,9 @@ interface ChapterListItemProps {
   onPress: () => void;
   isRead?: boolean;
   isDownloaded?: boolean;
+  isDownloading?: boolean;
+  isQueued?: boolean;
+  downloadProgress?: number;
   onMarkAsRead?: () => void;
   onMarkAsUnread?: () => void;
   onMarkAllAboveAsRead?: () => void;
@@ -29,6 +32,9 @@ export const ChapterListItem: React.FC<ChapterListItemProps> = ({
   onPress,
   isRead = false,
   isDownloaded = false,
+  isDownloading = false,
+  isQueued = false,
+  downloadProgress = 0,
   onMarkAsRead,
   onMarkAsUnread,
   onMarkAllAboveAsRead,
@@ -80,11 +86,40 @@ export const ChapterListItem: React.FC<ChapterListItemProps> = ({
           >
             Chapter {chapter.number}
           </Text>
-          {isDownloaded && (
+          {isQueued && (
             <Ionicons
-              name="arrow-down-circle"
+              name="time-outline"
+              size={16}
+              color={theme.textSecondary}
+              style={styles.downloadIcon}
+            />
+          )}
+          {isDownloading && (
+            <View style={[styles.downloadingContainer, styles.downloadIcon]}>
+              <View style={[styles.progressBarBg, { backgroundColor: theme.border }]}>
+                <View style={[styles.progressBarFill, { 
+                  backgroundColor: theme.primary,
+                  width: `${downloadProgress * 100}%`
+                }]} />
+              </View>
+              <Text style={[styles.progressText, { color: theme.primary }]}>
+                {Math.round(downloadProgress * 100)}%
+              </Text>
+            </View>
+          )}
+          {isDownloaded && !isDownloading && !isQueued && (
+            <Ionicons
+              name="checkmark-circle"
               size={16}
               color={theme.primary}
+              style={styles.downloadIcon}
+            />
+          )}
+          {!isDownloaded && !isDownloading && !isQueued && onDownload && (
+            <Ionicons
+              name="arrow-down-circle-outline"
+              size={16}
+              color={theme.textSecondary}
               style={styles.downloadIcon}
             />
           )}
@@ -134,17 +169,20 @@ export const ChapterListItem: React.FC<ChapterListItemProps> = ({
       onSelect={handleMenuSelect}
       title={t('chapter.options') || 'Chapter Options'}
     >
-      <TouchableOpacity
-        style={[
-          styles.container,
-          { backgroundColor: theme.card, borderBottomColor: theme.border },
-        ]}
-        onPress={onPress}
-        onLongPress={() => { }} // NativeDropdown handles long press via wrapper
-        activeOpacity={0.7}
-      >
-        {renderContent()}
-      </TouchableOpacity>
+      {(openMenu) => (
+        <TouchableOpacity
+          style={[
+            styles.container,
+            { backgroundColor: theme.card, borderBottomColor: theme.border },
+          ]}
+          onPress={onPress}
+          onLongPress={openMenu}
+          delayLongPress={400}
+          activeOpacity={0.7}
+        >
+          {renderContent()}
+        </TouchableOpacity>
+      )}
     </NativeDropdown>
   );
 };
@@ -184,6 +222,25 @@ const styles = StyleSheet.create({
   },
   downloadIcon: {
     marginLeft: 6,
+  },
+  downloadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  progressBarBg: {
+    width: 30,
+    height: 4,
+    borderRadius: 2,
+    overflow: 'hidden',
+    marginRight: 4,
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 2,
+  },
+  progressText: {
+    fontSize: 10,
+    fontWeight: '600',
   },
   rightContent: {
     alignItems: 'flex-end',

@@ -16,8 +16,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { useLibrary } from '../context/LibraryContext';
 import { ChapterListItem, LoadingIndicator, NativeDropdown } from '../components';
+import { useDownloads } from '../context/DownloadContext';
 import { getMangaDetails, getChapters } from '../services/sourceService';
 import { getGeneralSettings, updateGeneralSetting } from '../services/settingsService';
+import {
+  cacheMangaMetadata,
+  cacheChapterList,
+  getCachedMangaMetadata,
+  getCachedChapterList
+} from '../services/cacheService';
 import { t } from '../services/i18nService';
 import { Manga, RootStackParamList } from '../types';
 
@@ -142,6 +149,7 @@ export const MangaDetailScreen: React.FC = () => {
     markAllAboveAsRead,
     markAllBelowAsRead,
   } = useLibrary();
+  const { downloadChapter, isChapterDownloaded, isDownloading, isQueued, getDownloadProgress } = useDownloads();
 
   const [manga, setManga] = useState<Manga | null>(null);
   const [loading, setLoading] = useState(true);
@@ -180,6 +188,48 @@ export const MangaDetailScreen: React.FC = () => {
       // If sourceId is provided, use extension service
       if (sourceId) {
         console.log('[MangaDetail] Fetching from extension:', sourceId, mangaId);
+
+        // Try to load from cache first for faster initial render
+        const cachedMetadata = await getCachedMangaMetadata(mangaId, sourceId);
+        const cachedChapters = await getCachedChapterList(mangaId, sourceId);
+
+        if (cachedMetadata && cachedChapters) {
+          console.log('[MangaDetail] Using cached data');
+          const cachedMangaData: Manga = {
+            id: mangaId,
+            title: cachedMetadata.title,
+            author: cachedMetadata.author,
+            artist: cachedMetadata.artist,
+            description: cachedMetadata.description,
+            coverImage: cachedMetadata.coverImage,
+            genres: cachedMetadata.genres,
+            status: cachedMetadata.status,
+            chapters: cachedChapters.chapters.map((ch) => ({
+              id: ch.id,
+              mangaId: mangaId,
+              number: ch.number,
+              title: ch.title,
+              pages: [],
+              releaseDate: ch.releaseDate,
+              isRead: false,
+            })),
+            lastUpdated: cachedMetadata.cachedAt,
+            source: sourceId,
+          };
+          setManga(cachedMangaData);
+          setLoading(false);
+
+          // Check if cache is expired and refresh in background
+          const isMetadataExpired = new Date(cachedMetadata.expiresAt) < new Date();
+          const isChaptersExpired = new Date(cachedChapters.expiresAt) < new Date();
+
+          if (!isMetadataExpired && !isChaptersExpired) {
+            return; // Cache is still valid
+          }
+          console.log('[MangaDetail] Cache expired, refreshing in background');
+        }
+
+        // Fetch fresh data from source
         const details = await getMangaDetails(sourceId, mangaId);
         const chapters = await getChapters(sourceId, mangaId);
 
@@ -226,6 +276,10 @@ export const MangaDetailScreen: React.FC = () => {
             source: sourceId,
           };
           setManga(mangaData);
+
+          // Cache the manga data for future use
+          await cacheMangaMetadata(mangaData, sourceId);
+          await cacheChapterList(mangaId, sourceId, mangaData.chapters);
         }
       } else {
         // No sourceId provided - cannot fetch manga
@@ -269,13 +323,21 @@ export const MangaDetailScreen: React.FC = () => {
       console.log('[MangaDetail] Last chapter:', manga.chapters[manga.chapters.length - 1]);
     }
     if (progress) {
-      console.log('[MangaDetail] Continuing from progress:', progress.chapterId);
-      openReader(progress.chapterId);
+      console.log('[MangaDetail] Continuing from progress:', progress.chapterId, 'page:', progress.pageNumber);
+      // Navigate with saved page position (convert to 0-indexed for FlatList)
+      navigation.navigate('Reader', {
+        mangaId: manga.id,
+        chapterId: progress.chapterId,
+        sourceId,
+        initialPage: Math.max(0, progress.pageNumber - 1) // Convert 1-indexed to 0-indexed
+      });
     } else if (manga.chapters.length > 0) {
-      // Start from the last chapter (first in reading order - oldest)
-      const firstChapter = manga.chapters[manga.chapters.length - 1];
-      console.log('[MangaDetail] Starting from first chapter:', firstChapter.id);
-      openReader(firstChapter.id);
+      // Find the first chapter (lowest chapter number)
+      // Don't assume array order - different sources may sort differently
+      const sortedChapters = [...manga.chapters].sort((a, b) => a.number - b.number);
+      const firstChapter = sortedChapters[0];
+      console.log('[MangaDetail] Starting from first chapter:', firstChapter.id, 'number:', firstChapter.number);
+      navigation.navigate('Reader', { mangaId: manga.id, chapterId: firstChapter.id, sourceId });
     }
   };
 
@@ -313,34 +375,8 @@ export const MangaDetailScreen: React.FC = () => {
             style={[styles.backButton, { backgroundColor: theme.card }]}
             onPress={() => navigation.goBack()}
           >
-            <Ionicons name={Platform.OS === 'ios' ? 'chevron-back' : 'arrow-back'} size={24} color="#fff" />
+            <Ionicons name={Platform.OS === 'ios' ? 'chevron-back' : 'arrow-back'} size={24} color={theme.text} />
           </TouchableOpacity>
-
-          {/* 3-dot menu */}
-          <NativeDropdown
-            options={[
-              { label: t('manga.share') || 'Share', value: 'share' },
-              { label: t('manga.refresh') || 'Refresh', value: 'refresh' },
-            ]}
-            selectedValue=""
-            onSelect={(value) => {
-              switch (value) {
-                case 'share':
-                  // TODO: Implement share functionality
-                  break;
-                case 'refresh':
-                  loadManga();
-                  break;
-              }
-            }}
-            title={t('manga.options') || 'Options'}
-          >
-            <TouchableOpacity
-              style={[styles.menuButton, { backgroundColor: theme.card }]}
-            >
-              <Ionicons name="ellipsis-vertical" size={20} color="#fff" />
-            </TouchableOpacity>
-          </NativeDropdown>
 
           <View style={styles.headerContent}>
             <Image
@@ -445,27 +481,79 @@ export const MangaDetailScreen: React.FC = () => {
             <Text style={[styles.sectionTitle, { color: theme.text }]}>
               {t('manga.chapters')} ({manga.chapters.length})
             </Text>
-            <TouchableOpacity onPress={handleSortToggle}>
-              <Text style={[styles.sortButton, { color: theme.primary }]}>
-                {sortDescending ? `↓ ${t('manga.newest')}` : `↑ ${t('manga.oldest')}`}
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.chapterHeaderActions}>
+              <TouchableOpacity onPress={handleSortToggle}>
+                <Text style={[styles.sortButton, { color: theme.primary }]}>
+                  {sortDescending ? `↓ ${t('manga.newest')}` : `↑ ${t('manga.oldest')}`}
+                </Text>
+              </TouchableOpacity>
+              <NativeDropdown
+                options={[
+                  { label: t('chapter.refreshChapters') || 'Refresh Chapters', value: 'refresh' },
+                  { label: t('chapter.downloadAll') || 'Download All Chapters', value: 'downloadAll' },
+                  { label: t('chapter.downloadUnread') || 'Download Unread Chapters', value: 'downloadUnread' },
+                  { label: t('chapter.removeReadDownloads') || 'Remove Read Chapters', value: 'removeRead' },
+                ]}
+                selectedValue=""
+                onSelect={(value) => {
+                  switch (value) {
+                    case 'refresh':
+                      loadManga();
+                      break;
+                    case 'downloadAll':
+                      // Sort by chapter number so we download from chapter 1 first
+                      const allSorted = [...manga.chapters].sort((a, b) => (a.number || 0) - (b.number || 0));
+                      console.log('[Download] Sorted chapters:', allSorted.map(c => c.number).slice(0, 5).join(', '), '...');
+                      allSorted.forEach(chapter => {
+                        if (!isChapterDownloaded(chapter.id) && !isDownloading(chapter.id)) {
+                          downloadChapter(manga, chapter);
+                        }
+                      });
+                      break;
+                    case 'downloadUnread':
+                      // Sort by chapter number so we download from chapter 1 first
+                      const unreadSorted = [...manga.chapters].sort((a, b) => (a.number || 0) - (b.number || 0));
+                      console.log('[Download] Sorted unread chapters:', unreadSorted.map(c => c.number).slice(0, 5).join(', '), '...');
+                      unreadSorted.forEach(chapter => {
+                        if (!isChapterRead(manga.id, chapter.id) && !isChapterDownloaded(chapter.id) && !isDownloading(chapter.id)) {
+                          downloadChapter(manga, chapter);
+                        }
+                      });
+                      break;
+                    case 'removeRead':
+                      // TODO: Implement remove read downloads
+                      break;
+                  }
+                }}
+                title={t('chapter.bulkOptions') || 'Chapter Actions'}
+              >
+                <View style={[styles.chapterMenuButton, { backgroundColor: theme.card }]}>
+                  <Ionicons name="ellipsis-horizontal" size={20} color={theme.text} />
+                </View>
+              </NativeDropdown>
+            </View>
           </View>
 
-          {sortedChapters.map(chapter => {
+          {sortedChapters.map((chapter, index) => {
             const chapterIds = sortedChapters.map(c => c.id);
             return (
               <ChapterListItem
-                key={chapter.id}
+                key={`${chapter.id}-${index}`}
                 chapter={chapter}
                 onPress={() => openReader(chapter.id)}
                 isRead={isChapterRead(manga.id, chapter.id)}
+                isDownloaded={isChapterDownloaded(chapter.id)}
+                isDownloading={isDownloading(chapter.id)}
+                isQueued={isQueued(chapter.id)}
+                downloadProgress={getDownloadProgress(chapter.id)}
                 onMarkAsRead={() => markChapterAsRead(manga.id, chapter.id, manga)}
                 onMarkAsUnread={() => markChapterAsUnread(manga.id, chapter.id)}
                 onMarkAllAboveAsRead={() => markAllAboveAsRead(manga.id, chapter.id, chapterIds)}
                 onMarkAllBelowAsRead={() => markAllBelowAsRead(manga.id, chapter.id, chapterIds)}
                 onDownload={() => {
-                  // TODO: Implement download
+                  if (manga && !isChapterDownloaded(chapter.id) && !isDownloading(chapter.id) && !isQueued(chapter.id)) {
+                    downloadChapter(manga, chapter);
+                  }
                 }}
               />
             );
@@ -636,6 +724,18 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 8,
+  },
+  chapterHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  chapterMenuButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   sortButton: {
     fontSize: 14,

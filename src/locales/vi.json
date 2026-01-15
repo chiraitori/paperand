@@ -105,6 +105,7 @@
         "nextChapter": "Chương sau",
         "goToPrevious": "Về chương trước",
         "failedToLoadPage": "Lỗi tải trang {{page}}",
+        "loadingPage": "Đang tải trang {{page}}/{{total}}",
         "chapter": "Chương",
         "page": "Trang",
         "noNextChapter": "Không có chương tiếp theo"
@@ -115,7 +116,15 @@
         "markAsRead": "Đánh dấu đã đọc",
         "markAsUnread": "Đánh dấu chưa đọc",
         "markAllAboveAsRead": "Đánh dấu tất cả ở trên đã đọc",
-        "markAllBelowAsRead": "Đánh dấu tất cả ở dưới đã đọc"
+        "markAllBelowAsRead": "Đánh dấu tất cả ở dưới đã đọc",
+        "bulkOptions": "Tác vụ chương",
+        "select": "Chọn",
+        "refreshChapters": "Làm mới danh sách chương",
+        "downloadAll": "Tải tất cả chương",
+        "downloadUnread": "Tải các chương chưa đọc",
+        "removeReadDownloads": "Xóa chương đã đọc",
+        "chapterSort": "Sắp xếp chương",
+        "groupPriority": "Ưu tiên nhóm"
     },
     "search": {
         "title": "Tìm kiếm",
@@ -205,6 +214,13 @@
         "imageCacheSize": "Dung lượng cache ảnh",
         "imageCacheSizeHint": "Chọn dung lượng tối đa cho ảnh đệm",
         "clearImageCache": "Xóa cache ảnh",
+        "clearMetadataCache": "Xóa cache metadata",
+        "clearMetadataCacheHint": "Xóa thông tin manga, danh sách chương và dữ liệu trang đã lưu",
+        "metadataCacheCleared": "Đã xóa cache metadata",
+        "cacheStats": "Thống kê cache",
+        "cachedManga": "{{count}} manga đã lưu",
+        "cachedChapterLists": "{{count}} danh sách chương đã lưu",
+        "cachedPages": "{{count}} trang đã lưu",
         "downloadManager": "Quản lý tải xuống",
         "clearCacheConfirm": "Bạn có chắc muốn xóa {{size}} ảnh đệm? Thao tác này không thể hoàn tác.",
         "cacheClearedSuccess": "Đã xóa cache ảnh thành công",
@@ -376,7 +392,14 @@
         "previewOnLongPress": "Xem trước khi nhấn giữ",
         "previewExperimental": "Xem trước khi nhấn giữ (Thử nghiệm)",
         "mangaPreviewHint": "Nhấn giữ thẻ truyện để xem chi tiết, chương và hành động mà không cần chuyển trang.",
-        "mangaPreviewHintAndroid": "⚡ THỬ NGHIỆM: Nhấn giữ thẻ truyện để xem chi tiết. Tính năng này đang thử nghiệm trên Android."
+        "mangaPreviewHintAndroid": "⚡ THỬ NGHIỆM: Nhấn giữ thẻ truyện để xem chi tiết. Tính năng này đang thử nghiệm trên Android.",
+        "downloads": "Tải xuống",
+        "parallelDownloads": "Tải chương song song",
+        "parallelDownloadsHint": "Số lượng chương tải xuống cùng lúc khi dùng WiFi. Mạng di động luôn tải 1 chương để tiết kiệm dữ liệu.",
+        "dnsSettings": "CÀI ĐẶT DNS",
+        "dnsProvider": "Nhà cung cấp DNS",
+        "customDohPlaceholder": "https://dns.example.com/dns-query",
+        "dnsHint": "Sử dụng máy chủ DNS thay thế để vượt qua chặn của ISP. DNS-over-HTTPS (DoH) mã hóa các truy vấn DNS để bảo mật và có thể giúp truy cập nội dung bị chặn."
     },
     "update": {
         "available": "Có bản cập nhật mới!",
@@ -404,8 +427,26 @@
         "options": "Tùy chọn",
         "pauseAll": "Tạm dừng tất cả",
         "resumeAll": "Tiếp tục tất cả",
+        "cancelAll": "Hủy tất cả",
+        "cancelAllTitle": "Hủy tất cả tải xuống",
+        "cancelAllMessage": "Bạn có chắc muốn hủy tất cả tải xuống đang chờ?",
         "clearAll": "Xóa tất cả",
         "clearAllTitle": "Xóa tất cả tải xuống",
-        "clearAllMessage": "Bạn có chắc muốn xóa tất cả tải xuống?"
+        "clearAllMessage": "Bạn có chắc muốn xóa tất cả tải xuống?",
+        "activeDownloads": "Đang tải xuống",
+        "paused": "Đã tạm dừng",
+        "queued": "Đang chờ",
+        "downloading": "Đang tải...",
+        "pages": "trang",
+        "downloaded": "Đã tải xuống",
+        "chaptersDownloaded": "chương",
+        "chaptersQueued": "chương đang chờ",
+        "deleteChapterTitle": "Xóa tải xuống",
+        "deleteChapterMessage": "Xóa {{chapter}}?",
+        "deleteMangaTitle": "Xóa tất cả tải xuống",
+        "deleteMangaMessage": "Xóa tất cả {{count}} chương đã tải của {{manga}}?",
+        "cellularTitle": "Tải qua mạng di động?",
+        "cellularMessage": "Bạn đang dùng dữ liệu di động. Tải xuống có thể tiêu tốn nhiều dung lượng. Tiếp tục?",
+        "continue": "Tải xuống"
     }
 }

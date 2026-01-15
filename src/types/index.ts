@@ -44,6 +44,8 @@ export interface ReadingProgress {
   mangaId: string;
   chapterId: string;
   pageNumber: number;
+  totalPages: number;
+  percentage: number;
   lastRead: string;
 }
 
@@ -55,6 +57,71 @@ export interface LibraryEntry {
   progress: ReadingProgress | null;
   isFavorite: boolean;
   readChapters: string[]; // Array of chapter IDs that have been read
+}
+
+export interface DownloadedChapter {
+  mangaId: string;
+  chapterId: string;
+  chapterNumber: number;
+  chapterTitle: string;
+  mangaTitle: string;
+  mangaCover: string;
+  sourceId: string;
+  pages: string[]; // Local file paths
+  downloadedAt: string;
+  size: number; // bytes
+}
+
+export interface DownloadJob {
+  chapterId: string;
+  mangaId: string;
+  mangaTitle: string;
+  mangaCover: string;
+  chapterTitle: string;
+  sourceId: string;
+  total: number;
+  progress: number;
+  status: 'queued' | 'downloading' | 'paused' | 'completed' | 'failed';
+}
+
+// Cache Types
+export interface CachedMangaMetadata {
+  mangaId: string;
+  sourceId: string;
+  title: string;
+  author: string;
+  artist?: string;
+  description: string;
+  coverImage: string;
+  genres: string[];
+  status: string;
+  cachedAt: string;
+  expiresAt: string; // When cache should be refreshed
+}
+
+export interface CachedChapterList {
+  mangaId: string;
+  sourceId: string;
+  chapters: CachedChapterInfo[];
+  cachedAt: string;
+  expiresAt: string;
+}
+
+export interface CachedChapterInfo {
+  id: string;
+  number: number;
+  title: string;
+  releaseDate: string;
+  pageCount?: number; // Optional, known after reading
+}
+
+export interface CachedPageInfo {
+  mangaId: string;
+  chapterId: string;
+  pageNumber: number;
+  imageUrl: string;
+  localPath?: string; // If downloaded locally
+  cachedAt: string;
 }
 
 // Theme Types
@@ -83,7 +150,7 @@ export interface CustomTheme {
 export type RootStackParamList = {
   Main: undefined;
   MangaDetail: { mangaId: string; sourceId?: string };
-  Reader: { mangaId: string; chapterId: string; sourceId?: string };
+  Reader: { mangaId: string; chapterId: string; sourceId?: string; initialPage?: number };
   Search: undefined;
   Settings: undefined;
   GeneralSettings: undefined;

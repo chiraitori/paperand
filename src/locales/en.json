@@ -105,6 +105,7 @@
         "nextChapter": "Next Chapter",
         "goToPrevious": "Go to Previous",
         "failedToLoadPage": "Failed to load page {{page}}",
+        "loadingPage": "Loading page {{page}}/{{total}}",
         "chapter": "Chapter",
         "page": "Page",
         "noNextChapter": "No next chapter available"
@@ -115,7 +116,15 @@
         "markAsRead": "Mark as read",
         "markAsUnread": "Mark as unread",
         "markAllAboveAsRead": "Mark all above as read",
-        "markAllBelowAsRead": "Mark all below as read"
+        "markAllBelowAsRead": "Mark all below as read",
+        "bulkOptions": "Chapter Actions",
+        "select": "Select",
+        "refreshChapters": "Refresh Chapters",
+        "downloadAll": "Download All Chapters",
+        "downloadUnread": "Download Unread Chapters",
+        "removeReadDownloads": "Remove Read Chapters",
+        "chapterSort": "Chapter Sort",
+        "groupPriority": "Group Priority"
     },
     "search": {
         "title": "Search",
@@ -205,6 +214,13 @@
         "imageCacheSize": "Image Cache Size",
         "imageCacheSizeHint": "Choose maximum storage for cached images",
         "clearImageCache": "Clear image cache",
+        "clearMetadataCache": "Clear metadata cache",
+        "clearMetadataCacheHint": "Clear cached manga info, chapter lists, and page data",
+        "metadataCacheCleared": "Metadata cache cleared",
+        "cacheStats": "Cache Statistics",
+        "cachedManga": "{{count}} manga cached",
+        "cachedChapterLists": "{{count}} chapter lists cached",
+        "cachedPages": "{{count}} page entries cached",
         "downloadManager": "Download Manager",
         "clearCacheConfirm": "Are you sure you want to clear {{size}} of cached images? This cannot be undone.",
         "cacheClearedSuccess": "Image cache cleared successfully",
@@ -376,7 +392,14 @@
         "previewOnLongPress": "Preview on Long Press",
         "previewExperimental": "Preview on Long Press (Experimental)",
         "mangaPreviewHint": "Long press on manga cards to preview details, chapters, and actions without navigating away.",
-        "mangaPreviewHintAndroid": "⚡ EXPERIMENTAL: Long press on manga cards to preview details. This feature is experimental on Android."
+        "mangaPreviewHintAndroid": "⚡ EXPERIMENTAL: Long press on manga cards to preview details. This feature is experimental on Android.",
+        "downloads": "Downloads",
+        "parallelDownloads": "Parallel Downloads",
+        "parallelDownloadsHint": "Number of chapters to download simultaneously on WiFi. Cellular always uses 1 to save data.",
+        "dnsSettings": "DNS SETTINGS",
+        "dnsProvider": "DNS Provider",
+        "customDohPlaceholder": "https://dns.example.com/dns-query",
+        "dnsHint": "Use alternative DNS servers to bypass ISP blocking. DNS-over-HTTPS (DoH) encrypts your DNS queries for privacy and can help access blocked content."
     },
     "update": {
         "available": "Update Available!",
@@ -404,8 +427,26 @@
         "options": "Options",
         "pauseAll": "Pause all",
         "resumeAll": "Resume all",
+        "cancelAll": "Cancel all",
+        "cancelAllTitle": "Cancel All Downloads",
+        "cancelAllMessage": "Are you sure you want to cancel all queued downloads?",
         "clearAll": "Clear all",
         "clearAllTitle": "Clear All Downloads",
-        "clearAllMessage": "Are you sure you want to clear all downloads?"
+        "clearAllMessage": "Are you sure you want to clear all downloads?",
+        "activeDownloads": "Active Downloads",
+        "paused": "Paused",
+        "queued": "Queued",
+        "downloading": "Downloading...",
+        "pages": "pages",
+        "downloaded": "Downloaded",
+        "chaptersDownloaded": "chapters",
+        "chaptersQueued": "chapters queued",
+        "deleteChapterTitle": "Delete Download",
+        "deleteChapterMessage": "Delete {{chapter}}?",
+        "deleteMangaTitle": "Delete All Downloads",
+        "deleteMangaMessage": "Delete all {{count}} downloaded chapters from {{manga}}?",
+        "cellularTitle": "Download on Cellular?",
+        "cellularMessage": "You are on cellular data. Downloading may use significant data. Continue?",
+        "continue": "Download"
     }
 }

@@ -25,7 +25,7 @@ export const ExtensionRunner: React.FC = () => {
     return new Promise((resolve, reject) => {
       const requestId = ++requestIdRef.current;
       pendingRequestsRef.current.set(requestId, { resolve, reject });
-      
+
       const message = JSON.stringify({ type, requestId, ...data });
       webViewRef.current?.injectJavaScript(`
         window.handleMessage(${JSON.stringify(message)});
@@ -56,22 +56,22 @@ export const ExtensionRunner: React.FC = () => {
       if (type === 'fetchProxy') {
         const { url, options } = data;
         console.log('[ExtensionRunner] Proxying fetch:', url, 'method:', options?.method);
-        
+
         // Support both body and data (some extensions use data for form data)
         let requestBody = options?.body || options?.data;
-        
+
         // Merge default headers with request headers (request headers take priority)
         const defaultHeaders: Record<string, string> = {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
           'Accept': 'application/json, text/plain, */*',
         };
         const headers: Record<string, string> = { ...defaultHeaders, ...options?.headers };
-        
+
         // Check if this is likely an image request (for DRM handling)
-        const isImageRequest = url.includes('drm_data=') || 
-                               url.match(/\.(jpg|jpeg|png|gif|webp)(\?|#|$)/i) ||
-                               options?.responseType === 'arraybuffer';
-        
+        const isImageRequest = url.includes('drm_data=') ||
+          url.match(/\.(jpg|jpeg|png|gif|webp)(\?|#|$)/i) ||
+          options?.responseType === 'arraybuffer';
+
         // Log the request details for debugging
         if (!isImageRequest) {
           console.log('[ExtensionRunner] Request method:', options?.method || 'GET');
@@ -81,11 +81,11 @@ export const ExtensionRunner: React.FC = () => {
             console.log('[ExtensionRunner] Request body:', typeof requestBody === 'string' ? requestBody.substring(0, 200) : JSON.stringify(requestBody).substring(0, 200));
           }
         }
-        
+
         // Create AbortController for timeout
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 60000);
-        
+
         try {
           const response = await fetch(url, {
             method: options?.method || 'GET',
@@ -93,11 +93,11 @@ export const ExtensionRunner: React.FC = () => {
             body: requestBody,
             signal: controller.signal,
           });
-          
+
           clearTimeout(timeoutId);
-          
+
           let responseData: any;
-          
+
           if (isImageRequest) {
             // For image requests, return as base64 for binary processing
             const arrayBuffer = await response.arrayBuffer();
@@ -107,7 +107,7 @@ export const ExtensionRunner: React.FC = () => {
               binary += String.fromCharCode(bytes[i]);
             }
             const base64 = btoa(binary);
-            
+
             responseData = {
               requestId,
               data: '', // Not used for binary
@@ -119,14 +119,14 @@ export const ExtensionRunner: React.FC = () => {
             // For text/JSON requests
             const text = await response.text();
             console.log('[ExtensionRunner] Response text length:', text.length);
-            
+
             responseData = {
               requestId,
               data: text,
               status: response.status,
             };
           }
-          
+
           webViewRef.current?.injectJavaScript(`
             window.handleFetchResponse(${JSON.stringify(responseData)});
             true;
@@ -216,11 +216,11 @@ export const ExtensionRunner: React.FC = () => {
           return false;
         }
       },
-      
+
       runExtensionMethod: async (extensionId: string, method: string, args: any[]) => {
         return sendMessage('runMethod', { extensionId, method, args });
       },
-      
+
       isLoaded: (extensionId: string) => {
         return loadedExtensionsRef.current.has(extensionId);
       },
@@ -774,24 +774,55 @@ function loadExtension(extensionId, sourceJs, requestId) {
   try {
     log('Loading extension:', extensionId);
     
-    // The source.js sets Sources on window/this/global
-    // We need to capture it
+    // IMPORTANT: Clear window.Sources BEFORE loading to ensure we get a fresh object
+    // This prevents cross-contamination between extensions (e.g., Cuutruyen showing Pixiv data)
     const originalSources = window.Sources;
+    window.Sources = undefined;
     
-    // Execute the source code
+    // Execute the source code - this will set window.Sources
     eval(sourceJs);
     
-    // Get the Sources object
-    const Sources = window.Sources || this.Sources;
+    // Get the Sources object that was just created by this extension
+    const Sources = window.Sources;
     
     if (!Sources) {
+      window.Sources = originalSources; // Restore
       throw new Error('No Sources found after loading extension');
     }
     
-    // Find the extension class
-    const ExtensionClass = Sources[extensionId] || Sources[Object.keys(Sources)[0]];
+    // Log available sources for debugging
+    const availableKeys = Object.keys(Sources);
+    log('Available source classes:', availableKeys.join(', '));
+    
+    // Find the extension class - try exact match first, then case-insensitive match
+    let ExtensionClass = Sources[extensionId];
     
     if (!ExtensionClass) {
+      // Try case-insensitive match
+      const lowerExtId = extensionId.toLowerCase();
+      for (const key of availableKeys) {
+        if (key.toLowerCase() === lowerExtId) {
+          ExtensionClass = Sources[key];
+          log('Found extension via case-insensitive match:', key);
+          break;
+        }
+      }
+    }
+    
+    if (!ExtensionClass) {
+      // Only use first key if there's exactly ONE source in the bundle
+      // This prevents picking the wrong extension when multiple are cached
+      if (availableKeys.length === 1) {
+        ExtensionClass = Sources[availableKeys[0]];
+        log('Using single available source:', availableKeys[0]);
+      } else {
+        window.Sources = originalSources; // Restore
+        throw new Error('Extension class not found for ' + extensionId + '. Available: ' + availableKeys.join(', '));
+      }
+    }
+    
+    if (!ExtensionClass) {
+      window.Sources = originalSources; // Restore
       throw new Error('No extension class found for ' + extensionId);
     }
     
@@ -823,7 +854,7 @@ function loadExtension(extensionId, sourceJs, requestId) {
     log('Extension loaded successfully:', extensionId);
     sendToRN({ requestId, result: true });
     
-    // Restore original Sources
+    // Restore original Sources (though we might want to keep it cleared)
     window.Sources = originalSources;
   } catch (e) {
     log('Failed to load extension:', e.message);
@@ -841,7 +872,7 @@ async function runExtensionMethod(extensionId, method, args, requestId) {
     }
     
     // Special methods that don't need to exist on the extension object
-    const specialMethods = ['setSettingValue', 'invokeSettingAction', 'decryptDrmImage'];
+    const specialMethods = ['setSettingValue', 'invokeSettingAction', 'decryptDrmImage', 'fetchImage'];
     
     if (typeof extension[method] !== 'function' && !specialMethods.includes(method)) {
       throw new Error('Method not found: ' + method);
@@ -959,6 +990,35 @@ async function runExtensionMethod(extensionId, method, args, requestId) {
         }
       } catch (e) {
         log('Error decrypting DRM image:', e.message);
+        throw e;
+      }
+    } else if (method === 'fetchImage') {
+      // Fetch image through extension (for proper headers/cookies)
+      const [imageUrl] = args;
+      log('Fetching image through extension:', imageUrl);
+      
+      try {
+        // Fetch through the extension's request manager
+        const response = await extension.requestManager.schedule(
+          App.createRequest({ url: imageUrl, method: 'GET' }),
+          1
+        );
+        
+        // Convert rawData to base64 data URL
+        if (response.rawData) {
+          let binary = '';
+          const bytes = response.rawData instanceof Uint8Array ? response.rawData : new Uint8Array(response.rawData);
+          for (let j = 0; j < bytes.length; j++) {
+            binary += String.fromCharCode(bytes[j]);
+          }
+          const base64 = btoa(binary);
+          result = 'data:image/jpeg;base64,' + base64;
+          log('Image fetched successfully, size:', bytes.length);
+        } else {
+          throw new Error('No rawData in response');
+        }
+      } catch (e) {
+        log('Error fetching image:', e.message);
         throw e;
       }
     } else if (method === 'getSourceMenu') {

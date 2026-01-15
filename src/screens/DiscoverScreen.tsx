@@ -126,13 +126,21 @@ export const DiscoverScreen: React.FC = () => {
     }
   };
 
-  const loadSourceData = async (extensionId: string) => {
+  const loadSourceData = async (extensionId: string, retryCount: number = 0) => {
     setLoading(true);
     try {
       const [homeSections, sourceTags] = await Promise.all([
         getHomeSections(extensionId),
         getTags(extensionId),
       ]);
+
+      // If we got empty results and haven't retried yet, retry after a delay
+      // This handles the case where the extension bridge isn't ready on initial startup
+      if (homeSections.length === 0 && retryCount < 2) {
+        console.log(`[Discover] Empty results, retrying in 1s (attempt ${retryCount + 1})`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        return loadSourceData(extensionId, retryCount + 1);
+      }
 
       setSections(homeSections);
       setTags(sourceTags);
@@ -149,6 +157,14 @@ export const DiscoverScreen: React.FC = () => {
       }
     } catch (error) {
       console.error('Failed to load source data:', error);
+
+      // Retry on error too
+      if (retryCount < 2) {
+        console.log(`[Discover] Error, retrying in 1s (attempt ${retryCount + 1})`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        return loadSourceData(extensionId, retryCount + 1);
+      }
+
       setSections([]);
       setTags([]);
       setFeaturedItems([]);
