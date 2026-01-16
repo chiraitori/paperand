@@ -120,7 +120,9 @@ module.exports = {
             'expo-quick-actions',
             'expo-font',
             'expo-live-activity',
-            './plugins/withBackgroundActionsServiceType'
+            './plugins/withBackgroundActionsServiceType',
+            // Dev client for development builds - allows connecting to local Expo server
+            ...(IS_DEV ? ['expo-dev-client'] : [])
         ]
     }
 };
