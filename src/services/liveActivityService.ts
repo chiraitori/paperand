@@ -57,6 +57,7 @@ export const startDownloadLiveActivity = (
 
 /**
  * Update existing Live Activity with new progress
+ * Note: Activity must be started in foreground first via startDownloadLiveActivity
  */
 export const updateDownloadLiveActivity = (
     mangaTitle: string,
@@ -67,9 +68,9 @@ export const updateDownloadLiveActivity = (
 ): void => {
     if (Platform.OS !== 'ios') return;
 
-    // Start new activity if not exists
+    // Skip if no activity exists (must be started in foreground first)
     if (!currentActivityId) {
-        startDownloadLiveActivity(mangaTitle, chapterTitle, progress, queuedCount);
+        console.log('[LiveActivity] No active activity to update (was it started in foreground?)');
         return;
     }
 

@@ -140,6 +140,21 @@ export const DownloadProvider: React.FC<{ children: ReactNode }> = ({ children }
         // Store manga title for notifications
         currentMangaTitleRef.current = manga.title;
 
+        // Debug: log that we reached this point
+        console.log('[DownloadContext] downloadChapter called, Platform:', Platform.OS);
+
+        // Start iOS Live Activity in foreground (required by Apple)
+        if (Platform.OS === 'ios') {
+            try {
+                const { startDownloadLiveActivity } = require('../services/liveActivityService');
+                console.log('[DownloadContext] Starting Live Activity in foreground...');
+                startDownloadLiveActivity(manga.title, chapter.title, 0, 0);
+                console.log('[DownloadContext] startDownloadLiveActivity returned');
+            } catch (err) {
+                console.error('[DownloadContext] Failed to start Live Activity:', err);
+            }
+        }
+
         await downloadService.downloadChapter(
             { id: manga.id, title: manga.title, coverImage: manga.coverImage, source: manga.source },
             chapter,

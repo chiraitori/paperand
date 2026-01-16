@@ -119,7 +119,7 @@ module.exports = {
             ['expo-notifications', { icon: './assets/icon.png', color: '#FA6432' }],
             'expo-quick-actions',
             'expo-font',
-            'expo-live-activity',
+            ['expo-live-activity', { enablePushNotifications: true }],
             './plugins/withBackgroundActionsServiceType',
             // Dev client for development builds - allows connecting to local Expo server
             ...(IS_DEV ? ['expo-dev-client'] : [])

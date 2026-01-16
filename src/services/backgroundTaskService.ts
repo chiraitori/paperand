@@ -58,6 +58,8 @@ const backgroundTask = async (taskData?: { delay: number }) => {
             const downloadingJobs = queue.filter(j => j.status === 'downloading');
             const queuedCount = queue.filter(j => j.status === 'queued').length;
 
+            console.log(`[BackgroundService] Platform: ${Platform.OS}, Downloading: ${downloadingJobs.length}, Queued: ${queuedCount}`);
+
             if (downloadingJobs.length > 0) {
                 if (downloadingJobs.length === 1) {
                     // Single chapter - show progress bar
@@ -82,12 +84,14 @@ const backgroundTask = async (taskData?: { delay: number }) => {
 
                     // iOS Live Activity
                     if (Platform.OS === 'ios') {
+                        console.log('[BackgroundService] Calling updateDownloadLiveActivity...');
                         updateDownloadLiveActivity(
                             job.mangaTitle,
                             `${job.chapterTitle}: ${job.progress}/${job.total}`,
                             progress,
                             queuedCount
                         );
+                        console.log('[BackgroundService] updateDownloadLiveActivity called');
                     }
                 } else {
                     // Multiple chapters - show text lines only, no progress bar
