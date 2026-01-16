@@ -62,6 +62,7 @@ module.exports = {
                 ITSAppUsesNonExemptEncryption: false,
                 CFBundleAllowMixedLocalizations: true,
                 UIBackgroundModes: ['fetch'],
+                NSSupportsLiveActivities: true,
                 CFBundleLocalizations: [
                     'en', 'vi', 'ja', 'zh-Hans', 'ko', 'es', 'pt-BR', 'fr', 'de', 'ru',
                     'id', 'th', 'ar', 'hi', 'ms', 'fil', 'tr', 'it', 'pl', 'uk',
