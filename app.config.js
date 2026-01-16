@@ -98,7 +98,7 @@ module.exports = {
                 {
                     action: 'VIEW',
                     autoVerify: true,
-                    data: [{ scheme: 'paperback' }],
+                    data: [{ scheme: getScheme() }],
                     category: ['BROWSABLE', 'DEFAULT']
                 }
             ]
