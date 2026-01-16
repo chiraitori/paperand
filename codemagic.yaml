@@ -182,17 +182,17 @@ workflows:
         script: |
           cd ios && pod install
           
-      - name: Build unsigned iOS App
+      - name: Build unsigned iOS App (Debug for Dev Client)
         script: |
           cd ios
           # Get the workspace and scheme names
           WORKSPACE=$(ls -d *.xcworkspace | head -1)
           SCHEME=$(echo $WORKSPACE | sed 's/.xcworkspace//')
-          echo "Building $SCHEME from $WORKSPACE"
+          echo "Building $SCHEME from $WORKSPACE (Debug mode for dev-client)"
           
           xcodebuild -workspace "$WORKSPACE" \
             -scheme "$SCHEME" \
-            -configuration Release \
+            -configuration Debug \
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
             -archivePath $CM_BUILD_DIR/build.xcarchive \

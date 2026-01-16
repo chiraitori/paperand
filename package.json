@@ -4,8 +4,12 @@
   "main": "index.ts",
   "scripts": {
     "start": "expo start",
+    "start:dev": "cross-env APP_VARIANT=dev expo start --dev-client",
     "android": "expo run:android",
+    "android:dev": "cross-env APP_VARIANT=dev expo run:android",
     "ios": "expo run:ios",
+    "ios:dev": "cross-env APP_VARIANT=dev expo run:ios",
+    "prebuild:dev": "cross-env APP_VARIANT=dev expo prebuild --clean",
     "web": "expo start --web"
   },
   "dependencies": {
@@ -54,6 +58,7 @@
     "@react-native-community/cli": "latest",
     "@react-native/metro-config": "^0.82.1",
     "@types/react": "~19.1.0",
+    "cross-env": "^10.1.0",
     "typescript": "~5.9.2"
   },
   "private": true,
