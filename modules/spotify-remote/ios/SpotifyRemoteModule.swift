@@ -1,75 +1,28 @@
 import ExpoModulesCore
 import SpotifyiOS
 
-/// Expo module for Spotify Remote control on iOS
-/// Provides playback control, player state observation, and connection management
 public class SpotifyRemoteModule: Module {
-    // MARK: - Properties
-    
     private var appRemote: SPTAppRemote?
-    private var connectionParams: SPTAppRemoteConnectionParams?
     private var playerStateSubscription: Bool = false
     private var pendingConnectionPromise: Promise?
-    private var pendingAuthPromise: Promise?
-    
-    // MARK: - Configuration
     
     private var clientId: String = ""
     private var redirectUri: String = ""
-    private var accessToken: String?
-    
-    // MARK: - Module Definition
     
     public func definition() -> ModuleDefinition {
         Name("SpotifyRemote")
         
-        // Events that can be sent to JavaScript
         Events("onPlayerStateChanged", "onConnectionStatusChanged", "onError")
         
-        // Configure the module with Spotify credentials
         Function("configure") { (clientId: String, redirectUri: String) in
             self.clientId = clientId
             self.redirectUri = redirectUri
             self.setupAppRemote()
         }
         
-        // Authorize with Spotify (iOS)
-        AsyncFunction("authorize") { (scopes: [String], promise: Promise) in
-            guard !self.clientId.isEmpty, !self.redirectUri.isEmpty else {
-                promise.reject("NOT_CONFIGURED", "SpotifyRemote not configured. Call configure() first.")
-                return
-            }
-            
-            self.pendingAuthPromise = promise
-            
-            // Build authorization URL
-            let scopeString = scopes.joined(separator: " ")
-            let encodedScopes = scopeString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-            let encodedRedirect = self.redirectUri.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-            
-            let authURLString = "https://accounts.spotify.com/authorize?client_id=\(self.clientId)&response_type=token&redirect_uri=\(encodedRedirect)&scope=\(encodedScopes)"
-            
-            guard let authURL = URL(string: authURLString) else {
-                promise.reject("INVALID_URL", "Failed to create authorization URL")
-                return
-            }
-            
-            // Open Spotify app or web for auth
-            if UIApplication.shared.canOpenURL(URL(string: "spotify:")!) {
-                UIApplication.shared.open(authURL, options: [:]) { success in
-                    if !success {
-                        promise.reject("AUTH_FAILED", "Could not open authorization URL")
-                    }
-                }
-            } else {
-                promise.reject("SPOTIFY_NOT_INSTALLED", "Spotify app is not installed")
-            }
-        }
-        
-        // Connect to Spotify app
         AsyncFunction("connect") { (promise: Promise) in
             guard let appRemote = self.appRemote else {
-                promise.reject("NOT_CONFIGURED", "SpotifyRemote not configured. Call configure() first.")
+                promise.reject("NOT_CONFIGURED", "SpotifyRemote not configured")
                 return
             }
             
@@ -82,32 +35,24 @@ public class SpotifyRemoteModule: Module {
             appRemote.connect()
         }
         
-        // Disconnect from Spotify app
         AsyncFunction("disconnect") { (promise: Promise) in
-            guard let appRemote = self.appRemote else {
-                promise.resolve(["disconnected": true])
-                return
-            }
-            
-            if appRemote.isConnected {
+            if let appRemote = self.appRemote, appRemote.isConnected {
                 appRemote.disconnect()
             }
             promise.resolve(["disconnected": true])
         }
         
-        // Check if connected
         Function("isConnected") { () -> Bool in
             return self.appRemote?.isConnected ?? false
         }
         
-        // Resume playback
         AsyncFunction("resume") { (promise: Promise) in
             guard let playerAPI = self.appRemote?.playerAPI else {
                 promise.reject("NOT_CONNECTED", "Not connected to Spotify")
                 return
             }
             
-            playerAPI.resume { result, error in
+            playerAPI.resume { _, error in
                 if let error = error {
                     promise.reject("PLAYBACK_ERROR", error.localizedDescription)
                 } else {
@@ -116,14 +61,13 @@ public class SpotifyRemoteModule: Module {
             }
         }
         
-        // Pause playback
         AsyncFunction("pause") { (promise: Promise) in
             guard let playerAPI = self.appRemote?.playerAPI else {
                 promise.reject("NOT_CONNECTED", "Not connected to Spotify")
                 return
             }
             
-            playerAPI.pause { result, error in
+            playerAPI.pause { _, error in
                 if let error = error {
                     promise.reject("PLAYBACK_ERROR", error.localizedDescription)
                 } else {
@@ -132,14 +76,13 @@ public class SpotifyRemoteModule: Module {
             }
         }
         
-        // Skip to next track
         AsyncFunction("skipToNext") { (promise: Promise) in
             guard let playerAPI = self.appRemote?.playerAPI else {
                 promise.reject("NOT_CONNECTED", "Not connected to Spotify")
                 return
             }
             
-            playerAPI.skip(toNext: { result, error in
+            playerAPI.skip(toNext: { _, error in
                 if let error = error {
                     promise.reject("PLAYBACK_ERROR", error.localizedDescription)
                 } else {
@@ -148,14 +91,13 @@ public class SpotifyRemoteModule: Module {
             })
         }
         
-        // Skip to previous track
         AsyncFunction("skipToPrevious") { (promise: Promise) in
             guard let playerAPI = self.appRemote?.playerAPI else {
                 promise.reject("NOT_CONNECTED", "Not connected to Spotify")
                 return
             }
             
-            playerAPI.skip(toPrevious: { result, error in
+            playerAPI.skip(toPrevious: { _, error in
                 if let error = error {
                     promise.reject("PLAYBACK_ERROR", error.localizedDescription)
                 } else {
@@ -164,14 +106,13 @@ public class SpotifyRemoteModule: Module {
             })
         }
         
-        // Seek to position (in milliseconds)
         AsyncFunction("seekTo") { (positionMs: Int, promise: Promise) in
             guard let playerAPI = self.appRemote?.playerAPI else {
                 promise.reject("NOT_CONNECTED", "Not connected to Spotify")
                 return
             }
             
-            playerAPI.seek(toPosition: positionMs) { result, error in
+            playerAPI.seek(toPosition: positionMs) { _, error in
                 if let error = error {
                     promise.reject("PLAYBACK_ERROR", error.localizedDescription)
                 } else {
@@ -180,39 +121,36 @@ public class SpotifyRemoteModule: Module {
             }
         }
         
-        // Play a specific track, album, or playlist by URI
         AsyncFunction("play") { (uri: String, promise: Promise) in
             guard let playerAPI = self.appRemote?.playerAPI else {
                 promise.reject("NOT_CONNECTED", "Not connected to Spotify")
                 return
             }
             
-            playerAPI.play(uri, callback: { result, error in
+            playerAPI.play(uri) { _, error in
                 if let error = error {
                     promise.reject("PLAYBACK_ERROR", error.localizedDescription)
                 } else {
                     promise.resolve(["success": true])
                 }
-            })
+            }
         }
         
-        // Enqueue a track (add to queue)
         AsyncFunction("enqueue") { (uri: String, promise: Promise) in
             guard let playerAPI = self.appRemote?.playerAPI else {
                 promise.reject("NOT_CONNECTED", "Not connected to Spotify")
                 return
             }
             
-            playerAPI.enqueueTrackUri(uri, callback: { result, error in
+            playerAPI.enqueueTrackUri(uri) { _, error in
                 if let error = error {
                     promise.reject("PLAYBACK_ERROR", error.localizedDescription)
                 } else {
                     promise.resolve(["success": true])
                 }
-            })
+            }
         }
         
-        // Get current player state
         AsyncFunction("getPlayerState") { (promise: Promise) in
             guard let playerAPI = self.appRemote?.playerAPI else {
                 promise.reject("NOT_CONNECTED", "Not connected to Spotify")
@@ -230,7 +168,6 @@ public class SpotifyRemoteModule: Module {
             }
         }
         
-        // Subscribe to player state changes
         AsyncFunction("subscribeToPlayerState") { (promise: Promise) in
             guard let playerAPI = self.appRemote?.playerAPI else {
                 promise.reject("NOT_CONNECTED", "Not connected to Spotify")
@@ -243,7 +180,7 @@ public class SpotifyRemoteModule: Module {
             }
             
             playerAPI.delegate = self
-            playerAPI.subscribe { result, error in
+            playerAPI.subscribe { _, error in
                 if let error = error {
                     promise.reject("SUBSCRIPTION_ERROR", error.localizedDescription)
                 } else {
@@ -253,27 +190,18 @@ public class SpotifyRemoteModule: Module {
             }
         }
         
-        // Unsubscribe from player state changes
         AsyncFunction("unsubscribeFromPlayerState") { (promise: Promise) in
-            guard let playerAPI = self.appRemote?.playerAPI else {
-                promise.resolve(["unsubscribed": true])
-                return
-            }
-            
-            playerAPI.unsubscribe { result, error in
-                self.playerStateSubscription = false
-                promise.resolve(["unsubscribed": true])
-            }
+            self.playerStateSubscription = false
+            promise.resolve(["unsubscribed": true])
         }
         
-        // Set shuffle mode
         AsyncFunction("setShuffle") { (enabled: Bool, promise: Promise) in
             guard let playerAPI = self.appRemote?.playerAPI else {
                 promise.reject("NOT_CONNECTED", "Not connected to Spotify")
                 return
             }
             
-            playerAPI.setShuffle(enabled) { result, error in
+            playerAPI.setShuffle(enabled) { _, error in
                 if let error = error {
                     promise.reject("PLAYBACK_ERROR", error.localizedDescription)
                 } else {
@@ -282,7 +210,6 @@ public class SpotifyRemoteModule: Module {
             }
         }
         
-        // Set repeat mode: 0 = off, 1 = context, 2 = track
         AsyncFunction("setRepeatMode") { (mode: Int, promise: Promise) in
             guard let playerAPI = self.appRemote?.playerAPI else {
                 promise.reject("NOT_CONNECTED", "Not connected to Spotify")
@@ -299,7 +226,7 @@ public class SpotifyRemoteModule: Module {
                 repeatMode = .off
             }
             
-            playerAPI.setRepeatMode(repeatMode) { result, error in
+            playerAPI.setRepeatMode(repeatMode) { _, error in
                 if let error = error {
                     promise.reject("PLAYBACK_ERROR", error.localizedDescription)
                 } else {
@@ -308,28 +235,18 @@ public class SpotifyRemoteModule: Module {
             }
         }
         
-        // Handle app becoming active (for reconnection)
         OnAppEntersForeground {
-            // Only reconnect if already configured
             if self.appRemote?.isConnected == false && !self.clientId.isEmpty {
                 self.appRemote?.connect()
             }
         }
-        
-        // Handle app going to background
-        OnAppEntersBackground {
-            // Optionally disconnect when app goes to background
-            // self.appRemote?.disconnect()
-        }
     }
-    
-    // MARK: - Private Methods
     
     private func setupAppRemote() {
         guard !clientId.isEmpty, !redirectUri.isEmpty else { return }
         
         let configuration = SPTConfiguration(clientID: clientId, redirectURL: URL(string: redirectUri)!)
-        appRemote = SPTAppRemote(configuration: configuration, logLevel: .debug)
+        appRemote = SPTAppRemote(configuration: configuration, logLevel: .none)
         appRemote?.delegate = self
     }
     
@@ -362,8 +279,6 @@ public class SpotifyRemoteModule: Module {
     }
 }
 
-// MARK: - SPTAppRemoteDelegate
-
 extension SpotifyRemoteModule: SPTAppRemoteDelegate {
     public func appRemoteDidEstablishConnection(_ appRemote: SPTAppRemote) {
         sendEvent("onConnectionStatusChanged", [
@@ -394,8 +309,6 @@ extension SpotifyRemoteModule: SPTAppRemoteDelegate {
         ])
     }
 }
-
-// MARK: - SPTAppRemotePlayerStateDelegate
 
 extension SpotifyRemoteModule: SPTAppRemotePlayerStateDelegate {
     public func playerStateDidChange(_ playerState: SPTAppRemotePlayerState) {
