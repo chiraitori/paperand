@@ -48,10 +48,11 @@ export const startDownloadLiveActivity = (
         const result = LiveActivity.startActivity(state, config);
         if (typeof result === 'string') {
             currentActivityId = result;
+            console.log('[LiveActivity] Started activity:', currentActivityId);
         }
-        console.log('[LiveActivity] Started activity:', currentActivityId);
     } catch (error) {
-        console.error('[LiveActivity] Failed to start:', error);
+        // Fail silently - Live Activity may not be available on all devices/builds
+        console.debug('[LiveActivity] Could not start (may need native rebuild):', error);
     }
 };
 

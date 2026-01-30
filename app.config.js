@@ -122,6 +122,11 @@ module.exports = {
             'expo-font',
             ['expo-live-activity', { enablePushNotifications: true }],
             './plugins/withBackgroundActionsServiceType',
+            // Spotify Remote SDK - Add your client ID from https://developer.spotify.com/dashboard
+            ['./plugins/withSpotifySDK', {
+                clientId: process.env.SPOTIFY_CLIENT_ID || 'YOUR_SPOTIFY_CLIENT_ID',
+                redirectScheme: 'paperand-spotify'
+            }],
             // Dev client for development builds - allows connecting to local Expo server
             ...(IS_DEV ? ['expo-dev-client'] : [])
         ]

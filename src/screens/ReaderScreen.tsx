@@ -1195,10 +1195,23 @@ export const ReaderScreen: React.FC = () => {
     saveProgressRef.current = saveProgress;
   }, [saveProgress]);
 
-  // Viewability config for horizontal mode only (vertical uses scroll position)
+  // Viewability config for accurate page tracking in both modes
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
-    // Only use for horizontal mode - vertical mode uses handleScroll
-    // This is kept for FlatList but not actively used for vertical scrolling
+    if (viewableItems && viewableItems.length > 0) {
+      // Get the first visible item (most visible)
+      const visibleItem = viewableItems[0];
+      const pageIndex = visibleItem.index;
+      
+      if (pageIndex !== undefined && pageIndex !== currentPage) {
+        setCurrentPage(pageIndex);
+        
+        // Save progress when page changes
+        if (pageIndex !== lastSavedPageRef.current) {
+          lastSavedPageRef.current = pageIndex;
+          saveProgressRef.current(pageIndex);
+        }
+      }
+    }
   }).current;
 
   const viewabilityConfig = useRef({
@@ -1206,30 +1219,12 @@ export const ReaderScreen: React.FC = () => {
     minimumViewTime: 0,
   }).current;
 
-  // Handle scroll for vertical mode - calculate page from scroll position
+  // Handle scroll for vertical mode - chapter transitions only
+  // Page tracking is now handled by onViewableItemsChanged for accuracy
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
     const scrollY = contentOffset.y;
     const maxScrollY = contentSize.height - layoutMeasurement.height;
-
-    // Calculate current page based on scroll position
-    // Each page is exactly one screen height (layoutMeasurement.height)
-    if (pages.length > 0) {
-      const pageHeight = layoutMeasurement.height;
-      // Use the center of the screen to determine which page we're on
-      const centerScrollY = scrollY + (pageHeight / 2);
-      const estimatedPage = Math.floor(centerScrollY / pageHeight);
-      const clampedPage = Math.max(0, Math.min(estimatedPage, pages.length - 1));
-
-      // Update current page display
-      setCurrentPage(clampedPage);
-
-      // Save progress when page changes
-      if (clampedPage !== lastSavedPageRef.current) {
-        lastSavedPageRef.current = clampedPage;
-        saveProgressRef.current(clampedPage);
-      }
-    }
 
     // Check if scrolled past the end (for next chapter)
     if (scrollY > maxScrollY + 100 && nextChapter && !isTransitioning) {
@@ -1237,24 +1232,14 @@ export const ReaderScreen: React.FC = () => {
     }
   };
 
-  // Handle horizontal scroll for page tracking and chapter transitions
+  // Handle horizontal scroll for chapter transitions only
+  // Page tracking is now handled by onViewableItemsChanged for accuracy
   const handleHorizontalScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
     const scrollX = contentOffset.x;
-    const pageWidth = layoutMeasurement.width;
-    const currentPageIndex = Math.round(scrollX / pageWidth);
-
-    setCurrentPage(currentPageIndex);
-
-    // Save progress when page changes in horizontal mode
-    if (currentPageIndex !== lastSavedPageRef.current && currentPageIndex >= 0 && currentPageIndex < pages.length) {
-      lastSavedPageRef.current = currentPageIndex;
-      saveProgressRef.current(currentPageIndex);
-    }
-
-    // Check for chapter transitions at boundaries
     const maxScrollX = contentSize.width - layoutMeasurement.width;
 
+    // Check for chapter transitions at boundaries
     // At first page and swiping left (RTL manga style - go to previous chapter)
     if (scrollX < -50 && previousChapter && !isTransitioning) {
       goToPreviousChapter();

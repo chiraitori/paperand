@@ -1,0 +1,17 @@
+{
+    "platforms": [
+        "ios",
+        "android"
+    ],
+    "ios": {
+        "modules": [
+            "SpotifyRemoteModule"
+        ]
+    },
+    "android": {
+        "modules": [
+            "expo.modules.spotifyremote.SpotifyRemoteModule",
+            "expo.modules.spotifyremote.SpotifyAuthModule"
+        ]
+    }
+}

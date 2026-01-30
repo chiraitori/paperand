@@ -1,0 +1,16 @@
+-- Merging decision tree log ---
+manifest
+ADDED from D:\Code\paperback-android\modules\spotify-remote\android\src\main\AndroidManifest.xml:1:1-3:12
+INJECTED from D:\Code\paperback-android\modules\spotify-remote\android\src\main\AndroidManifest.xml:1:1-3:12
+	package
+		INJECTED from D:\Code\paperback-android\modules\spotify-remote\android\src\main\AndroidManifest.xml
+	xmlns:android
+		ADDED from D:\Code\paperback-android\modules\spotify-remote\android\src\main\AndroidManifest.xml:1:11-69
+uses-sdk
+INJECTED from D:\Code\paperback-android\modules\spotify-remote\android\src\main\AndroidManifest.xml reason: use-sdk injection requested
+INJECTED from D:\Code\paperback-android\modules\spotify-remote\android\src\main\AndroidManifest.xml
+INJECTED from D:\Code\paperback-android\modules\spotify-remote\android\src\main\AndroidManifest.xml
+	android:targetSdkVersion
+		INJECTED from D:\Code\paperback-android\modules\spotify-remote\android\src\main\AndroidManifest.xml
+	android:minSdkVersion
+		INJECTED from D:\Code\paperback-android\modules\spotify-remote\android\src\main\AndroidManifest.xml

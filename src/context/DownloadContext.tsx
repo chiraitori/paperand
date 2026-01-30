@@ -6,10 +6,13 @@ import { downloadService } from '../services/downloadService';
 import { t } from '../services/i18nService';
 import {
     initNotifications,
+    showDownloadNotification,
     showDownloadCompleteNotification,
     hideDownloadNotification,
 } from '../services/notificationService';
-import { stopBackgroundService } from '../services/backgroundTaskService';
+import {
+    isBackgroundServiceRunning,
+} from '../services/backgroundTaskService';
 
 interface DownloadContextType {
     downloads: DownloadedChapter[];
@@ -64,26 +67,31 @@ export const DownloadProvider: React.FC<{ children: ReactNode }> = ({ children }
                         lastJob.mangaTitle,
                         completedJobs.length
                     );
-
+                    
                     // Stop background service when all downloads complete
                     if (Platform.OS === 'android') {
                         stopBackgroundService().catch(err => {
                             console.error('[DownloadContext] Failed to stop background service:', err);
                         });
                     }
-
-                    // Stop iOS Live Activity
-                    if (Platform.OS === 'ios') {
-                        const { stopDownloadLiveActivity } = require('../services/liveActivityService');
-                        stopDownloadLiveActivity('Download Complete');
-                    }
                 }
             }
 
-            // Note: Download progress notifications are handled by the background service
-            // We only need to clean up when all downloads are done
-            if (updatedQueue.length === 0 && prevQueue.length > 0) {
-                hideDownloadNotification();
+            // Update download notification with progress (only if background service is not running)
+            // Background service handles its own notifications
+            const activeJob = updatedQueue.find(j => j.status === 'downloading');
+            if (!isBackgroundServiceRunning()) {
+                if (activeJob && activeJob.total > 0) {
+                    showDownloadNotification(
+                        activeJob.mangaTitle,
+                        activeJob.progress,
+                        activeJob.total,
+                        activeJob.chapterTitle
+                    );
+                } else if (updatedQueue.length === 0 && prevQueue.length > 0) {
+                    // All downloads done, hide progress notification
+                    hideDownloadNotification();
+                }
             }
 
             // Update refs and state
@@ -139,21 +147,6 @@ export const DownloadProvider: React.FC<{ children: ReactNode }> = ({ children }
 
         // Store manga title for notifications
         currentMangaTitleRef.current = manga.title;
-
-        // Debug: log that we reached this point
-        console.log('[DownloadContext] downloadChapter called, Platform:', Platform.OS);
-
-        // Start iOS Live Activity in foreground (required by Apple)
-        if (Platform.OS === 'ios') {
-            try {
-                const { startDownloadLiveActivity } = require('../services/liveActivityService');
-                console.log('[DownloadContext] Starting Live Activity in foreground...');
-                startDownloadLiveActivity(manga.title, chapter.title, 0, 0);
-                console.log('[DownloadContext] startDownloadLiveActivity returned');
-            } catch (err) {
-                console.error('[DownloadContext] Failed to start Live Activity:', err);
-            }
-        }
 
         await downloadService.downloadChapter(
             { id: manga.id, title: manga.title, coverImage: manga.coverImage, source: manga.source },

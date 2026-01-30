@@ -29,6 +29,7 @@ import {
   getMemoryInfo,
   getPerformanceInfo,
 } from '../services/developerService';
+import { spotifyRemoteService } from '../services/spotifyRemoteService';
 
 export const DeveloperScreen: React.FC = () => {
   const { theme } = useTheme();
@@ -47,6 +48,9 @@ export const DeveloperScreen: React.FC = () => {
   });
   const [memoryInfo, setMemoryInfo] = useState({ used: 'N/A', available: 'N/A' });
   const [performanceInfo, setPerformanceInfo] = useState<any>(null);
+  const [spotifyConnected, setSpotifyConnected] = useState(false);
+  const [spotifyLoading, setSpotifyLoading] = useState(false);
+  const [spotifyTrack, setSpotifyTrack] = useState<string | null>(null);
 
   // Load settings on mount
   useEffect(() => {
@@ -192,6 +196,98 @@ export const DeveloperScreen: React.FC = () => {
         },
       ]
     );
+  };
+
+  // Test Spotify Remote
+  const testSpotifyRemote = async () => {
+    setSpotifyLoading(true);
+    try {
+      // Hardcoded client ID - process.env may not be working
+      const clientId = 'a535172b0b2340aba23c68aef295a85d';
+      console.log('[Spotify] Configuring with clientId:', clientId);
+      spotifyRemoteService.configure(clientId, 'paperand-spotify://callback');
+
+      // Add connection listener
+      const unsubscribe = spotifyRemoteService.addConnectionListener((connected) => {
+        setSpotifyConnected(connected);
+      });
+
+      // Step 1: Check if we already have a valid token
+      const hasToken = await spotifyRemoteService.hasValidToken();
+      console.log('[Spotify] Has valid token:', hasToken);
+      
+      // Step 2: Authorize with Spotify only if we don't have a valid token
+      if (!hasToken) {
+        try {
+          console.log('[Spotify] Starting authorization...');
+          const authResult = await spotifyRemoteService.authorize();
+          console.log('[Spotify] Authorization successful:', authResult);
+        } catch (authError) {
+          console.error('[Spotify] Authorization failed:', authError);
+          Alert.alert(
+            '❌ Authorization Failed',
+            'Could not authorize with Spotify. Make sure your Spotify Dashboard settings are correct.',
+            [{ text: 'OK' }]
+          );
+          setSpotifyLoading(false);
+          return;
+        }
+      } else {
+        console.log('[Spotify] Using existing token, skipping auth');
+      }
+
+      // Step 2: Connect to Spotify Remote
+      const connected = await spotifyRemoteService.connect();
+
+      if (connected) {
+        // Get player state
+        const state = spotifyRemoteService.getPlayerState();
+        if (state?.track?.name) {
+          setSpotifyTrack(`${state.track.name} - ${state.track.artist}`);
+        }
+
+        Alert.alert(
+          '✅ Spotify Connected',
+          `Connected to Spotify successfully!\n\n${state?.track?.name ? `Now playing: ${state.track.name}` : 'No track playing'}`,
+          [
+            { text: 'OK' },
+            {
+              text: 'Toggle Play/Pause',
+              onPress: async () => {
+                await spotifyRemoteService.togglePlayPause();
+                Alert.alert('✅', 'Toggled play/pause!');
+              },
+            },
+          ]
+        );
+      } else {
+        Alert.alert(
+          '❌ Connection Failed',
+          'Could not connect to Spotify. Make sure:\n\n• Spotify app is installed\n• You are logged in to Spotify\n• The redirect URI (paperand-spotify://callback) is registered in Spotify Dashboard\n• The SHA1 fingerprint is added to Spotify Dashboard\n• Package name "com.chiraitori.paperand.android" is correct in Spotify Dashboard',
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error) {
+      console.error('[Spotify] Test failed:', error);
+      Alert.alert(
+        '❌ Error',
+        `Spotify test failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setSpotifyLoading(false);
+    }
+  };
+
+  const disconnectSpotify = async () => {
+    try {
+      await spotifyRemoteService.disconnect();
+      setSpotifyConnected(false);
+      setSpotifyTrack(null);
+      Alert.alert('✅ Disconnected', 'Spotify has been disconnected');
+    } catch (error) {
+      console.error('[Spotify] Disconnect failed:', error);
+    }
   };
 
   // Clear all data
@@ -439,6 +535,68 @@ export const DeveloperScreen: React.FC = () => {
                 })}
               </>
             )}
+
+            {/* Spotify Remote */}
+            {renderSection(
+              'SPOTIFY REMOTE',
+              <>
+                {renderSettingItem({
+                  title: spotifyConnected ? 'Disconnect Spotify' : 'Connect to Spotify',
+                  subtitle: spotifyConnected
+                    ? spotifyTrack || 'Connected - no track playing'
+                    : 'Test Spotify Remote SDK integration',
+                  rightElement: spotifyLoading ? (
+                    <ActivityIndicator size="small" color={theme.primary} />
+                  ) : (
+                    <Ionicons
+                      name={spotifyConnected ? 'checkmark-circle' : 'musical-notes-outline'}
+                      size={24}
+                      color={spotifyConnected ? theme.success : theme.primary}
+                    />
+                  ),
+                  isDestructive: spotifyConnected,
+                  onPress: spotifyConnected ? disconnectSpotify : testSpotifyRemote,
+                })}
+                {spotifyConnected && (
+                  <>
+                    {renderSettingItem({
+                      title: 'Toggle Play/Pause',
+                      subtitle: 'Control Spotify playback',
+                      onPress: async () => {
+                        const success = await spotifyRemoteService.togglePlayPause();
+                        if (success) {
+                          const state = await spotifyRemoteService.refreshPlayerState();
+                          if (state?.track?.name) {
+                            setSpotifyTrack(`${state.track.name} - ${state.track.artist}`);
+                          }
+                        }
+                      },
+                    })}
+                    {renderSettingItem({
+                      title: 'Skip Next',
+                      onPress: async () => {
+                        await spotifyRemoteService.skipNext();
+                        const state = await spotifyRemoteService.refreshPlayerState();
+                        if (state?.track?.name) {
+                          setSpotifyTrack(`${state.track.name} - ${state.track.artist}`);
+                        }
+                      },
+                    })}
+                    {renderSettingItem({
+                      title: 'Skip Previous',
+                      onPress: async () => {
+                        await spotifyRemoteService.skipPrevious();
+                        const state = await spotifyRemoteService.refreshPlayerState();
+                        if (state?.track?.name) {
+                          setSpotifyTrack(`${state.track.name} - ${state.track.artist}`);
+                        }
+                      },
+                    })}
+                  </>
+                )}
+              </>
+            )}
+
 
             {/* Performance */}
             {settings.showMemoryUsage && renderSection(
