@@ -10,11 +10,13 @@ public class SpotifyRemoteModule: Module {
     private var connectionParams: SPTAppRemoteConnectionParams?
     private var playerStateSubscription: Bool = false
     private var pendingConnectionPromise: Promise?
+    private var pendingAuthPromise: Promise?
     
     // MARK: - Configuration
     
     private var clientId: String = ""
     private var redirectUri: String = ""
+    private var accessToken: String?
     
     // MARK: - Module Definition
     
@@ -29,6 +31,39 @@ public class SpotifyRemoteModule: Module {
             self.clientId = clientId
             self.redirectUri = redirectUri
             self.setupAppRemote()
+        }
+        
+        // Authorize with Spotify (iOS)
+        AsyncFunction("authorize") { (scopes: [String], promise: Promise) in
+            guard !self.clientId.isEmpty, !self.redirectUri.isEmpty else {
+                promise.reject("NOT_CONFIGURED", "SpotifyRemote not configured. Call configure() first.")
+                return
+            }
+            
+            self.pendingAuthPromise = promise
+            
+            // Build authorization URL
+            let scopeString = scopes.joined(separator: " ")
+            let encodedScopes = scopeString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+            let encodedRedirect = self.redirectUri.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+            
+            let authURLString = "https://accounts.spotify.com/authorize?client_id=\(self.clientId)&response_type=token&redirect_uri=\(encodedRedirect)&scope=\(encodedScopes)"
+            
+            guard let authURL = URL(string: authURLString) else {
+                promise.reject("INVALID_URL", "Failed to create authorization URL")
+                return
+            }
+            
+            // Open Spotify app or web for auth
+            if UIApplication.shared.canOpenURL(URL(string: "spotify:")!) {
+                UIApplication.shared.open(authURL, options: [:]) { success in
+                    if !success {
+                        promise.reject("AUTH_FAILED", "Could not open authorization URL")
+                    }
+                }
+            } else {
+                promise.reject("SPOTIFY_NOT_INSTALLED", "Spotify app is not installed")
+            }
         }
         
         // Connect to Spotify app
@@ -152,13 +187,13 @@ public class SpotifyRemoteModule: Module {
                 return
             }
             
-            playerAPI.play(uri) { result, error in
+            playerAPI.play(uri, callback: { result, error in
                 if let error = error {
                     promise.reject("PLAYBACK_ERROR", error.localizedDescription)
                 } else {
                     promise.resolve(["success": true])
                 }
-            }
+            })
         }
         
         // Enqueue a track (add to queue)
@@ -168,13 +203,13 @@ public class SpotifyRemoteModule: Module {
                 return
             }
             
-            playerAPI.enqueueTrackUri(uri) { result, error in
+            playerAPI.enqueueTrackUri(uri, callback: { result, error in
                 if let error = error {
                     promise.reject("PLAYBACK_ERROR", error.localizedDescription)
                 } else {
                     promise.resolve(["success": true])
                 }
-            }
+            })
         }
         
         // Get current player state
@@ -188,8 +223,7 @@ public class SpotifyRemoteModule: Module {
                 if let error = error {
                     promise.reject("PLAYBACK_ERROR", error.localizedDescription)
                 } else if let playerState = result as? SPTAppRemotePlayerState {
-                    let state = self.playerStateToDict(playerState)
-                    promise.resolve(state)
+                    promise.resolve(self.playerStateToDict(playerState))
                 } else {
                     promise.reject("UNKNOWN_ERROR", "Failed to get player state")
                 }
@@ -200,6 +234,11 @@ public class SpotifyRemoteModule: Module {
         AsyncFunction("subscribeToPlayerState") { (promise: Promise) in
             guard let playerAPI = self.appRemote?.playerAPI else {
                 promise.reject("NOT_CONNECTED", "Not connected to Spotify")
+                return
+            }
+            
+            if self.playerStateSubscription {
+                promise.resolve(["subscribed": true])
                 return
             }
             
@@ -271,7 +310,8 @@ public class SpotifyRemoteModule: Module {
         
         // Handle app becoming active (for reconnection)
         OnAppEntersForeground {
-            if self.appRemote?.isConnected == false {
+            // Only reconnect if already configured
+            if self.appRemote?.isConnected == false && !self.clientId.isEmpty {
                 self.appRemote?.connect()
             }
         }
