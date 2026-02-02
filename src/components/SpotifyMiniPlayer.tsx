@@ -34,7 +34,23 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
     const [imageCache, setImageCache] = useState<Record<string, string>>({});
     const expandAnim = useState(new Animated.Value(0))[0];
 
+    // Helper to get image - iOS uses content URI, Android uses imageUri
+    const loadImageForItem = async (item: SpotifyContentItem): Promise<string | null> => {
+        try {
+            // iOS: fetchContentItem by URI then get image
+            // Android: use imageUri directly with imagesApi
+            const imageKey = Platform.OS === 'ios' ? item.uri : item.imageUri;
+            if (!imageKey) return null;
+            
+            return await SpotifyRemote.getContentItemImage(imageKey);
+        } catch (e) {
+            console.log(`[SpotifyMiniPlayer] Failed to load image for ${item.title}`);
+            return null;
+        }
+    };
+
     useEffect(() => {
+        console.log('[SpotifyMiniPlayer] Component MOUNTED');
         // Check initial connection state
         setIsConnected(spotifyRemoteService.isConnected());
         setPlayerState(spotifyRemoteService.getPlayerState());
@@ -47,13 +63,16 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
 
         // Subscribe to connection changes
         const unsubConnection = spotifyRemoteService.addConnectionListener((connected) => {
+            console.log('[SpotifyMiniPlayer] Connection changed:', connected);
             setIsConnected(connected);
             if (!connected) {
                 setPlayerState(null);
+                // Don't close picker on disconnect - user might want to reconnect
             }
         });
 
         return () => {
+            console.log('[SpotifyMiniPlayer] Component UNMOUNTING');
             unsubscribe();
             unsubConnection();
         };
@@ -66,6 +85,11 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
             useNativeDriver: false,
         }).start();
     }, [expanded]);
+
+    // Debug: track showPicker changes
+    useEffect(() => {
+        console.log('[SpotifyMiniPlayer] showPicker changed to:', showPicker);
+    }, [showPicker]);
 
     const handleConnect = async () => {
         if (isConnecting) return;
@@ -103,32 +127,71 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
     };
 
     const openContentPicker = async () => {
-        if (!isConnected) return;
+        console.log('[SpotifyMiniPlayer] Opening content picker, isConnected:', isConnected);
+        if (!isConnected) {
+            console.log('[SpotifyMiniPlayer] Not connected, aborting');
+            return;
+        }
         
         setShowPicker(true);
         setLoadingContent(true);
+        console.log('[SpotifyMiniPlayer] showPicker set to true');
         
         try {
             const items = await SpotifyRemote.getRecommendedContentItems();
-            setContentItems(items);
+            console.log('[SpotifyMiniPlayer] Got content items:', items.length);
             
-            // Load images for items
-            const newCache: Record<string, string> = {};
-            for (const item of items.slice(0, 12)) { // Load first 12 images
-                if (item.imageUri) {
+            // The API returns categories/containers. We want playable items.
+            // Flatten by fetching children of containers
+            let playableItems: SpotifyContentItem[] = [];
+            
+            for (const item of items.slice(0, 6)) { // Check first 6 categories
+                if (item.isContainer) {
                     try {
-                        const base64 = await SpotifyRemote.getContentItemImage(item.imageUri);
-                        newCache[item.uri] = base64; // Already includes data: prefix
+                        const children = await SpotifyRemote.getChildrenOfContentItem(item.uri);
+                        console.log(`[SpotifyMiniPlayer] ${item.title} has ${children.length} children`);
+                        // Add first 4 items from each category
+                        playableItems.push(...children.slice(0, 4));
                     } catch (e) {
-                        // Ignore image load errors
+                        console.log(`[SpotifyMiniPlayer] Failed to get children of ${item.title}:`, e);
                     }
+                } else {
+                    playableItems.push(item);
                 }
             }
-            setImageCache(prev => ({ ...prev, ...newCache }));
+            
+            // Deduplicate by URI
+            const uniqueItems = playableItems.filter((item, index, self) => 
+                index === self.findIndex(t => t.uri === item.uri)
+            ).slice(0, 12);
+            
+            console.log('[SpotifyMiniPlayer] Final playable items:', uniqueItems.length);
+            setContentItems(uniqueItems);
+            
+            // Load images in the background - don't block the UI
+            loadImagesInBackground(uniqueItems);
         } catch (error) {
             console.error('[SpotifyMiniPlayer] Failed to load content:', error);
+            // Still show the modal with empty state
         } finally {
             setLoadingContent(false);
+            console.log('[SpotifyMiniPlayer] Loading complete, showPicker should still be:', showPicker);
+        }
+    };
+
+    const loadImagesInBackground = async (items: SpotifyContentItem[]) => {
+        const newCache: Record<string, string> = {};
+        for (const item of items) {
+            try {
+                const base64 = await loadImageForItem(item);
+                if (base64) {
+                    newCache[item.uri] = base64;
+                    // Update cache incrementally
+                    setImageCache(prev => ({ ...prev, [item.uri]: base64 }));
+                }
+            } catch (e) {
+                // Ignore individual image errors
+            }
         }
     };
 
@@ -145,35 +208,114 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
 
     if (!visible) return null;
 
+    // Render the modal separately so it persists across state changes
+    const renderPickerModal = () => (
+        <Modal
+            visible={showPicker}
+            animationType="slide"
+            transparent
+            onRequestClose={() => setShowPicker(false)}
+        >
+            <View style={styles.modalOverlay}>
+                <View style={styles.modalContent}>
+                    {/* Header */}
+                    <View style={styles.modalHeader}>
+                        <View style={styles.modalHeaderLeft}>
+                            <Ionicons name="musical-notes" size={24} color="#1DB954" />
+                            <Text style={styles.modalTitle}>Pick Music</Text>
+                        </View>
+                        <TouchableOpacity 
+                            style={styles.modalClose}
+                            onPress={() => setShowPicker(false)}
+                        >
+                            <Ionicons name="close" size={24} color="#fff" />
+                        </TouchableOpacity>
+                    </View>
+
+                    {/* Content Grid */}
+                    {loadingContent ? (
+                        <View style={styles.loadingContainer}>
+                            <ActivityIndicator size="large" color="#1DB954" />
+                            <Text style={styles.loadingText}>Loading your music...</Text>
+                        </View>
+                    ) : (
+                        <FlatList
+                            data={contentItems}
+                            keyExtractor={(item) => item.uri}
+                            numColumns={3}
+                            contentContainerStyle={styles.gridContent}
+                            renderItem={({ item }) => (
+                                <TouchableOpacity
+                                    style={styles.gridItem}
+                                    onPress={() => playContentItem(item)}
+                                >
+                                    {imageCache[item.uri] ? (
+                                        <Image
+                                            source={{ uri: imageCache[item.uri] }}
+                                            style={styles.gridItemImage}
+                                        />
+                                    ) : (
+                                        <View style={[styles.gridItemImage, styles.gridItemPlaceholder]}>
+                                            <Ionicons 
+                                                name={item.isContainer ? "albums" : "musical-note"} 
+                                                size={32} 
+                                                color="#1DB954" 
+                                            />
+                                        </View>
+                                    )}
+                                    <Text style={styles.gridItemTitle} numberOfLines={2}>
+                                        {item.title}
+                                    </Text>
+                                </TouchableOpacity>
+                            )}
+                            ListEmptyComponent={
+                                <View style={styles.emptyContainer}>
+                                    <Ionicons name="musical-notes-outline" size={48} color="#666" />
+                                    <Text style={styles.emptyText}>No content available</Text>
+                                </View>
+                            }
+                        />
+                    )}
+                </View>
+            </View>
+        </Modal>
+    );
+
     // Collapsed view - just shows Spotify icon
     if (!isConnected && !expanded) {
         return (
-            <TouchableOpacity
-                style={[styles.collapsedContainer, style]}
-                onPress={handleConnect}
-                disabled={isConnecting}
-            >
-                <View style={styles.spotifyIconContainer}>
-                    <Ionicons 
-                        name={isConnecting ? "hourglass-outline" : "musical-notes"} 
-                        size={20} 
-                        color="#1DB954" 
-                    />
-                </View>
-            </TouchableOpacity>
+            <>
+                {renderPickerModal()}
+                <TouchableOpacity
+                    style={[styles.collapsedContainer, style]}
+                    onPress={handleConnect}
+                    disabled={isConnecting}
+                >
+                    <View style={styles.spotifyIconContainer}>
+                        <Ionicons 
+                            name={isConnecting ? "hourglass-outline" : "musical-notes"} 
+                            size={20} 
+                            color="#1DB954" 
+                        />
+                    </View>
+                </TouchableOpacity>
+            </>
         );
     }
 
     // Connected but no track playing
     if (isConnected && !playerState?.track) {
         return (
-            <TouchableOpacity
-                style={[styles.miniContainer, style]}
-                onPress={openContentPicker}
-            >
-                <Ionicons name="musical-notes" size={20} color="#1DB954" />
-                <Text style={styles.noTrackText}>Tap to pick music</Text>
-            </TouchableOpacity>
+            <>
+                {renderPickerModal()}
+                <TouchableOpacity
+                    style={[styles.miniContainer, style]}
+                    onPress={openContentPicker}
+                >
+                    <Ionicons name="musical-notes" size={20} color="#1DB954" />
+                    <Text style={styles.noTrackText}>Tap to pick music</Text>
+                </TouchableOpacity>
+            </>
         );
     }
 
@@ -260,75 +402,7 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
             )}
 
             {/* Content Picker Modal */}
-            <Modal
-                visible={showPicker}
-                animationType="slide"
-                transparent
-                onRequestClose={() => setShowPicker(false)}
-            >
-                <View style={styles.modalOverlay}>
-                    <View style={styles.modalContent}>
-                        {/* Header */}
-                        <View style={styles.modalHeader}>
-                            <View style={styles.modalHeaderLeft}>
-                                <Ionicons name="musical-notes" size={24} color="#1DB954" />
-                                <Text style={styles.modalTitle}>Pick Music</Text>
-                            </View>
-                            <TouchableOpacity 
-                                style={styles.modalClose}
-                                onPress={() => setShowPicker(false)}
-                            >
-                                <Ionicons name="close" size={24} color="#fff" />
-                            </TouchableOpacity>
-                        </View>
-
-                        {/* Content Grid */}
-                        {loadingContent ? (
-                            <View style={styles.loadingContainer}>
-                                <ActivityIndicator size="large" color="#1DB954" />
-                                <Text style={styles.loadingText}>Loading your music...</Text>
-                            </View>
-                        ) : (
-                            <FlatList
-                                data={contentItems}
-                                keyExtractor={(item) => item.uri}
-                                numColumns={3}
-                                contentContainerStyle={styles.gridContent}
-                                renderItem={({ item }) => (
-                                    <TouchableOpacity
-                                        style={styles.gridItem}
-                                        onPress={() => playContentItem(item)}
-                                    >
-                                        {imageCache[item.uri] ? (
-                                            <Image
-                                                source={{ uri: imageCache[item.uri] }}
-                                                style={styles.gridItemImage}
-                                            />
-                                        ) : (
-                                            <View style={[styles.gridItemImage, styles.gridItemPlaceholder]}>
-                                                <Ionicons 
-                                                    name={item.isContainer ? "albums" : "musical-note"} 
-                                                    size={32} 
-                                                    color="#1DB954" 
-                                                />
-                                            </View>
-                                        )}
-                                        <Text style={styles.gridItemTitle} numberOfLines={2}>
-                                            {item.title}
-                                        </Text>
-                                    </TouchableOpacity>
-                                )}
-                                ListEmptyComponent={
-                                    <View style={styles.emptyContainer}>
-                                        <Ionicons name="musical-notes-outline" size={48} color="#666" />
-                                        <Text style={styles.emptyText}>No content available</Text>
-                                    </View>
-                                }
-                            />
-                        )}
-                    </View>
-                </View>
-            </Modal>
+            {renderPickerModal()}
         </Animated.View>
     );
 };

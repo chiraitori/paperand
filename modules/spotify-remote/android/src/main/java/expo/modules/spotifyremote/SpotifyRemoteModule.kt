@@ -368,15 +368,19 @@ class SpotifyRemoteModule : Module() {
                 }
         }
 
-        // Get image for a content item as base64
-        AsyncFunction("getContentItemImage") { uri: String, promise: Promise ->
+        // Get image for a content item as base64 (pass the imageUri from the content item)
+        AsyncFunction("getContentItemImage") { imageUri: String, promise: Promise ->
             val remote = spotifyAppRemote
             if (remote == null || !remote.isConnected) {
                 promise.reject("NOT_CONNECTED", "Not connected to Spotify", null)
                 return@AsyncFunction
             }
 
-            remote.imagesApi.getImage(com.spotify.protocol.types.ImageUri(uri))
+            // On Android, we receive the imageUri directly from the ListItem
+            // Create an ImageUri and fetch the image
+            val spotifyImageUri = com.spotify.protocol.types.ImageUri(imageUri)
+            
+            remote.imagesApi.getImage(spotifyImageUri)
                 .setResultCallback { bitmap: Bitmap ->
                     // Convert bitmap to base64
                     val outputStream = ByteArrayOutputStream()
@@ -388,6 +392,7 @@ class SpotifyRemoteModule : Module() {
                     Log.e(TAG, "Failed to get content image: ${throwable.message}", throwable)
                     promise.reject("IMAGE_ERROR", throwable.message, throwable)
                 }
+        }
         }
 
         // Handle app lifecycle
@@ -410,14 +415,14 @@ class SpotifyRemoteModule : Module() {
     private fun playerStateToMap(playerState: PlayerState): Map<String, Any?> {
         val track = playerState.track
         return mapOf(
-            "track" to mapOf(
+            "track" to if (track != null) mapOf(
                 "uri" to track.uri,
                 "name" to track.name,
-                "artist" to track.artist.name,
-                "album" to track.album.name,
+                "artist" to track.artist?.name,
+                "album" to track.album?.name,
                 "duration" to track.duration,
                 "imageUri" to track.imageUri?.raw
-            ),
+            ) else null,
             "playbackPosition" to playerState.playbackPosition,
             "playbackSpeed" to playerState.playbackSpeed,
             "isPaused" to playerState.isPaused,

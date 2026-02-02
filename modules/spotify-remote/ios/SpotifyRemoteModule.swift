@@ -502,24 +502,24 @@ public class SpotifyRemoteModule: Module {
                 return
             }
             
-            appRemote.contentAPI?.fetchRecommendedContentItems(forType: .default, flattenContainers: false) { result, error in
+            appRemote.contentAPI?.fetchRecommendedContentItems(forType: SPTAppRemoteContentTypeDefault, flattenContainers: false) { result, error in
                 if let error = error {
                     print("[SpotifyRemote] Content fetch error: \(error.localizedDescription)")
                     promise.reject("CONTENT_ERROR", error.localizedDescription)
                     return
                 }
                 
-                guard let items = result as? [SPTAppRemoteContentItem] else {
+                guard let items = result as? [any SPTAppRemoteContentItem] else {
                     promise.resolve([])
                     return
                 }
                 
                 let itemsArray = items.map { item -> [String: Any] in
                     return [
-                        "uri": item.uri ?? "",
+                        "uri": item.URI,
                         "title": item.title ?? "",
                         "subtitle": item.subtitle ?? "",
-                        "imageUri": item.imageIdentifier ?? "",
+                        "imageUri": item.imageIdentifier,
                         "isPlayable": item.isPlayable,
                         "isContainer": item.isContainer
                     ]
@@ -537,14 +537,14 @@ public class SpotifyRemoteModule: Module {
             }
             
             // First fetch recommended items to find the parent
-            appRemote.contentAPI?.fetchRecommendedContentItems(forType: .default, flattenContainers: false) { result, error in
+            appRemote.contentAPI?.fetchRecommendedContentItems(forType: SPTAppRemoteContentTypeDefault, flattenContainers: false) { result, error in
                 if let error = error {
                     promise.reject("CONTENT_ERROR", error.localizedDescription)
                     return
                 }
                 
-                guard let items = result as? [SPTAppRemoteContentItem],
-                      let targetItem = items.first(where: { $0.uri == uri }) else {
+                guard let items = result as? [any SPTAppRemoteContentItem],
+                      let targetItem = items.first(where: { $0.URI == uri }) else {
                     promise.reject("NOT_FOUND", "Content item not found")
                     return
                 }
@@ -556,17 +556,17 @@ public class SpotifyRemoteModule: Module {
                         return
                     }
                     
-                    guard let children = childResult as? [SPTAppRemoteContentItem] else {
+                    guard let children = childResult as? [any SPTAppRemoteContentItem] else {
                         promise.resolve([])
                         return
                     }
                     
                     let childrenArray = children.map { item -> [String: Any] in
                         return [
-                            "uri": item.uri ?? "",
+                            "uri": item.URI,
                             "title": item.title ?? "",
                             "subtitle": item.subtitle ?? "",
-                            "imageUri": item.imageIdentifier ?? "",
+                            "imageUri": item.imageIdentifier,
                             "isPlayable": item.isPlayable,
                             "isContainer": item.isContainer
                         ]
@@ -577,29 +577,30 @@ public class SpotifyRemoteModule: Module {
             }
         }
         
-        /// Fetch image for a content item
-        AsyncFunction("getContentItemImage") { (imageUri: String, promise: Promise) in
+        /// Fetch image for a content item by its URI
+        AsyncFunction("getContentItemImage") { (itemUri: String, promise: Promise) in
             guard let appRemote = self.manager.appRemote, appRemote.isConnected else {
                 promise.reject("NOT_CONNECTED", "Not connected to Spotify")
                 return
             }
             
-            // Fetch recommended items first to find one with matching image identifier
-            appRemote.contentAPI?.fetchRecommendedContentItems(forType: .default, flattenContainers: false) { result, error in
+            // Fetch the content item by URI, then get its image
+            appRemote.contentAPI?.fetchContentItem(forURI: itemUri) { result, error in
                 if let error = error {
-                    promise.reject("IMAGE_ERROR", error.localizedDescription)
+                    print("[SpotifyRemote] Failed to fetch content item: \(error.localizedDescription)")
+                    promise.reject("CONTENT_ERROR", error.localizedDescription)
                     return
                 }
                 
-                guard let items = result as? [SPTAppRemoteContentItem],
-                      let targetItem = items.first(where: { $0.imageIdentifier == imageUri }) else {
-                    promise.reject("NOT_FOUND", "Content item not found for image")
+                guard let contentItem = result as? (any SPTAppRemoteContentItem) else {
+                    promise.reject("NOT_FOUND", "Content item not found")
                     return
                 }
                 
                 let imageSize = CGSize(width: 200, height: 200)
-                appRemote.imageAPI?.fetchImage(forItem: targetItem, with: imageSize) { image, imageError in
+                appRemote.imageAPI?.fetchImage(forItem: contentItem, with: imageSize) { image, imageError in
                     if let error = imageError {
+                        print("[SpotifyRemote] Failed to fetch image: \(error.localizedDescription)")
                         promise.reject("IMAGE_ERROR", error.localizedDescription)
                         return
                     }
