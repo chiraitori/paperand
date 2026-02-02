@@ -1,41 +1,30 @@
 import ExpoModulesCore
-import SpotifyiOS
 
 /**
  * App Delegate Subscriber for handling Spotify URL callbacks
+ * This is called when Spotify app redirects back to our app after authorization
  */
 public class SpotifyAppDelegateSubscriber: ExpoAppDelegateSubscriber {
+    
     public func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
-        // Handle Spotify auth callback URL
-        if let sessionManager = getSessionManager() {
-            if sessionManager.application(app, open: url, options: options) {
-                return true
-            }
-        }
-        
-        // Handle Spotify App Remote callback
-        if let appRemote = SpotifyManager.shared.appRemote {
-            // Set access token from URL parameters if available
-            if let parameters = appRemote.authorizationParameters(from: url) {
-                if let accessToken = parameters[SPTAppRemoteAccessTokenKey] {
-                    appRemote.connectionParameters.accessToken = accessToken
-                    appRemote.connect()
-                    return true
-                } else if let errorDescription = parameters[SPTAppRemoteErrorDescriptionKey] {
-                    print("[SpotifyRemote] Auth error: \(errorDescription)")
-                    SpotifyManager.shared.pendingConnectionPromise?.reject("AUTH_ERROR", errorDescription)
-                    SpotifyManager.shared.pendingConnectionPromise = nil
-                    return true
-                }
-            }
-        }
-        
-        return false
+        // Let SpotifyManager handle the URL
+        return SpotifyManager.shared.handleOpenURL(url)
     }
     
-    private func getSessionManager() -> SPTSessionManager? {
-        // The session manager would be accessed from SpotifyAuthModule
-        // This is a simplified approach - in production you'd use a shared manager
-        return nil
+    public func applicationDidBecomeActive(_ application: UIApplication) {
+        // Reconnect to Spotify when app becomes active
+        if let appRemote = SpotifyManager.shared.appRemote,
+           SpotifyManager.shared.accessToken != nil,
+           !appRemote.isConnected {
+            appRemote.connect()
+        }
+    }
+    
+    public func applicationWillResignActive(_ application: UIApplication) {
+        // Disconnect from Spotify when app resigns active
+        if let appRemote = SpotifyManager.shared.appRemote,
+           appRemote.isConnected {
+            appRemote.disconnect()
+        }
     }
 }

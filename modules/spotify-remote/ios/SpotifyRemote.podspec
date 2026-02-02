@@ -19,6 +19,12 @@ Pod::Spec.new do |s|
   # Spotify iOS SDK
   s.vendored_frameworks = 'Frameworks/SpotifyiOS.xcframework'
   
-  s.source_files = '*.swift'
+  # Required for Spotify iOS SDK Objective-C support
+  s.pod_target_xcconfig = {
+    'OTHER_LDFLAGS' => '-ObjC',
+    'SWIFT_OBJC_BRIDGING_HEADER' => '$(PODS_TARGET_SRCROOT)/SpotifyRemote-Bridging-Header.h'
+  }
+  
+  s.source_files = '*.swift', '*.h'
   s.swift_version = '5.9'
 end

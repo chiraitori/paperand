@@ -1,33 +1,96 @@
 import ExpoModulesCore
-import SpotifyiOS
 
-/// Shared Spotify manager for iOS
+// Keys for storing access token
+private let kSpotifyAccessToken = "spotify_remote_access_token"
+
+/**
+ * Shared Spotify manager singleton for iOS
+ * Manages SPTAppRemote connection and delegates
+ */
 class SpotifyManager: NSObject {
     static let shared = SpotifyManager()
     
     var appRemote: SPTAppRemote?
     var configuration: SPTConfiguration?
+    var accessToken: String?
     var pendingConnectionPromise: Promise?
     var playerStateSubscription: Bool = false
+    var playURI: String = ""
     
     // Event emitter reference
     weak var remoteModule: SpotifyRemoteModule?
     
+    // UserDefaults for token persistence
+    private var defaults: UserDefaults {
+        return UserDefaults.standard
+    }
+    
     private override init() {
         super.init()
+        // Load stored access token
+        accessToken = defaults.string(forKey: kSpotifyAccessToken)
     }
     
     func configure(clientId: String, redirectUri: String) {
-        configuration = SPTConfiguration(clientID: clientId, redirectURL: URL(string: redirectUri)!)
+        guard let url = URL(string: redirectUri) else {
+            print("[SpotifyRemote] Invalid redirect URI: \(redirectUri)")
+            return
+        }
+        
+        configuration = SPTConfiguration(clientID: clientId, redirectURL: url)
+        
         appRemote = SPTAppRemote(configuration: configuration!, logLevel: .debug)
         appRemote?.delegate = self
+        
+        // Set stored access token if available
+        if let token = accessToken {
+            appRemote?.connectionParameters.accessToken = token
+        }
+        
+        print("[SpotifyRemote] Configured with clientId: \(clientId)")
+    }
+    
+    func saveAccessToken(_ token: String) {
+        accessToken = token
+        defaults.set(token, forKey: kSpotifyAccessToken)
+        defaults.synchronize()
+        appRemote?.connectionParameters.accessToken = token
+        print("[SpotifyRemote] Access token saved")
+    }
+    
+    func clearAccessToken() {
+        accessToken = nil
+        defaults.removeObject(forKey: kSpotifyAccessToken)
+        defaults.synchronize()
+        print("[SpotifyRemote] Access token cleared")
     }
     
     var isConnected: Bool {
         return appRemote?.isConnected ?? false
     }
+    
+    /// Handle URL callback from Spotify app
+    func handleOpenURL(_ url: URL) -> Bool {
+        guard let appRemote = appRemote else { return false }
+        
+        let parameters = appRemote.authorizationParameters(from: url)
+        
+        if let accessToken = parameters?[SPTAppRemoteAccessTokenKey] {
+            saveAccessToken(accessToken)
+            appRemote.connect()
+            return true
+        } else if let errorDescription = parameters?[SPTAppRemoteErrorDescriptionKey] {
+            print("[SpotifyRemote] Auth error: \(errorDescription)")
+            pendingConnectionPromise?.reject("AUTH_ERROR", errorDescription)
+            pendingConnectionPromise = nil
+            return true
+        }
+        
+        return false
+    }
 }
 
+// MARK: - SPTAppRemoteDelegate
 extension SpotifyManager: SPTAppRemoteDelegate {
     func appRemoteDidEstablishConnection(_ appRemote: SPTAppRemote) {
         print("[SpotifyRemote] Connected to Spotify!")
@@ -65,6 +128,7 @@ extension SpotifyManager: SPTAppRemoteDelegate {
     }
 }
 
+// MARK: - SPTAppRemotePlayerStateDelegate
 extension SpotifyManager: SPTAppRemotePlayerStateDelegate {
     func playerStateDidChange(_ playerState: SPTAppRemotePlayerState) {
         guard playerStateSubscription else { return }
@@ -100,6 +164,7 @@ extension SpotifyManager: SPTAppRemotePlayerStateDelegate {
     }
 }
 
+// MARK: - SpotifyRemoteModule
 public class SpotifyRemoteModule: Module {
     private var manager: SpotifyManager {
         return SpotifyManager.shared
@@ -115,11 +180,11 @@ public class SpotifyRemoteModule: Module {
         }
         
         Function("configure") { (clientId: String, redirectUri: String) in
-            manager.configure(clientId: clientId, redirectUri: redirectUri)
+            self.manager.configure(clientId: clientId, redirectUri: redirectUri)
         }
         
         AsyncFunction("connect") { (promise: Promise) in
-            guard let appRemote = manager.appRemote else {
+            guard let appRemote = self.manager.appRemote else {
                 promise.reject("NOT_CONFIGURED", "SpotifyRemote not configured. Call configure() first.")
                 return
             }
@@ -129,22 +194,27 @@ public class SpotifyRemoteModule: Module {
                 return
             }
             
-            manager.pendingConnectionPromise = promise
+            self.manager.pendingConnectionPromise = promise
             
             // Check if Spotify is installed
             guard let spotifyURL = URL(string: "spotify:"),
                   UIApplication.shared.canOpenURL(spotifyURL) else {
                 promise.reject("SPOTIFY_NOT_INSTALLED", "Spotify app is not installed on this device")
-                manager.pendingConnectionPromise = nil
+                self.manager.pendingConnectionPromise = nil
                 return
             }
             
-            // Authorize and connect
-            appRemote.authorizeAndPlayURI("")
+            // If we have an access token, try to connect directly
+            if self.manager.accessToken != nil {
+                appRemote.connect()
+            } else {
+                // Need to authorize first - this opens Spotify app
+                appRemote.authorizeAndPlayURI(self.manager.playURI)
+            }
         }
         
         AsyncFunction("disconnect") { (promise: Promise) in
-            if let appRemote = manager.appRemote, appRemote.isConnected {
+            if let appRemote = self.manager.appRemote, appRemote.isConnected {
                 appRemote.disconnect()
             }
             
@@ -157,11 +227,11 @@ public class SpotifyRemoteModule: Module {
         }
         
         Function("isConnected") { () -> Bool in
-            return manager.isConnected
+            return self.manager.isConnected
         }
         
         AsyncFunction("resume") { (promise: Promise) in
-            guard let appRemote = manager.appRemote, appRemote.isConnected else {
+            guard let appRemote = self.manager.appRemote, appRemote.isConnected else {
                 promise.reject("NOT_CONNECTED", "Not connected to Spotify")
                 return
             }
@@ -176,7 +246,7 @@ public class SpotifyRemoteModule: Module {
         }
         
         AsyncFunction("pause") { (promise: Promise) in
-            guard let appRemote = manager.appRemote, appRemote.isConnected else {
+            guard let appRemote = self.manager.appRemote, appRemote.isConnected else {
                 promise.reject("NOT_CONNECTED", "Not connected to Spotify")
                 return
             }
@@ -191,7 +261,7 @@ public class SpotifyRemoteModule: Module {
         }
         
         AsyncFunction("skipToNext") { (promise: Promise) in
-            guard let appRemote = manager.appRemote, appRemote.isConnected else {
+            guard let appRemote = self.manager.appRemote, appRemote.isConnected else {
                 promise.reject("NOT_CONNECTED", "Not connected to Spotify")
                 return
             }
@@ -206,7 +276,7 @@ public class SpotifyRemoteModule: Module {
         }
         
         AsyncFunction("skipToPrevious") { (promise: Promise) in
-            guard let appRemote = manager.appRemote, appRemote.isConnected else {
+            guard let appRemote = self.manager.appRemote, appRemote.isConnected else {
                 promise.reject("NOT_CONNECTED", "Not connected to Spotify")
                 return
             }
@@ -221,7 +291,7 @@ public class SpotifyRemoteModule: Module {
         }
         
         AsyncFunction("seekTo") { (positionMs: Int, promise: Promise) in
-            guard let appRemote = manager.appRemote, appRemote.isConnected else {
+            guard let appRemote = self.manager.appRemote, appRemote.isConnected else {
                 promise.reject("NOT_CONNECTED", "Not connected to Spotify")
                 return
             }
@@ -236,7 +306,7 @@ public class SpotifyRemoteModule: Module {
         }
         
         AsyncFunction("play") { (uri: String, promise: Promise) in
-            guard let appRemote = manager.appRemote, appRemote.isConnected else {
+            guard let appRemote = self.manager.appRemote, appRemote.isConnected else {
                 promise.reject("NOT_CONNECTED", "Not connected to Spotify")
                 return
             }
@@ -251,7 +321,7 @@ public class SpotifyRemoteModule: Module {
         }
         
         AsyncFunction("enqueue") { (uri: String, promise: Promise) in
-            guard let appRemote = manager.appRemote, appRemote.isConnected else {
+            guard let appRemote = self.manager.appRemote, appRemote.isConnected else {
                 promise.reject("NOT_CONNECTED", "Not connected to Spotify")
                 return
             }
@@ -266,7 +336,7 @@ public class SpotifyRemoteModule: Module {
         }
         
         AsyncFunction("getPlayerState") { (promise: Promise) in
-            guard let appRemote = manager.appRemote, appRemote.isConnected else {
+            guard let appRemote = self.manager.appRemote, appRemote.isConnected else {
                 promise.reject("NOT_CONNECTED", "Not connected to Spotify")
                 return
             }
@@ -314,34 +384,34 @@ public class SpotifyRemoteModule: Module {
         }
         
         AsyncFunction("subscribeToPlayerState") { (promise: Promise) in
-            guard let appRemote = manager.appRemote, appRemote.isConnected else {
+            guard let appRemote = self.manager.appRemote, appRemote.isConnected else {
                 promise.reject("NOT_CONNECTED", "Not connected to Spotify")
                 return
             }
             
-            appRemote.playerAPI?.delegate = manager
-            appRemote.playerAPI?.subscribe { _, error in
+            appRemote.playerAPI?.delegate = self.manager
+            appRemote.playerAPI?.subscribe(toPlayerState: { _, error in
                 if let error = error {
                     promise.reject("SUBSCRIPTION_ERROR", error.localizedDescription)
                 } else {
                     SpotifyManager.shared.playerStateSubscription = true
                     promise.resolve(["subscribed": true])
                 }
-            }
+            })
         }
         
         AsyncFunction("unsubscribeFromPlayerState") { (promise: Promise) in
             SpotifyManager.shared.playerStateSubscription = false
             
-            if let appRemote = manager.appRemote, appRemote.isConnected {
-                appRemote.playerAPI?.unsubscribe { _, _ in }
+            if let appRemote = self.manager.appRemote, appRemote.isConnected {
+                appRemote.playerAPI?.unsubscribe(toPlayerState: { _, _ in })
             }
             
             promise.resolve(["unsubscribed": true])
         }
         
         AsyncFunction("setShuffle") { (enabled: Bool, promise: Promise) in
-            guard let appRemote = manager.appRemote, appRemote.isConnected else {
+            guard let appRemote = self.manager.appRemote, appRemote.isConnected else {
                 promise.reject("NOT_CONNECTED", "Not connected to Spotify")
                 return
             }
@@ -356,7 +426,7 @@ public class SpotifyRemoteModule: Module {
         }
         
         AsyncFunction("setRepeatMode") { (mode: Int, promise: Promise) in
-            guard let appRemote = manager.appRemote, appRemote.isConnected else {
+            guard let appRemote = self.manager.appRemote, appRemote.isConnected else {
                 promise.reject("NOT_CONNECTED", "Not connected to Spotify")
                 return
             }
