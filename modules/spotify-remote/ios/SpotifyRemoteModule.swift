@@ -64,18 +64,34 @@ class SpotifyManager: NSObject {
     
     /// Handle URL callback from Spotify app
     func handleOpenURL(_ url: URL) -> Bool {
-        guard let appRemote = appRemote else { return false }
+        guard let appRemote = appRemote else { 
+            print("[SpotifyRemote] handleOpenURL: appRemote is nil")
+            return false 
+        }
         
+        print("[SpotifyRemote] handleOpenURL: \(url)")
         let parameters = appRemote.authorizationParameters(from: url)
+        print("[SpotifyRemote] Auth parameters: \(String(describing: parameters))")
         
         if let token = parameters?[SPTAppRemoteAccessTokenKey] {
+            print("[SpotifyRemote] Got access token (length: \(token.count)), setting on connectionParameters")
             appRemote.connectionParameters.accessToken = token
             accessToken = token
             
             // Notify auth module about successful authorization
             authModule?.onAuthorizationComplete(accessToken: token)
             
-            appRemote.connect()
+            // Give Spotify app time to release resources and allow our app to connect
+            // The Spotify SDK requires the app to be fully foregrounded
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                guard let self = self, let remote = self.appRemote else {
+                    print("[SpotifyRemote] AppRemote nil after delay")
+                    return
+                }
+                print("[SpotifyRemote] Attempting connection after auth callback...")
+                print("[SpotifyRemote] Token on connectionParameters: \(remote.connectionParameters.accessToken != nil)")
+                remote.connect()
+            }
             return true
         } else if let errorDescription = parameters?[SPTAppRemoteErrorDescriptionKey] {
             print("[SpotifyRemote] Auth error: \(errorDescription)")
@@ -137,15 +153,26 @@ extension SpotifyManager: SPTAppRemoteDelegate {
     }
     
     func appRemote(_ appRemote: SPTAppRemote, didFailConnectionAttemptWithError error: (any Error)?) {
-        print("[SpotifyRemote] Connection failed: \(error?.localizedDescription ?? "Unknown error")")
+        let errorDesc = error?.localizedDescription ?? "Unknown error"
+        print("[SpotifyRemote] Connection failed: \(errorDesc)")
+        if let nsError = error as NSError? {
+            print("[SpotifyRemote] Error domain: \(nsError.domain), code: \(nsError.code)")
+            print("[SpotifyRemote] Error userInfo: \(nsError.userInfo)")
+            
+            // If it's "The request failed" or token-related, clear the token and suggest re-auth
+            if nsError.domain == "com.spotify.app-remote" && (nsError.code == -1 || nsError.code == 2) {
+                print("[SpotifyRemote] Clearing access token due to connection error - token may be expired")
+                self.accessToken = nil
+            }
+        }
         
         remoteModule?.sendEvent("onConnectionStatusChanged", [
             "connected": false,
             "status": "failed",
-            "error": error?.localizedDescription ?? "Unknown error"
+            "error": errorDesc
         ])
         
-        pendingConnectionPromise?.reject("CONNECTION_FAILED", error?.localizedDescription ?? "Connection failed")
+        pendingConnectionPromise?.reject("CONNECTION_FAILED", errorDesc)
         pendingConnectionPromise = nil
     }
     
@@ -212,11 +239,14 @@ public class SpotifyRemoteModule: Module {
                 return
             }
             
-            // If we have an access token, try to connect directly
-            if self.manager.accessToken != nil {
+            // If we have an access token, update connectionParameters and try to connect
+            if let token = self.manager.accessToken, !token.isEmpty {
+                print("[SpotifyRemote] Connecting with stored access token")
+                appRemote.connectionParameters.accessToken = token
                 appRemote.connect()
             } else {
                 // Need to authorize first - this opens Spotify app
+                print("[SpotifyRemote] No token, authorizing first")
                 appRemote.authorizeAndPlayURI(self.manager.playURI)
             }
         }
