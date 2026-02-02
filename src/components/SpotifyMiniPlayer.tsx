@@ -109,7 +109,7 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
         setLoadingContent(true);
         
         try {
-            const items = await SpotifyRemote.getRecommendedContentItems('default');
+            const items = await SpotifyRemote.getRecommendedContentItems();
             setContentItems(items);
             
             // Load images for items
@@ -117,8 +117,8 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
             for (const item of items.slice(0, 12)) { // Load first 12 images
                 if (item.imageUri) {
                     try {
-                        const base64 = await SpotifyRemote.getContentItemImage(item.imageUri, 120, 120);
-                        newCache[item.uri] = `data:image/png;base64,${base64}`;
+                        const base64 = await SpotifyRemote.getContentItemImage(item.imageUri);
+                        newCache[item.uri] = base64; // Already includes data: prefix
                     } catch (e) {
                         // Ignore image load errors
                     }
@@ -169,7 +169,7 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
         return (
             <TouchableOpacity
                 style={[styles.miniContainer, style]}
-                onPress={openSpotify}
+                onPress={openContentPicker}
             >
                 <Ionicons name="musical-notes" size={20} color="#1DB954" />
                 <Text style={styles.noTrackText}>Tap to pick music</Text>

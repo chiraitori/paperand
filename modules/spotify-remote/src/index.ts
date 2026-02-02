@@ -63,11 +63,9 @@ export interface SpotifyContentItem {
     uri: string;
     title: string;
     subtitle: string;
-    identifier: string;
-    isAvailableOffline: boolean;
+    imageUri: string;
     isPlayable: boolean;
     isContainer: boolean;
-    imageUri: string;
 }
 
 // Define the native module interface
@@ -90,9 +88,9 @@ interface SpotifyRemoteNativeModule extends NativeModule {
     setShuffle(enabled: boolean): Promise<{ success: boolean }>;
     setRepeatMode(mode: number): Promise<{ success: boolean }>;
     // Content API
-    getRecommendedContentItems(type: string): Promise<{ items: SpotifyContentItem[] }>;
-    getChildrenOfContentItem(uri: string): Promise<{ items: SpotifyContentItem[] }>;
-    getContentItemImage(imageUri: string, width: number, height: number): Promise<{ imageBase64: string }>;
+    getRecommendedContentItems(): Promise<SpotifyContentItem[]>;
+    getChildrenOfContentItem(uri: string): Promise<SpotifyContentItem[]>;
+    getContentItemImage(imageUri: string): Promise<string>;
 }
 
 // Get the native module
@@ -303,12 +301,10 @@ export const SpotifyRemote = {
      * Get recommended content items (playlists, albums) for the user
      * This is similar to what Google Maps shows - user's playlists and recommendations
      * 
-     * @param type - Content type: 'default', 'navigation', or 'fitness'
      * @returns Array of content items
      */
-    async getRecommendedContentItems(type: 'default' | 'navigation' | 'fitness' = 'default'): Promise<SpotifyContentItem[]> {
-        const result = await SpotifyRemoteNative.getRecommendedContentItems(type);
-        return result.items;
+    async getRecommendedContentItems(): Promise<SpotifyContentItem[]> {
+        return await SpotifyRemoteNative.getRecommendedContentItems();
     },
 
     /**
@@ -318,21 +314,17 @@ export const SpotifyRemote = {
      * @returns Array of child content items
      */
     async getChildrenOfContentItem(uri: string): Promise<SpotifyContentItem[]> {
-        const result = await SpotifyRemoteNative.getChildrenOfContentItem(uri);
-        return result.items;
+        return await SpotifyRemoteNative.getChildrenOfContentItem(uri);
     },
 
     /**
      * Get image for a content item as base64
      * 
      * @param imageUri - Image URI from content item
-     * @param width - Desired width
-     * @param height - Desired height
-     * @returns Base64 encoded image data
+     * @returns Base64 encoded image data (data:image/jpeg;base64,...)
      */
-    async getContentItemImage(imageUri: string, width: number = 100, height: number = 100): Promise<string> {
-        const result = await SpotifyRemoteNative.getContentItemImage(imageUri, width, height);
-        return result.imageBase64;
+    async getContentItemImage(imageUri: string): Promise<string> {
+        return await SpotifyRemoteNative.getContentItemImage(imageUri);
     },
 };
 

@@ -3,6 +3,7 @@ import { Alert, AppState, AppStateStatus } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
 import { ThemeProvider } from './src/context/ThemeContext';
 import { LibraryProvider } from './src/context/LibraryContext';
 import { DownloadProvider } from './src/context/DownloadContext';
@@ -18,6 +19,7 @@ import {
   checkForUpdate,
   ReleaseInfo,
 } from './src/services/updateService';
+import { spotifyRemoteService } from './src/services/spotifyRemoteService';
 import { Action, setItems } from 'expo-quick-actions';
 import { useQuickAction } from 'expo-quick-actions/hooks';
 import { initLogCapture } from './src/services/developerService';
@@ -26,6 +28,20 @@ import { downloadService } from './src/services/downloadService';
 
 // Initialize log capture immediately so all logs are captured from startup
 initLogCapture();
+
+// Initialize Spotify Remote Service with credentials from app config
+const spotifyConfig = Constants.expoConfig?.plugins?.find(
+  (p: any) => Array.isArray(p) && p[0] === './plugins/withSpotifySDK'
+) as [string, { clientId: string; redirectScheme: string }] | undefined;
+
+if (spotifyConfig && spotifyConfig[1]?.clientId && spotifyConfig[1].clientId !== 'YOUR_SPOTIFY_CLIENT_ID') {
+  const { clientId, redirectScheme } = spotifyConfig[1];
+  const redirectUri = `${redirectScheme}://callback`;
+  console.log('[App] Configuring Spotify with clientId:', clientId);
+  spotifyRemoteService.configure(clientId, redirectUri);
+} else {
+  console.warn('[App] Spotify not configured - missing client ID in app.config.js');
+}
 
 const SETTINGS_KEY = '@general_settings';
 
