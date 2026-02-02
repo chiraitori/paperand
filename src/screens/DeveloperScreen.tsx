@@ -30,7 +30,7 @@ import {
   getPerformanceInfo,
 } from '../services/developerService';
 import { spotifyRemoteService } from '../services/spotifyRemoteService';
-import { ReadingActivity } from '../../modules/reading-activity/src';
+import * as LiveActivity from 'expo-live-activity';
 import { t } from '../services/i18nService';
 
 export const DeveloperScreen: React.FC = () => {
@@ -296,27 +296,32 @@ export const DeveloperScreen: React.FC = () => {
     }
   };
 
-  // Live Activity Test Functions
+  // Live Activity Test Functions using expo-live-activity
   const testReadingActivity = async () => {
     if (Platform.OS !== 'ios') {
       Alert.alert('iOS Only', 'Live Activities are only available on iOS 16.2+');
       return;
     }
 
-    if (!ReadingActivity.isSupported()) {
-      Alert.alert('Not Supported', 'Live Activities require iOS 16.2+ and must be enabled in Settings.');
-      return;
-    }
-
     try {
-      const activityId = await ReadingActivity.startReadingActivity({
-        mangaTitle: 'One Piece',
-        mangaCoverUrl: 'https://uploads.mangadex.org/covers/a1c7c817-4e59-43b7-9365-09675a149a6f/2c404255-07c8-4b15-b7a4-b7e1b5fecd76.jpg',
-        chapterId: 'test-chapter-1',
-        chapterTitle: 'Chapter 1: Romance Dawn',
-        currentPage: 1,
-        totalPages: 53,
-      });
+      const state: LiveActivity.LiveActivityState = {
+        title: 'One Piece',
+        subtitle: 'Chapter 1: Romance Dawn • Page 1/53',
+        progressBar: {
+          progress: 1 / 53,
+        },
+      };
+
+      const config: LiveActivity.LiveActivityConfig = {
+        backgroundColor: '#1a1a2e',
+        titleColor: '#FFFFFF',
+        subtitleColor: '#AAAAAA',
+        progressViewTint: '#FA6432',
+        progressViewLabelColor: '#FFFFFF',
+        deepLinkUrl: '/reader',
+      };
+
+      const activityId = LiveActivity.startActivity(state, config);
 
       if (activityId) {
         setLiveActivityId(activityId);
@@ -327,7 +332,7 @@ export const DeveloperScreen: React.FC = () => {
           [{ text: 'OK' }]
         );
       } else {
-        Alert.alert('❌ Failed', 'Could not start reading activity');
+        Alert.alert('❌ Failed', 'Could not start reading activity. Make sure you rebuilt the app with `npx expo prebuild --clean`');
       }
     } catch (error) {
       console.error('[LiveActivity] Start failed:', error);
@@ -335,7 +340,7 @@ export const DeveloperScreen: React.FC = () => {
     }
   };
 
-  const updateReadingProgress = async () => {
+  const updateReadingProgress = () => {
     if (!liveActivityId) {
       Alert.alert('No Activity', 'Start a reading activity first');
       return;
@@ -344,28 +349,35 @@ export const DeveloperScreen: React.FC = () => {
     const newPage = Math.min(liveActivityPage + 5, 53);
     setLiveActivityPage(newPage);
 
-    const success = await ReadingActivity.updateReadingActivity(
-      newPage,
-      53,
-      newPage >= 53 ? 'Chapter 2: They Call Him "Straw Hat Luffy"' : undefined
-    );
+    const chapterTitle = newPage >= 53 
+      ? 'Chapter 2: They Call Him "Straw Hat Luffy"' 
+      : 'Chapter 1: Romance Dawn';
 
-    if (success) {
-      Alert.alert('✅ Updated', `Page ${newPage}/53`);
-    } else {
-      Alert.alert('❌ Failed', 'Could not update activity');
-    }
+    LiveActivity.updateActivity(liveActivityId, {
+      title: 'One Piece',
+      subtitle: `${chapterTitle} • Page ${newPage}/53`,
+      progressBar: {
+        progress: newPage / 53,
+      },
+    });
+
+    Alert.alert('✅ Updated', `Page ${newPage}/53`);
   };
 
-  const endReadingActivity = async () => {
-    const success = await ReadingActivity.endReadingActivity();
-    if (success) {
-      setLiveActivityId(null);
-      setLiveActivityPage(1);
-      Alert.alert('✅ Ended', 'Reading activity has been ended');
-    } else {
-      Alert.alert('❌ Failed', 'Could not end activity');
-    }
+  const endReadingActivity = () => {
+    if (!liveActivityId) return;
+
+    LiveActivity.stopActivity(liveActivityId, {
+      title: 'One Piece',
+      subtitle: 'Reading completed!',
+      progressBar: {
+        progress: 1,
+      },
+    });
+
+    setLiveActivityId(null);
+    setLiveActivityPage(1);
+    Alert.alert('✅ Ended', 'Reading activity has been ended');
   };
 
   const testDownloadActivity = async () => {
@@ -374,17 +386,24 @@ export const DeveloperScreen: React.FC = () => {
       return;
     }
 
-    if (!ReadingActivity.isSupported()) {
-      Alert.alert('Not Supported', 'Live Activities require iOS 16.2+ and must be enabled in Settings.');
-      return;
-    }
-
     try {
-      const activityId = await ReadingActivity.startDownloadActivity({
-        mangaTitle: 'Naruto',
-        mangaCoverUrl: 'https://uploads.mangadex.org/covers/6b1eb93e-473a-4ab3-9922-1a66d2a29a4a/d4d1d57e-e10d-4b9f-8c15-9e4c89e5b8f8.jpg',
-        totalCount: 10,
-      });
+      const state: LiveActivity.LiveActivityState = {
+        title: 'Downloading: Naruto',
+        subtitle: 'Starting download... 0/10 chapters',
+        progressBar: {
+          progress: 0,
+        },
+      };
+
+      const config: LiveActivity.LiveActivityConfig = {
+        backgroundColor: '#1a1a2e',
+        titleColor: '#FFFFFF',
+        subtitleColor: '#AAAAAA',
+        progressViewTint: '#4A90D9',
+        progressViewLabelColor: '#FFFFFF',
+      };
+
+      const activityId = LiveActivity.startActivity(state, config);
 
       if (activityId) {
         setDownloadActivityId(activityId);
@@ -395,7 +414,7 @@ export const DeveloperScreen: React.FC = () => {
           [{ text: 'OK' }]
         );
       } else {
-        Alert.alert('❌ Failed', 'Could not start download activity');
+        Alert.alert('❌ Failed', 'Could not start download activity. Make sure you rebuilt the app with `npx expo prebuild --clean`');
       }
     } catch (error) {
       console.error('[LiveActivity] Download start failed:', error);
@@ -403,7 +422,7 @@ export const DeveloperScreen: React.FC = () => {
     }
   };
 
-  const updateDownloadProgress = async () => {
+  const updateDownloadProgress = () => {
     if (!downloadActivityId) {
       Alert.alert('No Activity', 'Start a download activity first');
       return;
@@ -412,47 +431,65 @@ export const DeveloperScreen: React.FC = () => {
     const newCount = Math.min(downloadCount + 1, 10);
     setDownloadCount(newCount);
 
-    const success = await ReadingActivity.updateDownloadActivity(
-      `Chapter ${newCount}`,
-      newCount,
-      10,
-      10 - newCount
-    );
-
-    if (success) {
-      if (newCount >= 10) {
-        await ReadingActivity.completeDownloadActivity('All chapters downloaded!');
-        Alert.alert('✅ Complete', 'Download finished!');
-      } else {
-        Alert.alert('✅ Updated', `Downloaded ${newCount}/10`);
-      }
+    if (newCount >= 10) {
+      LiveActivity.stopActivity(downloadActivityId, {
+        title: 'Naruto',
+        subtitle: 'Download complete! 10/10 chapters',
+        progressBar: {
+          progress: 1,
+        },
+      });
+      setDownloadActivityId(null);
+      setDownloadCount(0);
+      Alert.alert('✅ Complete', 'Download finished!');
     } else {
-      Alert.alert('❌ Failed', 'Could not update download activity');
+      LiveActivity.updateActivity(downloadActivityId, {
+        title: 'Downloading: Naruto',
+        subtitle: `Chapter ${newCount}... ${newCount}/10 chapters`,
+        progressBar: {
+          progress: newCount / 10,
+        },
+      });
+      Alert.alert('✅ Updated', `Downloaded ${newCount}/10`);
     }
   };
 
-  const endDownloadActivity = async () => {
-    const success = await ReadingActivity.endDownloadActivity();
-    if (success) {
-      setDownloadActivityId(null);
-      setDownloadCount(0);
-      Alert.alert('✅ Ended', 'Download activity has been ended');
-    } else {
-      Alert.alert('❌ Failed', 'Could not end activity');
-    }
+  const endDownloadActivity = () => {
+    if (!downloadActivityId) return;
+
+    LiveActivity.stopActivity(downloadActivityId, {
+      title: 'Naruto',
+      subtitle: 'Download cancelled',
+      progressBar: {
+        progress: downloadCount / 10,
+      },
+    });
+
+    setDownloadActivityId(null);
+    setDownloadCount(0);
+    Alert.alert('✅ Ended', 'Download activity has been ended');
   };
 
-  const endAllLiveActivities = async () => {
-    const success = await ReadingActivity.endAllActivities();
-    if (success) {
-      setLiveActivityId(null);
-      setLiveActivityPage(1);
-      setDownloadActivityId(null);
-      setDownloadCount(0);
-      Alert.alert('✅ Ended All', 'All live activities have been ended');
-    } else {
-      Alert.alert('❌ Failed', 'Could not end all activities');
+  const endAllLiveActivities = () => {
+    if (liveActivityId) {
+      LiveActivity.stopActivity(liveActivityId, {
+        title: 'One Piece',
+        subtitle: 'Activity ended',
+        progressBar: { progress: liveActivityPage / 53 },
+      });
     }
+    if (downloadActivityId) {
+      LiveActivity.stopActivity(downloadActivityId, {
+        title: 'Naruto',
+        subtitle: 'Activity ended',
+        progressBar: { progress: downloadCount / 10 },
+      });
+    }
+    setLiveActivityId(null);
+    setLiveActivityPage(1);
+    setDownloadActivityId(null);
+    setDownloadCount(0);
+    Alert.alert('✅ Ended All', 'All live activities have been ended');
   };
 
   // Clear all data
@@ -706,12 +743,19 @@ export const DeveloperScreen: React.FC = () => {
               'LIVE ACTIVITY (iOS 16.2+)',
               <>
                 {renderSettingItem({
-                  title: 'Supported',
-                  rightElement: (
-                    <Text style={[styles.valueText, { color: ReadingActivity.isSupported() ? theme.success : theme.error }]}>
-                      {ReadingActivity.isSupported() ? 'Yes' : 'No'}
-                    </Text>
-                  ),
+                  title: 'About Live Activities',
+                  subtitle: 'Using expo-live-activity package',
+                  onPress: () => {
+                    Alert.alert(
+                      'Live Activity Info',
+                      'Live Activities display real-time info on your lock screen and Dynamic Island.\n\n' +
+                      '• Requires iOS 16.2+\n' +
+                      '• Requires native rebuild (npx expo prebuild --clean)\n' +
+                      '• Widget Extension is created automatically by expo-live-activity\n\n' +
+                      'If activities don\'t appear, ensure you\'ve rebuilt the iOS app.',
+                      [{ text: 'OK' }]
+                    );
+                  },
                 })}
                 {renderSettingItem({
                   title: liveActivityId ? 'End Reading Activity' : 'Start Reading Activity',

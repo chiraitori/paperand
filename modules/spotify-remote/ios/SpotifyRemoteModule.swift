@@ -19,6 +19,9 @@ class SpotifyManager: NSObject {
     // Event emitter reference
     weak var remoteModule: SpotifyRemoteModule?
     
+    // Auth module reference for callbacks
+    weak var authModule: SpotifyAuthModule?
+    
     // Store playerState for reference
     private var playerState: (any SPTAppRemotePlayerState)?
     
@@ -68,10 +71,18 @@ class SpotifyManager: NSObject {
         if let token = parameters?[SPTAppRemoteAccessTokenKey] {
             appRemote.connectionParameters.accessToken = token
             accessToken = token
+            
+            // Notify auth module about successful authorization
+            authModule?.onAuthorizationComplete(accessToken: token)
+            
             appRemote.connect()
             return true
         } else if let errorDescription = parameters?[SPTAppRemoteErrorDescriptionKey] {
             print("[SpotifyRemote] Auth error: \(errorDescription)")
+            
+            // Notify auth module about failed authorization
+            authModule?.onAuthorizationFailed(error: errorDescription)
+            
             pendingConnectionPromise?.reject("AUTH_ERROR", errorDescription)
             pendingConnectionPromise = nil
             return true

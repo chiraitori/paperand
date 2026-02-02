@@ -36,9 +36,18 @@ export interface ActivityInfo {
     totalCount?: number;
 }
 
+export interface SupportInfo {
+    iosVersion: string;
+    deviceModel: string;
+    supportsLiveActivities: boolean;
+    areActivitiesEnabled: boolean;
+    frequentPushesEnabled?: boolean;
+}
+
 // Define the native module interface
 interface ReadingActivityNativeModule extends NativeModule {
     isSupported(): boolean;
+    getSupportInfo(): SupportInfo;
     startReadingActivity(
         mangaTitle: string,
         mangaCoverUrl: string | null,
@@ -93,6 +102,20 @@ export const ReadingActivity = {
             return false;
         }
         return ReadingActivityNative.isSupported();
+    },
+
+    /**
+     * Get detailed support information for debugging
+     */
+    getSupportInfo(): SupportInfo | null {
+        if (Platform.OS !== 'ios' || !ReadingActivityNative) {
+            return null;
+        }
+        try {
+            return ReadingActivityNative.getSupportInfo();
+        } catch {
+            return null;
+        }
     },
 
     // MARK: - Reading Progress Activity

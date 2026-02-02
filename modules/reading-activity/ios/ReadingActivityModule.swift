@@ -54,9 +54,35 @@ public class ReadingActivityModule: Module {
         // Check if Live Activities are supported
         Function("isSupported") { () -> Bool in
             if #available(iOS 16.2, *) {
-                return ActivityAuthorizationInfo().areActivitiesEnabled
+                let authInfo = ActivityAuthorizationInfo()
+                let enabled = authInfo.areActivitiesEnabled
+                print("[ReadingActivity] iOS version: \(UIDevice.current.systemVersion)")
+                print("[ReadingActivity] areActivitiesEnabled: \(enabled)")
+                print("[ReadingActivity] frequentPushesEnabled: \(authInfo.frequentPushesEnabled)")
+                return enabled
             }
+            print("[ReadingActivity] iOS version too old: \(UIDevice.current.systemVersion)")
             return false
+        }
+        
+        // Get detailed support info for debugging
+        Function("getSupportInfo") { () -> [String: Any] in
+            var info: [String: Any] = [
+                "iosVersion": UIDevice.current.systemVersion,
+                "deviceModel": UIDevice.current.model
+            ]
+            
+            if #available(iOS 16.2, *) {
+                let authInfo = ActivityAuthorizationInfo()
+                info["areActivitiesEnabled"] = authInfo.areActivitiesEnabled
+                info["frequentPushesEnabled"] = authInfo.frequentPushesEnabled
+                info["supportsLiveActivities"] = true
+            } else {
+                info["supportsLiveActivities"] = false
+                info["areActivitiesEnabled"] = false
+            }
+            
+            return info
         }
         
         // MARK: - Reading Progress Activity
