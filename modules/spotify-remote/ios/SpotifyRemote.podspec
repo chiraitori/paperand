@@ -16,10 +16,13 @@ Pod::Spec.new do |s|
 
   s.dependency 'ExpoModulesCore'
   
-  # NOTE: SpotifyiOS SDK integration for iOS is pending
-  # The Android implementation is fully functional
-  # iOS will return "NOT_AVAILABLE" errors until SDK integration is complete
+  # Spotify iOS SDK
+  s.vendored_frameworks = 'Frameworks/SpotifyiOS.xcframework'
   
   s.source_files = '*.swift'
   s.swift_version = '5.9'
+  
+  s.pod_target_xcconfig = {
+    'DEFINES_MODULE' => 'YES'
+  }
 end
