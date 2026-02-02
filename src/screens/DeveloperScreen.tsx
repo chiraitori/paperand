@@ -30,6 +30,8 @@ import {
   getPerformanceInfo,
 } from '../services/developerService';
 import { spotifyRemoteService } from '../services/spotifyRemoteService';
+import { ReadingActivity } from '../../modules/reading-activity/src';
+import { t } from '../services/i18nService';
 
 export const DeveloperScreen: React.FC = () => {
   const { theme } = useTheme();
@@ -51,6 +53,10 @@ export const DeveloperScreen: React.FC = () => {
   const [spotifyConnected, setSpotifyConnected] = useState(false);
   const [spotifyLoading, setSpotifyLoading] = useState(false);
   const [spotifyTrack, setSpotifyTrack] = useState<string | null>(null);
+  const [liveActivityId, setLiveActivityId] = useState<string | null>(null);
+  const [liveActivityPage, setLiveActivityPage] = useState(1);
+  const [downloadActivityId, setDownloadActivityId] = useState<string | null>(null);
+  const [downloadCount, setDownloadCount] = useState(0);
 
   // Load settings on mount
   useEffect(() => {
@@ -287,6 +293,165 @@ export const DeveloperScreen: React.FC = () => {
       Alert.alert('✅ Disconnected', 'Spotify has been disconnected');
     } catch (error) {
       console.error('[Spotify] Disconnect failed:', error);
+    }
+  };
+
+  // Live Activity Test Functions
+  const testReadingActivity = async () => {
+    if (Platform.OS !== 'ios') {
+      Alert.alert('iOS Only', 'Live Activities are only available on iOS 16.2+');
+      return;
+    }
+
+    if (!ReadingActivity.isSupported()) {
+      Alert.alert('Not Supported', 'Live Activities require iOS 16.2+ and must be enabled in Settings.');
+      return;
+    }
+
+    try {
+      const activityId = await ReadingActivity.startReadingActivity({
+        mangaTitle: 'One Piece',
+        mangaCoverUrl: 'https://uploads.mangadex.org/covers/a1c7c817-4e59-43b7-9365-09675a149a6f/2c404255-07c8-4b15-b7a4-b7e1b5fecd76.jpg',
+        chapterId: 'test-chapter-1',
+        chapterTitle: 'Chapter 1: Romance Dawn',
+        currentPage: 1,
+        totalPages: 53,
+      });
+
+      if (activityId) {
+        setLiveActivityId(activityId);
+        setLiveActivityPage(1);
+        Alert.alert(
+          '✅ Reading Activity Started',
+          `Activity ID: ${activityId}\n\nCheck your lock screen or Dynamic Island!`,
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert('❌ Failed', 'Could not start reading activity');
+      }
+    } catch (error) {
+      console.error('[LiveActivity] Start failed:', error);
+      Alert.alert('❌ Error', `${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  const updateReadingProgress = async () => {
+    if (!liveActivityId) {
+      Alert.alert('No Activity', 'Start a reading activity first');
+      return;
+    }
+
+    const newPage = Math.min(liveActivityPage + 5, 53);
+    setLiveActivityPage(newPage);
+
+    const success = await ReadingActivity.updateReadingActivity(
+      newPage,
+      53,
+      newPage >= 53 ? 'Chapter 2: They Call Him "Straw Hat Luffy"' : undefined
+    );
+
+    if (success) {
+      Alert.alert('✅ Updated', `Page ${newPage}/53`);
+    } else {
+      Alert.alert('❌ Failed', 'Could not update activity');
+    }
+  };
+
+  const endReadingActivity = async () => {
+    const success = await ReadingActivity.endReadingActivity();
+    if (success) {
+      setLiveActivityId(null);
+      setLiveActivityPage(1);
+      Alert.alert('✅ Ended', 'Reading activity has been ended');
+    } else {
+      Alert.alert('❌ Failed', 'Could not end activity');
+    }
+  };
+
+  const testDownloadActivity = async () => {
+    if (Platform.OS !== 'ios') {
+      Alert.alert('iOS Only', 'Live Activities are only available on iOS 16.2+');
+      return;
+    }
+
+    if (!ReadingActivity.isSupported()) {
+      Alert.alert('Not Supported', 'Live Activities require iOS 16.2+ and must be enabled in Settings.');
+      return;
+    }
+
+    try {
+      const activityId = await ReadingActivity.startDownloadActivity({
+        mangaTitle: 'Naruto',
+        mangaCoverUrl: 'https://uploads.mangadex.org/covers/6b1eb93e-473a-4ab3-9922-1a66d2a29a4a/d4d1d57e-e10d-4b9f-8c15-9e4c89e5b8f8.jpg',
+        totalCount: 10,
+      });
+
+      if (activityId) {
+        setDownloadActivityId(activityId);
+        setDownloadCount(0);
+        Alert.alert(
+          '✅ Download Activity Started',
+          `Activity ID: ${activityId}\n\nCheck your lock screen or Dynamic Island!`,
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert('❌ Failed', 'Could not start download activity');
+      }
+    } catch (error) {
+      console.error('[LiveActivity] Download start failed:', error);
+      Alert.alert('❌ Error', `${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  const updateDownloadProgress = async () => {
+    if (!downloadActivityId) {
+      Alert.alert('No Activity', 'Start a download activity first');
+      return;
+    }
+
+    const newCount = Math.min(downloadCount + 1, 10);
+    setDownloadCount(newCount);
+
+    const success = await ReadingActivity.updateDownloadActivity(
+      `Chapter ${newCount}`,
+      newCount,
+      10,
+      10 - newCount
+    );
+
+    if (success) {
+      if (newCount >= 10) {
+        await ReadingActivity.completeDownloadActivity('All chapters downloaded!');
+        Alert.alert('✅ Complete', 'Download finished!');
+      } else {
+        Alert.alert('✅ Updated', `Downloaded ${newCount}/10`);
+      }
+    } else {
+      Alert.alert('❌ Failed', 'Could not update download activity');
+    }
+  };
+
+  const endDownloadActivity = async () => {
+    const success = await ReadingActivity.endDownloadActivity();
+    if (success) {
+      setDownloadActivityId(null);
+      setDownloadCount(0);
+      Alert.alert('✅ Ended', 'Download activity has been ended');
+    } else {
+      Alert.alert('❌ Failed', 'Could not end activity');
+    }
+  };
+
+  const endAllLiveActivities = async () => {
+    const success = await ReadingActivity.endAllActivities();
+    if (success) {
+      setLiveActivityId(null);
+      setLiveActivityPage(1);
+      setDownloadActivityId(null);
+      setDownloadCount(0);
+      Alert.alert('✅ Ended All', 'All live activities have been ended');
+    } else {
+      Alert.alert('❌ Failed', 'Could not end all activities');
     }
   };
 
@@ -532,6 +697,67 @@ export const DeveloperScreen: React.FC = () => {
                   subtitle: 'Remove all app data and reset to defaults',
                   isDestructive: true,
                   onPress: clearAllData,
+                })}
+              </>
+            )}
+
+            {/* Live Activity (iOS Only) */}
+            {Platform.OS === 'ios' && renderSection(
+              'LIVE ACTIVITY (iOS 16.2+)',
+              <>
+                {renderSettingItem({
+                  title: 'Supported',
+                  rightElement: (
+                    <Text style={[styles.valueText, { color: ReadingActivity.isSupported() ? theme.success : theme.error }]}>
+                      {ReadingActivity.isSupported() ? 'Yes' : 'No'}
+                    </Text>
+                  ),
+                })}
+                {renderSettingItem({
+                  title: liveActivityId ? 'End Reading Activity' : 'Start Reading Activity',
+                  subtitle: liveActivityId
+                    ? `Page ${liveActivityPage}/53 - One Piece`
+                    : 'Test reading progress on lock screen',
+                  rightElement: (
+                    <Ionicons
+                      name={liveActivityId ? 'stop-circle' : 'book-outline'}
+                      size={24}
+                      color={liveActivityId ? theme.error : theme.primary}
+                    />
+                  ),
+                  isDestructive: !!liveActivityId,
+                  onPress: liveActivityId ? endReadingActivity : testReadingActivity,
+                })}
+                {liveActivityId && renderSettingItem({
+                  title: 'Simulate Page Turn',
+                  subtitle: 'Advance 5 pages',
+                  onPress: updateReadingProgress,
+                })}
+                {renderSettingItem({
+                  title: downloadActivityId ? 'End Download Activity' : 'Start Download Activity',
+                  subtitle: downloadActivityId
+                    ? `Downloaded ${downloadCount}/10 - Naruto`
+                    : 'Test download progress on lock screen',
+                  rightElement: (
+                    <Ionicons
+                      name={downloadActivityId ? 'stop-circle' : 'cloud-download-outline'}
+                      size={24}
+                      color={downloadActivityId ? theme.error : theme.primary}
+                    />
+                  ),
+                  isDestructive: !!downloadActivityId,
+                  onPress: downloadActivityId ? endDownloadActivity : testDownloadActivity,
+                })}
+                {downloadActivityId && renderSettingItem({
+                  title: 'Simulate Download Progress',
+                  subtitle: 'Download next chapter',
+                  onPress: updateDownloadProgress,
+                })}
+                {(liveActivityId || downloadActivityId) && renderSettingItem({
+                  title: 'End All Activities',
+                  subtitle: 'Stop all live activities',
+                  isDestructive: true,
+                  onPress: endAllLiveActivities,
                 })}
               </>
             )}
