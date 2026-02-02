@@ -16,15 +16,10 @@ Pod::Spec.new do |s|
 
   s.dependency 'ExpoModulesCore'
   
-  # Spotify iOS SDK - vendored framework
-  s.vendored_frameworks = 'Frameworks/SpotifyiOS.xcframework'
+  # NOTE: SpotifyiOS SDK integration for iOS is pending
+  # The Android implementation is fully functional
+  # iOS will return "NOT_AVAILABLE" errors until SDK integration is complete
   
-  # Framework search paths
-  s.pod_target_xcconfig = {
-    'FRAMEWORK_SEARCH_PATHS' => '$(inherited) "${PODS_ROOT}/../../modules/spotify-remote/ios/Frameworks"',
-    'OTHER_LDFLAGS' => '$(inherited) -framework SpotifyiOS'
-  }
-
   s.source_files = '*.swift'
   s.swift_version = '5.9'
 end
