@@ -18,11 +18,13 @@ import { SpotifyRemote, SpotifyContentItem } from '../../modules/spotify-remote/
 interface SpotifyMiniPlayerProps {
     visible?: boolean;
     style?: any;
+    onPickerVisibleChange?: (visible: boolean) => void;
 }
 
 export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({ 
     visible = true,
-    style 
+    style,
+    onPickerVisibleChange,
 }) => {
     const [playerState, setPlayerState] = useState<SpotifyPlayerState | null>(null);
     const [isConnected, setIsConnected] = useState(false);
@@ -50,7 +52,6 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
     };
 
     useEffect(() => {
-        console.log('[SpotifyMiniPlayer] Component MOUNTED');
         // Check initial connection state
         setIsConnected(spotifyRemoteService.isConnected());
         setPlayerState(spotifyRemoteService.getPlayerState());
@@ -63,16 +64,13 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
 
         // Subscribe to connection changes
         const unsubConnection = spotifyRemoteService.addConnectionListener((connected) => {
-            console.log('[SpotifyMiniPlayer] Connection changed:', connected);
             setIsConnected(connected);
             if (!connected) {
                 setPlayerState(null);
-                // Don't close picker on disconnect - user might want to reconnect
             }
         });
 
         return () => {
-            console.log('[SpotifyMiniPlayer] Component UNMOUNTING');
             unsubscribe();
             unsubConnection();
         };
@@ -86,10 +84,10 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
         }).start();
     }, [expanded]);
 
-    // Debug: track showPicker changes
+    // Notify parent when picker visibility changes
     useEffect(() => {
-        console.log('[SpotifyMiniPlayer] showPicker changed to:', showPicker);
-    }, [showPicker]);
+        onPickerVisibleChange?.(showPicker);
+    }, [showPicker, onPickerVisibleChange]);
 
     const handleConnect = async () => {
         if (isConnecting) return;
@@ -127,19 +125,15 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
     };
 
     const openContentPicker = async () => {
-        console.log('[SpotifyMiniPlayer] Opening content picker, isConnected:', isConnected);
         if (!isConnected) {
-            console.log('[SpotifyMiniPlayer] Not connected, aborting');
             return;
         }
         
         setShowPicker(true);
         setLoadingContent(true);
-        console.log('[SpotifyMiniPlayer] showPicker set to true');
         
         try {
             const items = await SpotifyRemote.getRecommendedContentItems();
-            console.log('[SpotifyMiniPlayer] Got content items:', items.length);
             
             // The API returns categories/containers. We want playable items.
             // Flatten by fetching children of containers
@@ -149,11 +143,10 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
                 if (item.isContainer) {
                     try {
                         const children = await SpotifyRemote.getChildrenOfContentItem(item.uri);
-                        console.log(`[SpotifyMiniPlayer] ${item.title} has ${children.length} children`);
                         // Add first 4 items from each category
                         playableItems.push(...children.slice(0, 4));
                     } catch (e) {
-                        console.log(`[SpotifyMiniPlayer] Failed to get children of ${item.title}:`, e);
+                        // Skip failed categories
                     }
                 } else {
                     playableItems.push(item);
@@ -165,7 +158,6 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
                 index === self.findIndex(t => t.uri === item.uri)
             ).slice(0, 12);
             
-            console.log('[SpotifyMiniPlayer] Final playable items:', uniqueItems.length);
             setContentItems(uniqueItems);
             
             // Load images in the background - don't block the UI
@@ -175,7 +167,6 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
             // Still show the modal with empty state
         } finally {
             setLoadingContent(false);
-            console.log('[SpotifyMiniPlayer] Loading complete, showPicker should still be:', showPicker);
         }
     };
 

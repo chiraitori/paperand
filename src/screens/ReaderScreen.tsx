@@ -711,6 +711,7 @@ export const ReaderScreen: React.FC = () => {
   // Modal states
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [spotifyPickerOpen, setSpotifyPickerOpen] = useState(false);
 
   // Reader settings
   const [readingDirection, setReadingDirection] = useState<'ltr' | 'rtl'>('ltr');
@@ -1083,6 +1084,11 @@ export const ReaderScreen: React.FC = () => {
   };
 
   const hideControls = () => {
+    // Don't hide controls if Spotify picker is open
+    if (spotifyPickerOpen) {
+      console.log('[Reader] Not hiding controls - Spotify picker is open');
+      return;
+    }
     Animated.timing(fadeAnim, {
       toValue: 0,
       duration: 200,
@@ -1379,13 +1385,6 @@ export const ReaderScreen: React.FC = () => {
             </View>
           </Animated.View>
 
-          {/* Spotify Mini Player - positioned above bottom bar */}
-          <Animated.View
-            style={[styles.spotifyContainer, { opacity: fadeAnim }]}
-          >
-            <SpotifyMiniPlayer />
-          </Animated.View>
-
           {/* Bottom Bar - Paperback style */}
           <Animated.View
             style={[styles.bottomBar, { opacity: fadeAnim }]}
@@ -1460,6 +1459,14 @@ export const ReaderScreen: React.FC = () => {
           </Animated.View>
         </>
       )}
+
+      {/* Spotify Mini Player - OUTSIDE showControls so it never unmounts */}
+      <Animated.View
+        style={[styles.spotifyContainer, { opacity: showControls ? fadeAnim : 0 }]}
+        pointerEvents={showControls ? 'auto' : 'none'}
+      >
+        <SpotifyMiniPlayer onPickerVisibleChange={setSpotifyPickerOpen} />
+      </Animated.View>
 
       {/* Info Modal */}
       <InfoModal

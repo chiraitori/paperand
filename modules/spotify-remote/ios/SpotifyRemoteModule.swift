@@ -519,7 +519,7 @@ public class SpotifyRemoteModule: Module {
                         "uri": item.URI,
                         "title": item.title ?? "",
                         "subtitle": item.subtitle ?? "",
-                        "imageUri": item.imageIdentifier,
+                        "imageUri": item.imageIdentifier ?? "",
                         "isPlayable": item.isPlayable,
                         "isContainer": item.isContainer
                     ]
@@ -566,7 +566,7 @@ public class SpotifyRemoteModule: Module {
                             "uri": item.URI,
                             "title": item.title ?? "",
                             "subtitle": item.subtitle ?? "",
-                            "imageUri": item.imageIdentifier,
+                            "imageUri": item.imageIdentifier ?? "",
                             "isPlayable": item.isPlayable,
                             "isContainer": item.isContainer
                         ]
