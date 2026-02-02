@@ -267,23 +267,27 @@ export const SpotifyRemote = {
 };
 
 // Default export
-// Get the auth native module (Android only)
+// Get the auth native module (iOS and Android)
 interface SpotifyAuthNativeModule extends NativeModule {
     configure(clientId: string, redirectUri: string): void;
     authorize(scopes: string[]): Promise<{ accessToken: string; expiresIn: number }>;
     isAuthorized(): boolean;
+    getAccessToken(): string | null;
+    logout(): void;
 }
 
 let SpotifyAuthNative: SpotifyAuthNativeModule | null = null;
 try {
     SpotifyAuthNative = requireNativeModule<SpotifyAuthNativeModule>('SpotifyAuth');
 } catch (e) {
-    // Auth module only available on Android
+    // Auth module not available
+    console.warn('[SpotifyRemote] SpotifyAuth module not available:', e);
 }
 
 /**
- * SpotifyAuth - Authentication module for Spotify (Android only)
+ * SpotifyAuth - Authentication module for Spotify
  * Handles OAuth flow to get access tokens
+ * Tokens are persisted - user only needs to authorize once!
  */
 export const SpotifyAuth = SpotifyAuthNative ? {
     /**
@@ -295,8 +299,9 @@ export const SpotifyAuth = SpotifyAuthNative ? {
     },
 
     /**
-     * Authorize with Spotify - opens the auth flow
-     * Returns an access token that can be used with SpotifyRemote.connect()
+     * Authorize with Spotify
+     * - If already authorized (token saved), returns immediately without opening Spotify
+     * - If not authorized, opens Spotify app for user to authorize (only once!)
      * 
      * @param scopes - Array of scopes to request (e.g., ['streaming', 'user-read-playback-state'])
      * @returns Object with accessToken and expiresIn
@@ -306,10 +311,26 @@ export const SpotifyAuth = SpotifyAuthNative ? {
     },
 
     /**
-     * Check if currently authorized
+     * Check if currently authorized (has valid stored token)
      */
     isAuthorized(): boolean {
         return SpotifyAuthNative!.isAuthorized();
+    },
+
+    /**
+     * Get the stored access token (if valid)
+     * Returns null if not authorized or token expired
+     */
+    getAccessToken(): string | null {
+        return SpotifyAuthNative!.getAccessToken();
+    },
+
+    /**
+     * Logout - clear stored token
+     * User will need to authorize again on next call
+     */
+    logout(): void {
+        SpotifyAuthNative!.logout();
     }
 } : null;
 

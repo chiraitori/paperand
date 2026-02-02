@@ -1,7 +1,9 @@
 package expo.modules.spotifyremote
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.util.Log
 import com.spotify.sdk.android.auth.AuthorizationClient
 import com.spotify.sdk.android.auth.AuthorizationRequest
@@ -13,11 +15,15 @@ import expo.modules.kotlin.modules.ModuleDefinition
 /**
  * Expo module for Spotify Authentication on Android
  * Handles OAuth flow to get access tokens for Spotify API
+ * Persists tokens so user only needs to authorize once
  */
 class SpotifyAuthModule : Module() {
     companion object {
         private const val TAG = "SpotifyAuth"
         private const val REQUEST_CODE = 1337
+        private const val PREFS_NAME = "SpotifyAuthPrefs"
+        private const val KEY_ACCESS_TOKEN = "spotify_access_token"
+        private const val KEY_TOKEN_EXPIRY = "spotify_token_expiry"
         
         // Pending auth promise - used to handle the auth response
         var pendingAuthPromise: Promise? = null
@@ -29,6 +35,50 @@ class SpotifyAuthModule : Module() {
 
     private val currentActivity: Activity?
         get() = appContext.currentActivity
+    
+    private val context: Context
+        get() = requireNotNull(appContext.reactContext)
+    
+    // SharedPreferences for token storage
+    private val prefs: SharedPreferences
+        get() = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    
+    // Get stored access token
+    private val storedAccessToken: String?
+        get() = prefs.getString(KEY_ACCESS_TOKEN, null)
+    
+    // Get stored token expiry timestamp (milliseconds)
+    private val storedTokenExpiry: Long
+        get() = prefs.getLong(KEY_TOKEN_EXPIRY, 0)
+    
+    // Check if stored token is valid (exists and not expired)
+    private val hasValidStoredToken: Boolean
+        get() {
+            val token = storedAccessToken
+            val expiry = storedTokenExpiry
+            if (token.isNullOrEmpty() || expiry == 0L) return false
+            // Token is valid if it expires more than 5 minutes from now
+            return expiry > System.currentTimeMillis() + 300_000
+        }
+    
+    // Save token to storage
+    private fun saveToken(accessToken: String, expiresIn: Int) {
+        val expiryTime = System.currentTimeMillis() + (expiresIn * 1000L)
+        prefs.edit()
+            .putString(KEY_ACCESS_TOKEN, accessToken)
+            .putLong(KEY_TOKEN_EXPIRY, expiryTime)
+            .apply()
+        Log.d(TAG, "Token saved, expires at $expiryTime")
+    }
+    
+    // Clear stored token
+    private fun clearToken() {
+        prefs.edit()
+            .remove(KEY_ACCESS_TOKEN)
+            .remove(KEY_TOKEN_EXPIRY)
+            .apply()
+        Log.d(TAG, "Token cleared")
+    }
 
     override fun definition() = ModuleDefinition {
         Name("SpotifyAuth")
@@ -39,8 +89,21 @@ class SpotifyAuthModule : Module() {
             this@SpotifyAuthModule.redirectUri = redirectUri
         }
 
-        // Authorize with Spotify - opens auth flow
+        // Authorize with Spotify - uses stored token if valid, otherwise opens auth flow
         AsyncFunction("authorize") { scopes: List<String>, promise: Promise ->
+            // Check if we have a valid stored token - return it immediately!
+            if (hasValidStoredToken) {
+                val token = storedAccessToken
+                val expiry = storedTokenExpiry
+                val expiresIn = ((expiry - System.currentTimeMillis()) / 1000).toInt()
+                Log.d(TAG, "Using stored token (đang ủy quyền...)")
+                promise.resolve(mapOf(
+                    "accessToken" to token,
+                    "expiresIn" to expiresIn
+                ))
+                return@AsyncFunction
+            }
+            
             if (clientId.isEmpty() || redirectUri.isEmpty()) {
                 promise.reject("NOT_CONFIGURED", "SpotifyAuth not configured. Call configure() first.", null)
                 return@AsyncFunction
@@ -71,11 +134,19 @@ class SpotifyAuthModule : Module() {
             AuthorizationClient.openLoginActivity(activity, REQUEST_CODE, request)
         }
 
-        // Check if we have a valid session
+        // Check if we have a valid session (stored token)
         Function("isAuthorized") {
-            // For now, we don't store tokens persistently
-            // In a production app, you'd check stored tokens here
-            false
+            hasValidStoredToken
+        }
+        
+        // Get stored access token (if valid)
+        Function("getAccessToken") {
+            if (hasValidStoredToken) storedAccessToken else null
+        }
+        
+        // Logout - clear stored token
+        Function("logout") {
+            clearToken()
         }
 
         // Handle activity result for auth callback
@@ -90,6 +161,10 @@ class SpotifyAuthModule : Module() {
                 when (response.type) {
                     AuthorizationResponse.Type.TOKEN -> {
                         Log.d(TAG, "Auth successful, token received")
+                        
+                        // Save token for future use!
+                        saveToken(response.accessToken, response.expiresIn)
+                        
                         promise?.resolve(mapOf(
                             "accessToken" to response.accessToken,
                             "expiresIn" to response.expiresIn

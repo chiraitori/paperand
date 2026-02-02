@@ -6,7 +6,7 @@ Pod::Spec.new do |s|
   s.name           = 'SpotifyRemote'
   s.version        = '1.0.0'
   s.summary        = 'Expo module for Spotify Remote control'
-  s.description    = 'Native iOS module for controlling Spotify playback from React Native'
+  s.description    = 'Native iOS module for controlling Spotify playback from React Native using SpotifyiOS SDK'
   s.author         = 'Paperand'
   s.homepage       = 'https://github.com/chiraitori/paperback-android'
   s.license        = 'MIT'
@@ -21,8 +21,4 @@ Pod::Spec.new do |s|
   
   s.source_files = '*.swift'
   s.swift_version = '5.9'
-  
-  s.pod_target_xcconfig = {
-    'DEFINES_MODULE' => 'YES'
-  }
 end

@@ -5,7 +5,11 @@
     ],
     "ios": {
         "modules": [
-            "SpotifyRemoteModule"
+            "SpotifyRemoteModule",
+            "SpotifyAuthModule"
+        ],
+        "appDelegateSubscribers": [
+            "SpotifyAppDelegateSubscriber"
         ]
     },
     "android": {
