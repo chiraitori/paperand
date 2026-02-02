@@ -1,13 +1,18 @@
 import ExpoModulesCore
+
+#if canImport(SpotifyiOS)
 import SpotifyiOS
+#endif
 
 public class SpotifyRemoteModule: Module {
+    #if canImport(SpotifyiOS)
     private var appRemote: SPTAppRemote?
     private var playerStateSubscription: Bool = false
     private var pendingConnectionPromise: Promise?
     
     private var clientId: String = ""
     private var redirectUri: String = ""
+    #endif
     
     public func definition() -> ModuleDefinition {
         Name("SpotifyRemote")
@@ -15,12 +20,15 @@ public class SpotifyRemoteModule: Module {
         Events("onPlayerStateChanged", "onConnectionStatusChanged", "onError")
         
         Function("configure") { (clientId: String, redirectUri: String) in
+            #if canImport(SpotifyiOS)
             self.clientId = clientId
             self.redirectUri = redirectUri
             self.setupAppRemote()
+            #endif
         }
         
         AsyncFunction("connect") { (promise: Promise) in
+            #if canImport(SpotifyiOS)
             guard let appRemote = self.appRemote else {
                 promise.reject("NOT_CONFIGURED", "SpotifyRemote not configured")
                 return
@@ -33,20 +41,30 @@ public class SpotifyRemoteModule: Module {
             
             self.pendingConnectionPromise = promise
             appRemote.connect()
+            #else
+            promise.reject("NOT_AVAILABLE", "SpotifyiOS SDK not available")
+            #endif
         }
         
         AsyncFunction("disconnect") { (promise: Promise) in
+            #if canImport(SpotifyiOS)
             if let appRemote = self.appRemote, appRemote.isConnected {
                 appRemote.disconnect()
             }
+            #endif
             promise.resolve(["disconnected": true])
         }
         
         Function("isConnected") { () -> Bool in
+            #if canImport(SpotifyiOS)
             return self.appRemote?.isConnected ?? false
+            #else
+            return false
+            #endif
         }
         
         AsyncFunction("resume") { (promise: Promise) in
+            #if canImport(SpotifyiOS)
             guard let playerAPI = self.appRemote?.playerAPI else {
                 promise.reject("NOT_CONNECTED", "Not connected to Spotify")
                 return
@@ -59,9 +77,13 @@ public class SpotifyRemoteModule: Module {
                     promise.resolve(["success": true])
                 }
             }
+            #else
+            promise.reject("NOT_AVAILABLE", "SpotifyiOS SDK not available")
+            #endif
         }
         
         AsyncFunction("pause") { (promise: Promise) in
+            #if canImport(SpotifyiOS)
             guard let playerAPI = self.appRemote?.playerAPI else {
                 promise.reject("NOT_CONNECTED", "Not connected to Spotify")
                 return
@@ -74,9 +96,13 @@ public class SpotifyRemoteModule: Module {
                     promise.resolve(["success": true])
                 }
             }
+            #else
+            promise.reject("NOT_AVAILABLE", "SpotifyiOS SDK not available")
+            #endif
         }
         
         AsyncFunction("skipToNext") { (promise: Promise) in
+            #if canImport(SpotifyiOS)
             guard let playerAPI = self.appRemote?.playerAPI else {
                 promise.reject("NOT_CONNECTED", "Not connected to Spotify")
                 return
@@ -89,9 +115,13 @@ public class SpotifyRemoteModule: Module {
                     promise.resolve(["success": true])
                 }
             })
+            #else
+            promise.reject("NOT_AVAILABLE", "SpotifyiOS SDK not available")
+            #endif
         }
         
         AsyncFunction("skipToPrevious") { (promise: Promise) in
+            #if canImport(SpotifyiOS)
             guard let playerAPI = self.appRemote?.playerAPI else {
                 promise.reject("NOT_CONNECTED", "Not connected to Spotify")
                 return
@@ -104,9 +134,13 @@ public class SpotifyRemoteModule: Module {
                     promise.resolve(["success": true])
                 }
             })
+            #else
+            promise.reject("NOT_AVAILABLE", "SpotifyiOS SDK not available")
+            #endif
         }
         
         AsyncFunction("seekTo") { (positionMs: Int, promise: Promise) in
+            #if canImport(SpotifyiOS)
             guard let playerAPI = self.appRemote?.playerAPI else {
                 promise.reject("NOT_CONNECTED", "Not connected to Spotify")
                 return
@@ -119,9 +153,13 @@ public class SpotifyRemoteModule: Module {
                     promise.resolve(["success": true])
                 }
             }
+            #else
+            promise.reject("NOT_AVAILABLE", "SpotifyiOS SDK not available")
+            #endif
         }
         
         AsyncFunction("play") { (uri: String, promise: Promise) in
+            #if canImport(SpotifyiOS)
             guard let playerAPI = self.appRemote?.playerAPI else {
                 promise.reject("NOT_CONNECTED", "Not connected to Spotify")
                 return
@@ -134,9 +172,13 @@ public class SpotifyRemoteModule: Module {
                     promise.resolve(["success": true])
                 }
             }
+            #else
+            promise.reject("NOT_AVAILABLE", "SpotifyiOS SDK not available")
+            #endif
         }
         
         AsyncFunction("enqueue") { (uri: String, promise: Promise) in
+            #if canImport(SpotifyiOS)
             guard let playerAPI = self.appRemote?.playerAPI else {
                 promise.reject("NOT_CONNECTED", "Not connected to Spotify")
                 return
@@ -149,9 +191,13 @@ public class SpotifyRemoteModule: Module {
                     promise.resolve(["success": true])
                 }
             }
+            #else
+            promise.reject("NOT_AVAILABLE", "SpotifyiOS SDK not available")
+            #endif
         }
         
         AsyncFunction("getPlayerState") { (promise: Promise) in
+            #if canImport(SpotifyiOS)
             guard let playerAPI = self.appRemote?.playerAPI else {
                 promise.reject("NOT_CONNECTED", "Not connected to Spotify")
                 return
@@ -166,9 +212,13 @@ public class SpotifyRemoteModule: Module {
                     promise.reject("UNKNOWN_ERROR", "Failed to get player state")
                 }
             }
+            #else
+            promise.reject("NOT_AVAILABLE", "SpotifyiOS SDK not available")
+            #endif
         }
         
         AsyncFunction("subscribeToPlayerState") { (promise: Promise) in
+            #if canImport(SpotifyiOS)
             guard let playerAPI = self.appRemote?.playerAPI else {
                 promise.reject("NOT_CONNECTED", "Not connected to Spotify")
                 return
@@ -188,14 +238,20 @@ public class SpotifyRemoteModule: Module {
                     promise.resolve(["subscribed": true])
                 }
             }
+            #else
+            promise.reject("NOT_AVAILABLE", "SpotifyiOS SDK not available")
+            #endif
         }
         
         AsyncFunction("unsubscribeFromPlayerState") { (promise: Promise) in
+            #if canImport(SpotifyiOS)
             self.playerStateSubscription = false
+            #endif
             promise.resolve(["unsubscribed": true])
         }
         
         AsyncFunction("setShuffle") { (enabled: Bool, promise: Promise) in
+            #if canImport(SpotifyiOS)
             guard let playerAPI = self.appRemote?.playerAPI else {
                 promise.reject("NOT_CONNECTED", "Not connected to Spotify")
                 return
@@ -208,9 +264,13 @@ public class SpotifyRemoteModule: Module {
                     promise.resolve(["success": true])
                 }
             }
+            #else
+            promise.reject("NOT_AVAILABLE", "SpotifyiOS SDK not available")
+            #endif
         }
         
         AsyncFunction("setRepeatMode") { (mode: Int, promise: Promise) in
+            #if canImport(SpotifyiOS)
             guard let playerAPI = self.appRemote?.playerAPI else {
                 promise.reject("NOT_CONNECTED", "Not connected to Spotify")
                 return
@@ -233,19 +293,26 @@ public class SpotifyRemoteModule: Module {
                     promise.resolve(["success": true])
                 }
             }
+            #else
+            promise.reject("NOT_AVAILABLE", "SpotifyiOS SDK not available")
+            #endif
         }
         
         OnAppEntersForeground {
+            #if canImport(SpotifyiOS)
             if self.appRemote?.isConnected == false && !self.clientId.isEmpty {
                 self.appRemote?.connect()
             }
+            #endif
         }
     }
     
+    #if canImport(SpotifyiOS)
     private func setupAppRemote() {
         guard !clientId.isEmpty, !redirectUri.isEmpty else { return }
         
-        let configuration = SPTConfiguration(clientID: clientId, redirectURL: URL(string: redirectUri)!)
+        guard let redirectURL = URL(string: redirectUri) else { return }
+        let configuration = SPTConfiguration(clientID: clientId, redirectURL: redirectURL)
         appRemote = SPTAppRemote(configuration: configuration, logLevel: .none)
         appRemote?.delegate = self
     }
@@ -277,8 +344,10 @@ public class SpotifyRemoteModule: Module {
             ]
         ]
     }
+    #endif
 }
 
+#if canImport(SpotifyiOS)
 extension SpotifyRemoteModule: SPTAppRemoteDelegate {
     public func appRemoteDidEstablishConnection(_ appRemote: SPTAppRemote) {
         sendEvent("onConnectionStatusChanged", [
@@ -305,7 +374,7 @@ extension SpotifyRemoteModule: SPTAppRemoteDelegate {
         sendEvent("onConnectionStatusChanged", [
             "connected": false,
             "status": "disconnected",
-            "error": error?.localizedDescription
+            "error": error?.localizedDescription as Any
         ])
     }
 }
@@ -316,3 +385,4 @@ extension SpotifyRemoteModule: SPTAppRemotePlayerStateDelegate {
         sendEvent("onPlayerStateChanged", state)
     }
 }
+#endif

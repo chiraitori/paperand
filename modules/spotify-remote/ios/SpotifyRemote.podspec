@@ -16,13 +16,15 @@ Pod::Spec.new do |s|
 
   s.dependency 'ExpoModulesCore'
   
-  # Spotify iOS SDK - You must download and add the framework manually
-  # from: https://github.com/spotify/ios-sdk/releases
+  # Spotify iOS SDK - vendored framework
   s.vendored_frameworks = 'Frameworks/SpotifyiOS.xcframework'
   
-  # Or use CocoaPods (if available):
-  # s.dependency 'SpotifyiOS', '~> 1.2.2'
+  # Framework search paths
+  s.pod_target_xcconfig = {
+    'FRAMEWORK_SEARCH_PATHS' => '$(inherited) "${PODS_ROOT}/../../modules/spotify-remote/ios/Frameworks"',
+    'OTHER_LDFLAGS' => '$(inherited) -framework SpotifyiOS'
+  }
 
-  s.source_files = '**/*.swift'
+  s.source_files = '*.swift'
   s.swift_version = '5.9'
 end
