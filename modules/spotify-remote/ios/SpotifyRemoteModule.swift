@@ -155,11 +155,19 @@ extension SpotifyManager: SPTAppRemoteDelegate {
     func appRemote(_ appRemote: SPTAppRemote, didFailConnectionAttemptWithError error: (any Error)?) {
         let errorDesc = error?.localizedDescription ?? "Unknown error"
         print("[SpotifyRemote] Connection failed: \(errorDesc)")
+        
+        var userFriendlyError = errorDesc
+        
         if let nsError = error as NSError? {
             print("[SpotifyRemote] Error domain: \(nsError.domain), code: \(nsError.code)")
             print("[SpotifyRemote] Error userInfo: \(nsError.userInfo)")
             
-            // If it's "The request failed" or token-related, clear the token and suggest re-auth
+            // Provide more helpful error messages
+            if errorDesc.contains("request failed") || errorDesc.contains("Connection attempt failed") {
+                userFriendlyError = "Spotify app is not active. Please open Spotify and play something first, then try again."
+            }
+            
+            // If it's a token-related error, clear the token
             if nsError.domain == "com.spotify.app-remote" && (nsError.code == -1 || nsError.code == 2) {
                 print("[SpotifyRemote] Clearing access token due to connection error - token may be expired")
                 self.accessToken = nil
@@ -169,10 +177,10 @@ extension SpotifyManager: SPTAppRemoteDelegate {
         remoteModule?.sendEvent("onConnectionStatusChanged", [
             "connected": false,
             "status": "failed",
-            "error": errorDesc
+            "error": userFriendlyError
         ])
         
-        pendingConnectionPromise?.reject("CONNECTION_FAILED", errorDesc)
+        pendingConnectionPromise?.reject("CONNECTION_FAILED", userFriendlyError)
         pendingConnectionPromise = nil
     }
     
@@ -239,16 +247,39 @@ public class SpotifyRemoteModule: Module {
                 return
             }
             
-            // If we have an access token, update connectionParameters and try to connect
+            // Always use authorizeAndPlayURI to ensure Spotify is active
+            // This opens Spotify app, makes it active, and callbacks with connection
+            // Using empty string for playURI means it won't start playing anything
+            print("[SpotifyRemote] Opening Spotify to establish connection...")
             if let token = self.manager.accessToken, !token.isEmpty {
-                print("[SpotifyRemote] Connecting with stored access token")
                 appRemote.connectionParameters.accessToken = token
-                appRemote.connect()
-            } else {
-                // Need to authorize first - this opens Spotify app
-                print("[SpotifyRemote] No token, authorizing first")
-                appRemote.authorizeAndPlayURI(self.manager.playURI)
             }
+            appRemote.authorizeAndPlayURI(self.manager.playURI)
+        }
+        
+        // Try silent connect (only works if Spotify is already active)
+        AsyncFunction("connectSilent") { (promise: Promise) in
+            guard let appRemote = self.manager.appRemote else {
+                promise.reject("NOT_CONFIGURED", "SpotifyRemote not configured. Call configure() first.")
+                return
+            }
+            
+            if appRemote.isConnected {
+                promise.resolve(["connected": true])
+                return
+            }
+            
+            // Check if we have a token
+            guard let token = self.manager.accessToken, !token.isEmpty else {
+                promise.reject("NO_TOKEN", "No access token. Call connect() to authorize first.")
+                return
+            }
+            
+            self.manager.pendingConnectionPromise = promise
+            
+            print("[SpotifyRemote] Attempting silent connect with stored token...")
+            appRemote.connectionParameters.accessToken = token
+            appRemote.connect()
         }
         
         AsyncFunction("disconnect") { (promise: Promise) in

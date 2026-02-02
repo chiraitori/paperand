@@ -179,8 +179,9 @@ class SpotifyRemoteService {
 
     /**
      * Connect to the Spotify app
+     * @param silent - If true, try to connect without opening Spotify (only works if Spotify is active)
      */
-    async connect(): Promise<boolean> {
+    async connect(silent: boolean = false): Promise<boolean> {
         if (!SpotifyRemote || !this.isConfigured) {
             console.warn('[SpotifyRemoteService] Not configured');
             return false;
@@ -192,9 +193,20 @@ class SpotifyRemoteService {
                 setTimeout(() => reject(new Error('Connection timeout')), 30000); // 30 second timeout
             });
 
-            const connected = await Promise.race([SpotifyRemote.connect(), timeoutPromise]);
+            let connected: boolean;
+
+            if (silent) {
+                // Try silent connect (only works if Spotify is already active)
+                console.log('[SpotifyRemoteService] Attempting silent connect...');
+                connected = await Promise.race([SpotifyRemote.connectSilent(), timeoutPromise]);
+            } else {
+                // Open Spotify to establish connection (more reliable)
+                console.log('[SpotifyRemoteService] Connecting via Spotify app...');
+                connected = await Promise.race([SpotifyRemote.connect(), timeoutPromise]);
+            }
 
             if (connected) {
+                console.log('[SpotifyRemoteService] Connected successfully!');
                 // Subscribe to player state changes
                 await SpotifyRemote.subscribeToPlayerState();
 
@@ -207,6 +219,21 @@ class SpotifyRemoteService {
             console.error('[SpotifyRemoteService] Connection failed:', error);
             return false;
         }
+    }
+
+    /**
+     * Try to connect silently, fallback to opening Spotify if needed
+     */
+    async connectWithFallback(): Promise<boolean> {
+        // First try silent connect (won't interrupt user)
+        const silentConnected = await this.connect(true);
+        if (silentConnected) {
+            return true;
+        }
+
+        // Silent connect failed, need to open Spotify
+        console.log('[SpotifyRemoteService] Silent connect failed, opening Spotify...');
+        return this.connect(false);
     }
 
     /**

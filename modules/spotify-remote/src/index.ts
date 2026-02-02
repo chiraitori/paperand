@@ -62,6 +62,7 @@ export interface EventSubscription {
 interface SpotifyRemoteNativeModule extends NativeModule {
     configure(clientId: string, redirectUri: string): void;
     connect(): Promise<{ connected: boolean }>;
+    connectSilent(): Promise<{ connected: boolean }>;
     disconnect(): Promise<{ disconnected: boolean }>;
     isConnected(): boolean;
     resume(): Promise<{ success: boolean }>;
@@ -101,11 +102,26 @@ export const SpotifyRemote = {
 
     /**
      * Connect to the Spotify app
-     * This will open the Spotify app for authorization if needed
+     * This will open the Spotify app to establish connection
+     * The most reliable way to connect - always opens Spotify first
      */
     async connect(): Promise<boolean> {
         const result = await SpotifyRemoteNative.connect();
         return result.connected;
+    },
+
+    /**
+     * Try to connect silently without opening Spotify app
+     * Only works if Spotify is already active in background
+     * Falls back to returning false if Spotify isn't active
+     */
+    async connectSilent(): Promise<boolean> {
+        try {
+            const result = await SpotifyRemoteNative.connectSilent();
+            return result.connected;
+        } catch {
+            return false;
+        }
     },
 
     /**
