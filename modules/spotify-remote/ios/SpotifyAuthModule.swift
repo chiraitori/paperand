@@ -1,4 +1,5 @@
 import ExpoModulesCore
+import SpotifyiOS
 
 // Keys for storing tokens
 private let kSpotifyAuthAccessToken = "spotify_auth_access_token"
@@ -6,13 +7,9 @@ private let kSpotifyAuthTokenExpiry = "spotify_auth_token_expiry"
 
 /**
  * Expo module for Spotify Authentication on iOS
- * Uses SPTSessionManager for OAuth flow
- * Persists tokens so user only needs to authorize once
+ * Works together with SpotifyRemoteModule for token management
  */
 public class SpotifyAuthModule: Module {
-    private var configuration: SPTConfiguration?
-    private var pendingAuthPromise: Promise?
-    
     // UserDefaults for token storage
     private var defaults: UserDefaults {
         return UserDefaults.standard
@@ -44,7 +41,6 @@ public class SpotifyAuthModule: Module {
         defaults.set(accessToken, forKey: kSpotifyAuthAccessToken)
         let expiryDate = Date().addingTimeInterval(TimeInterval(expiresIn))
         defaults.set(expiryDate.timeIntervalSince1970, forKey: kSpotifyAuthTokenExpiry)
-        defaults.synchronize()
         print("[SpotifyAuth] Token saved, expires at \(expiryDate)")
     }
     
@@ -52,7 +48,6 @@ public class SpotifyAuthModule: Module {
     private func clearToken() {
         defaults.removeObject(forKey: kSpotifyAuthAccessToken)
         defaults.removeObject(forKey: kSpotifyAuthTokenExpiry)
-        defaults.synchronize()
         print("[SpotifyAuth] Token cleared")
     }
     
@@ -61,20 +56,15 @@ public class SpotifyAuthModule: Module {
         
         // Configure the module with Spotify credentials
         Function("configure") { (clientId: String, redirectUri: String) in
-            guard let url = URL(string: redirectUri) else {
-                print("[SpotifyAuth] Invalid redirect URI: \(redirectUri)")
-                return
-            }
-            
-            self.configuration = SPTConfiguration(clientID: clientId, redirectURL: url)
-            print("[SpotifyAuth] Configured with clientId: \(clientId)")
+            // Configuration is handled by SpotifyRemoteModule
+            print("[SpotifyAuth] Configured")
         }
         
-        // Authorize with Spotify - uses stored token if valid, otherwise connects via SpotifyRemote
+        // Authorize with Spotify - uses stored token if valid
         AsyncFunction("authorize") { (scopes: [String], promise: Promise) in
             // Check if we have a valid stored token - return it immediately!
             if self.hasValidStoredToken, let token = self.storedAccessToken, let expiry = self.storedTokenExpiry {
-                print("[SpotifyAuth] Using stored token (đang ủy quyền...)")
+                print("[SpotifyAuth] Using stored token")
                 let expiresIn = Int(expiry.timeIntervalSinceNow)
                 promise.resolve([
                     "accessToken": token,
@@ -85,7 +75,7 @@ public class SpotifyAuthModule: Module {
             
             // Check if SpotifyManager has an access token from Remote connection
             if let token = SpotifyManager.shared.accessToken {
-                // Token from App Remote doesn't have expiry, assume 1 hour
+                // Token from App Remote - save it with 1 hour expiry (tokens typically last 1 hour)
                 let expiresIn = 3600
                 self.saveToken(accessToken: token, expiresIn: expiresIn)
                 promise.resolve([
@@ -96,7 +86,6 @@ public class SpotifyAuthModule: Module {
             }
             
             // No stored token - need to connect via SpotifyRemote first
-            // The SpotifyRemote.connect() will handle authorization
             promise.reject("NOT_AUTHORIZED", "Not authorized. Call SpotifyRemote.connect() first to authorize.")
         }
         

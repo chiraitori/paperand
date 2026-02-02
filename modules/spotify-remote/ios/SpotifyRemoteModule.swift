@@ -1,7 +1,8 @@
 import ExpoModulesCore
+import SpotifyiOS
 
 // Keys for storing access token
-private let kSpotifyAccessToken = "spotify_remote_access_token"
+private let kAccessTokenKey = "spotify_remote_access_token"
 
 /**
  * Shared Spotify manager singleton for iOS
@@ -11,8 +12,6 @@ class SpotifyManager: NSObject {
     static let shared = SpotifyManager()
     
     var appRemote: SPTAppRemote?
-    var configuration: SPTConfiguration?
-    var accessToken: String?
     var pendingConnectionPromise: Promise?
     var playerStateSubscription: Bool = false
     var playURI: String = ""
@@ -20,15 +19,21 @@ class SpotifyManager: NSObject {
     // Event emitter reference
     weak var remoteModule: SpotifyRemoteModule?
     
-    // UserDefaults for token persistence
-    private var defaults: UserDefaults {
-        return UserDefaults.standard
+    // Store playerState for reference
+    private var playerState: (any SPTAppRemotePlayerState)?
+    
+    // Access token with UserDefaults persistence
+    var accessToken: String? {
+        get {
+            return UserDefaults.standard.string(forKey: kAccessTokenKey)
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: kAccessTokenKey)
+        }
     }
     
     private override init() {
         super.init()
-        // Load stored access token
-        accessToken = defaults.string(forKey: kSpotifyAccessToken)
     }
     
     func configure(clientId: String, redirectUri: String) {
@@ -37,31 +42,16 @@ class SpotifyManager: NSObject {
             return
         }
         
-        configuration = SPTConfiguration(clientID: clientId, redirectURL: url)
-        
-        appRemote = SPTAppRemote(configuration: configuration!, logLevel: .debug)
+        let configuration = SPTConfiguration(clientID: clientId, redirectURL: url)
+        appRemote = SPTAppRemote(configuration: configuration, logLevel: .debug)
+        appRemote?.connectionParameters.accessToken = accessToken
         appRemote?.delegate = self
-        
-        // Set stored access token if available
-        if let token = accessToken {
-            appRemote?.connectionParameters.accessToken = token
-        }
         
         print("[SpotifyRemote] Configured with clientId: \(clientId)")
     }
     
-    func saveAccessToken(_ token: String) {
-        accessToken = token
-        defaults.set(token, forKey: kSpotifyAccessToken)
-        defaults.synchronize()
-        appRemote?.connectionParameters.accessToken = token
-        print("[SpotifyRemote] Access token saved")
-    }
-    
     func clearAccessToken() {
         accessToken = nil
-        defaults.removeObject(forKey: kSpotifyAccessToken)
-        defaults.synchronize()
         print("[SpotifyRemote] Access token cleared")
     }
     
@@ -75,8 +65,9 @@ class SpotifyManager: NSObject {
         
         let parameters = appRemote.authorizationParameters(from: url)
         
-        if let accessToken = parameters?[SPTAppRemoteAccessTokenKey] {
-            saveAccessToken(accessToken)
+        if let token = parameters?[SPTAppRemoteAccessTokenKey] {
+            appRemote.connectionParameters.accessToken = token
+            accessToken = token
             appRemote.connect()
             return true
         } else if let errorDescription = parameters?[SPTAppRemoteErrorDescriptionKey] {
@@ -87,6 +78,36 @@ class SpotifyManager: NSObject {
         }
         
         return false
+    }
+    
+    // Helper to convert player state to dictionary
+    func playerStateToDict(_ state: any SPTAppRemotePlayerState) -> [String: Any] {
+        let track = state.track
+        return [
+            "track": [
+                "uri": track.uri,
+                "name": track.name,
+                "artist": track.artist.name,
+                "album": track.album.name,
+                "duration": track.duration,
+                "imageUri": track.imageIdentifier ?? ""
+            ],
+            "playbackPosition": state.playbackPosition,
+            "playbackSpeed": state.playbackSpeed,
+            "isPaused": state.isPaused,
+            "playbackOptions": [
+                "isShuffling": state.playbackOptions.isShuffling,
+                "repeatMode": state.playbackOptions.repeatMode.rawValue
+            ],
+            "playbackRestrictions": [
+                "canSkipNext": state.playbackRestrictions.canSkipNext,
+                "canSkipPrevious": state.playbackRestrictions.canSkipPrevious,
+                "canSeek": state.playbackRestrictions.canSeek,
+                "canToggleShuffle": state.playbackRestrictions.canToggleShuffle,
+                "canRepeatTrack": state.playbackRestrictions.canRepeatTrack,
+                "canRepeatContext": state.playbackRestrictions.canRepeatContext
+            ]
+        ]
     }
 }
 
@@ -104,7 +125,7 @@ extension SpotifyManager: SPTAppRemoteDelegate {
         pendingConnectionPromise = nil
     }
     
-    func appRemote(_ appRemote: SPTAppRemote, didFailConnectionAttemptWithError error: Error?) {
+    func appRemote(_ appRemote: SPTAppRemote, didFailConnectionAttemptWithError error: (any Error)?) {
         print("[SpotifyRemote] Connection failed: \(error?.localizedDescription ?? "Unknown error")")
         
         remoteModule?.sendEvent("onConnectionStatusChanged", [
@@ -117,7 +138,7 @@ extension SpotifyManager: SPTAppRemoteDelegate {
         pendingConnectionPromise = nil
     }
     
-    func appRemote(_ appRemote: SPTAppRemote, didDisconnectWithError error: Error?) {
+    func appRemote(_ appRemote: SPTAppRemote, didDisconnectWithError error: (any Error)?) {
         print("[SpotifyRemote] Disconnected: \(error?.localizedDescription ?? "No error")")
         
         remoteModule?.sendEvent("onConnectionStatusChanged", [
@@ -131,35 +152,11 @@ extension SpotifyManager: SPTAppRemoteDelegate {
 // MARK: - SPTAppRemotePlayerStateDelegate
 extension SpotifyManager: SPTAppRemotePlayerStateDelegate {
     func playerStateDidChange(_ playerState: SPTAppRemotePlayerState) {
+        self.playerState = playerState
+        
         guard playerStateSubscription else { return }
         
-        let track = playerState.track
-        let stateDict: [String: Any] = [
-            "track": [
-                "uri": track.uri,
-                "name": track.name,
-                "artist": track.artist.name,
-                "album": track.album.name,
-                "duration": track.duration,
-                "imageUri": track.imageIdentifier ?? ""
-            ],
-            "playbackPosition": playerState.playbackPosition,
-            "playbackSpeed": playerState.playbackSpeed,
-            "isPaused": playerState.isPaused,
-            "playbackOptions": [
-                "isShuffling": playerState.playbackOptions.isShuffling,
-                "repeatMode": playerState.playbackOptions.repeatMode.rawValue
-            ],
-            "playbackRestrictions": [
-                "canSkipNext": playerState.playbackRestrictions.canSkipNext,
-                "canSkipPrevious": playerState.playbackRestrictions.canSkipPrevious,
-                "canSeek": playerState.playbackRestrictions.canSeek,
-                "canToggleShuffle": playerState.playbackRestrictions.canToggleShuffle,
-                "canRepeatTrack": playerState.playbackRestrictions.canRepeatTrack,
-                "canRepeatContext": playerState.playbackRestrictions.canRepeatContext
-            ]
-        ]
-        
+        let stateDict = playerStateToDict(playerState)
         remoteModule?.sendEvent("onPlayerStateChanged", stateDict)
     }
 }
@@ -311,13 +308,13 @@ public class SpotifyRemoteModule: Module {
                 return
             }
             
-            appRemote.playerAPI?.play(uri) { _, error in
+            appRemote.playerAPI?.play(uri, callback: { _, error in
                 if let error = error {
                     promise.reject("PLAYBACK_ERROR", error.localizedDescription)
                 } else {
                     promise.resolve(["success": true])
                 }
-            }
+            })
         }
         
         AsyncFunction("enqueue") { (uri: String, promise: Promise) in
@@ -326,13 +323,13 @@ public class SpotifyRemoteModule: Module {
                 return
             }
             
-            appRemote.playerAPI?.enqueueTrackUri(uri) { _, error in
+            appRemote.playerAPI?.enqueueTrackUri(uri, callback: { _, error in
                 if let error = error {
                     promise.reject("PLAYBACK_ERROR", error.localizedDescription)
                 } else {
                     promise.resolve(["success": true])
                 }
-            }
+            })
         }
         
         AsyncFunction("getPlayerState") { (promise: Promise) in
@@ -341,44 +338,18 @@ public class SpotifyRemoteModule: Module {
                 return
             }
             
-            appRemote.playerAPI?.getPlayerState { playerState, error in
+            appRemote.playerAPI?.getPlayerState { result, error in
                 if let error = error {
                     promise.reject("PLAYBACK_ERROR", error.localizedDescription)
                     return
                 }
                 
-                guard let state = playerState else {
+                guard let state = result as? any SPTAppRemotePlayerState else {
                     promise.reject("PLAYBACK_ERROR", "Failed to get player state")
                     return
                 }
                 
-                let track = state.track
-                let stateDict: [String: Any] = [
-                    "track": [
-                        "uri": track.uri,
-                        "name": track.name,
-                        "artist": track.artist.name,
-                        "album": track.album.name,
-                        "duration": track.duration,
-                        "imageUri": track.imageIdentifier ?? ""
-                    ],
-                    "playbackPosition": state.playbackPosition,
-                    "playbackSpeed": state.playbackSpeed,
-                    "isPaused": state.isPaused,
-                    "playbackOptions": [
-                        "isShuffling": state.playbackOptions.isShuffling,
-                        "repeatMode": state.playbackOptions.repeatMode.rawValue
-                    ],
-                    "playbackRestrictions": [
-                        "canSkipNext": state.playbackRestrictions.canSkipNext,
-                        "canSkipPrevious": state.playbackRestrictions.canSkipPrevious,
-                        "canSeek": state.playbackRestrictions.canSeek,
-                        "canToggleShuffle": state.playbackRestrictions.canToggleShuffle,
-                        "canRepeatTrack": state.playbackRestrictions.canRepeatTrack,
-                        "canRepeatContext": state.playbackRestrictions.canRepeatContext
-                    ]
-                ]
-                
+                let stateDict = self.manager.playerStateToDict(state)
                 promise.resolve(stateDict)
             }
         }
@@ -416,13 +387,13 @@ public class SpotifyRemoteModule: Module {
                 return
             }
             
-            appRemote.playerAPI?.setShuffle(enabled) { _, error in
+            appRemote.playerAPI?.setShuffle(enabled, callback: { _, error in
                 if let error = error {
                     promise.reject("PLAYBACK_ERROR", error.localizedDescription)
                 } else {
                     promise.resolve(["success": true])
                 }
-            }
+            })
         }
         
         AsyncFunction("setRepeatMode") { (mode: Int, promise: Promise) in
@@ -441,13 +412,13 @@ public class SpotifyRemoteModule: Module {
                 repeatMode = .off
             }
             
-            appRemote.playerAPI?.setRepeatMode(repeatMode) { _, error in
+            appRemote.playerAPI?.setRepeatMode(repeatMode, callback: { _, error in
                 if let error = error {
                     promise.reject("PLAYBACK_ERROR", error.localizedDescription)
                 } else {
                     promise.resolve(["success": true])
                 }
-            }
+            })
         }
     }
 }
