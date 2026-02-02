@@ -29,6 +29,7 @@ import { getChapterPages, getMangaDetails, getChapters, decryptDrmImage } from '
 import { cacheChapterPages, getCachedChapterPages } from '../services/cacheService';
 import { Manga, Chapter, Page, RootStackParamList } from '../types';
 import { t } from '../services/i18nService';
+import { SpotifyMiniPlayer } from '../components';
 
 type ReaderRouteProp = RouteProp<RootStackParamList, 'Reader'>;
 type ReaderNavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -1378,6 +1379,13 @@ export const ReaderScreen: React.FC = () => {
             </View>
           </Animated.View>
 
+          {/* Spotify Mini Player - positioned above bottom bar */}
+          <Animated.View
+            style={[styles.spotifyContainer, { opacity: fadeAnim }]}
+          >
+            <SpotifyMiniPlayer />
+          </Animated.View>
+
           {/* Bottom Bar - Paperback style */}
           <Animated.View
             style={[styles.bottomBar, { opacity: fadeAnim }]}
@@ -1669,6 +1677,15 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 13,
     fontWeight: '500',
+  },
+
+  // Spotify Mini Player
+  spotifyContainer: {
+    position: 'absolute',
+    bottom: Platform.OS === 'ios' ? 180 : 160,
+    left: 16,
+    right: 16,
+    zIndex: 10,
   },
 
   // Bottom bar

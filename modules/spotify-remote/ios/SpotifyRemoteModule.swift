@@ -492,5 +492,137 @@ public class SpotifyRemoteModule: Module {
                 }
             })
         }
+        
+        // MARK: - Content API
+        
+        /// Get recommended content items (playlists, albums) for the user
+        AsyncFunction("getRecommendedContentItems") { (type: String, promise: Promise) in
+            guard let appRemote = self.manager.appRemote, appRemote.isConnected else {
+                promise.reject("NOT_CONNECTED", "Not connected to Spotify")
+                return
+            }
+            
+            // Convert type string to SPTAppRemoteContentType
+            let contentType: SPTAppRemoteContentType
+            switch type.lowercased() {
+            case "default":
+                contentType = .default
+            case "navigation":
+                contentType = .navigation
+            case "fitness":
+                contentType = .fitness
+            default:
+                contentType = .default
+            }
+            
+            appRemote.contentAPI?.fetchRecommendedContentItems(forType: contentType, flattenContainers: false) { result, error in
+                if let error = error {
+                    print("[SpotifyRemote] Content fetch error: \(error.localizedDescription)")
+                    promise.reject("CONTENT_ERROR", error.localizedDescription)
+                    return
+                }
+                
+                guard let items = result as? [SPTAppRemoteContentItem] else {
+                    promise.resolve(["items": []])
+                    return
+                }
+                
+                let itemsArray = items.map { item -> [String: Any] in
+                    return [
+                        "uri": item.uri ?? "",
+                        "title": item.title ?? "",
+                        "subtitle": item.subtitle ?? "",
+                        "identifier": item.identifier ?? "",
+                        "isAvailableOffline": item.isAvailableOffline,
+                        "isPlayable": item.isPlayable,
+                        "isContainer": item.isContainer,
+                        "imageUri": item.imageIdentifier ?? ""
+                    ]
+                }
+                
+                promise.resolve(["items": itemsArray])
+            }
+        }
+        
+        /// Get children of a content item (e.g., tracks in a playlist)
+        AsyncFunction("getChildrenOfContentItem") { (uri: String, promise: Promise) in
+            guard let appRemote = self.manager.appRemote, appRemote.isConnected else {
+                promise.reject("NOT_CONNECTED", "Not connected to Spotify")
+                return
+            }
+            
+            // First we need to get the content item by URI, then fetch its children
+            appRemote.contentAPI?.fetchRecommendedContentItems(forType: .default, flattenContainers: false) { result, error in
+                if let error = error {
+                    promise.reject("CONTENT_ERROR", error.localizedDescription)
+                    return
+                }
+                
+                guard let items = result as? [SPTAppRemoteContentItem] else {
+                    promise.resolve(["items": []])
+                    return
+                }
+                
+                // Find the item with matching URI
+                guard let targetItem = items.first(where: { $0.uri == uri }) else {
+                    promise.reject("NOT_FOUND", "Content item not found")
+                    return
+                }
+                
+                // Fetch children
+                appRemote.contentAPI?.fetchChildren(of: targetItem) { childResult, childError in
+                    if let error = childError {
+                        promise.reject("CONTENT_ERROR", error.localizedDescription)
+                        return
+                    }
+                    
+                    guard let children = childResult as? [SPTAppRemoteContentItem] else {
+                        promise.resolve(["items": []])
+                        return
+                    }
+                    
+                    let childrenArray = children.map { item -> [String: Any] in
+                        return [
+                            "uri": item.uri ?? "",
+                            "title": item.title ?? "",
+                            "subtitle": item.subtitle ?? "",
+                            "identifier": item.identifier ?? "",
+                            "isAvailableOffline": item.isAvailableOffline,
+                            "isPlayable": item.isPlayable,
+                            "isContainer": item.isContainer,
+                            "imageUri": item.imageIdentifier ?? ""
+                        ]
+                    }
+                    
+                    promise.resolve(["items": childrenArray])
+                }
+            }
+        }
+        
+        /// Fetch image for a content item
+        AsyncFunction("getContentItemImage") { (imageUri: String, width: Int, height: Int, promise: Promise) in
+            guard let appRemote = self.manager.appRemote, appRemote.isConnected else {
+                promise.reject("NOT_CONNECTED", "Not connected to Spotify")
+                return
+            }
+            
+            let imageSize = CGSize(width: width, height: height)
+            
+            appRemote.imageAPI?.fetchImage(forItem: ["imageIdentifier": imageUri] as! any SPTAppRemoteImageRepresentable, with: imageSize) { image, error in
+                if let error = error {
+                    promise.reject("IMAGE_ERROR", error.localizedDescription)
+                    return
+                }
+                
+                guard let uiImage = image as? UIImage,
+                      let imageData = uiImage.pngData() else {
+                    promise.reject("IMAGE_ERROR", "Failed to get image data")
+                    return
+                }
+                
+                let base64String = imageData.base64EncodedString()
+                promise.resolve(["imageBase64": base64String])
+            }
+        }
     }
 }

@@ -304,6 +304,16 @@ export const DeveloperScreen: React.FC = () => {
     }
 
     try {
+      // Check iOS version (Live Activities require 16.2+)
+      const iosVersion = parseFloat(Platform.Version as string);
+      if (iosVersion < 16.2) {
+        Alert.alert('iOS Version Too Low', `Live Activities require iOS 16.2+. You have iOS ${iosVersion}`);
+        return;
+      }
+
+      console.log('[LiveActivity] Starting reading activity...');
+      console.log('[LiveActivity] iOS version:', Platform.Version);
+
       const state: LiveActivity.LiveActivityState = {
         title: 'One Piece',
         subtitle: 'Chapter 1: Romance Dawn • Page 1/53',
@@ -321,7 +331,9 @@ export const DeveloperScreen: React.FC = () => {
         deepLinkUrl: '/reader',
       };
 
+      console.log('[LiveActivity] Calling startActivity with state:', JSON.stringify(state));
       const activityId = LiveActivity.startActivity(state, config);
+      console.log('[LiveActivity] Result activityId:', activityId);
 
       if (activityId) {
         setLiveActivityId(activityId);
@@ -332,11 +344,26 @@ export const DeveloperScreen: React.FC = () => {
           [{ text: 'OK' }]
         );
       } else {
-        Alert.alert('❌ Failed', 'Could not start reading activity. Make sure you rebuilt the app with `npx expo prebuild --clean`');
+        Alert.alert(
+          '❌ Failed to Start',
+          'Could not start Live Activity.\n\nPossible reasons:\n• Live Activities disabled in Settings\n• iOS version < 16.2\n• Need to rebuild with prebuild\n\nGo to Settings > Paperand > Live Activities and enable it.',
+          [{ text: 'OK' }]
+        );
       }
     } catch (error) {
       console.error('[LiveActivity] Start failed:', error);
-      Alert.alert('❌ Error', `${error instanceof Error ? error.message : 'Unknown error'}`);
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      
+      // Check for specific ActivityKit errors
+      if (errorMsg.includes('ActivityInput') || errorMsg.includes('ActivityKit')) {
+        Alert.alert(
+          '❌ Live Activity Error',
+          'ActivityKit error occurred.\n\nPlease check:\n1. Settings > Paperand > Live Activities is ON\n2. You are on iOS 16.2+\n3. App was rebuilt with prebuild',
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert('❌ Error', errorMsg);
+      }
     }
   };
 

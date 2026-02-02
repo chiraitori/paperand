@@ -1,15 +1,20 @@
 package expo.modules.spotifyremote
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.util.Base64
 import android.util.Log
 import com.spotify.android.appremote.api.ConnectionParams
 import com.spotify.android.appremote.api.Connector
 import com.spotify.android.appremote.api.SpotifyAppRemote
 import com.spotify.protocol.client.Subscription
+import com.spotify.protocol.types.ListItem
+import com.spotify.protocol.types.ListItems
 import com.spotify.protocol.types.PlayerState
 import expo.modules.kotlin.Promise
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
+import java.io.ByteArrayOutputStream
 
 /**
  * Expo module for Spotify Remote control on Android
@@ -322,6 +327,69 @@ class SpotifyRemoteModule : Module() {
                 }
         }
 
+        // ==================== Content API ====================
+
+        // Get recommended content items (playlists, albums, etc.)
+        AsyncFunction("getRecommendedContentItems") { promise: Promise ->
+            val remote = spotifyAppRemote
+            if (remote == null || !remote.isConnected) {
+                promise.reject("NOT_CONNECTED", "Not connected to Spotify", null)
+                return@AsyncFunction
+            }
+
+            remote.contentApi.getRecommendedContentItems("default")
+                .setResultCallback { listItems: ListItems ->
+                    val items = listItems.items.map { listItemToMap(it) }
+                    promise.resolve(items)
+                }
+                .setErrorCallback { throwable ->
+                    Log.e(TAG, "Failed to get recommended content: ${throwable.message}", throwable)
+                    promise.reject("CONTENT_ERROR", throwable.message, throwable)
+                }
+        }
+
+        // Get children of a content item (e.g., tracks in a playlist)
+        AsyncFunction("getChildrenOfContentItem") { uri: String, promise: Promise ->
+            val remote = spotifyAppRemote
+            if (remote == null || !remote.isConnected) {
+                promise.reject("NOT_CONNECTED", "Not connected to Spotify", null)
+                return@AsyncFunction
+            }
+
+            // Create a ListItem to get children from
+            remote.contentApi.getChildrenOfItem(ListItem(uri, uri, null, null, null, false, true), 50, 0)
+                .setResultCallback { listItems: ListItems ->
+                    val items = listItems.items.map { listItemToMap(it) }
+                    promise.resolve(items)
+                }
+                .setErrorCallback { throwable ->
+                    Log.e(TAG, "Failed to get children of content: ${throwable.message}", throwable)
+                    promise.reject("CONTENT_ERROR", throwable.message, throwable)
+                }
+        }
+
+        // Get image for a content item as base64
+        AsyncFunction("getContentItemImage") { uri: String, promise: Promise ->
+            val remote = spotifyAppRemote
+            if (remote == null || !remote.isConnected) {
+                promise.reject("NOT_CONNECTED", "Not connected to Spotify", null)
+                return@AsyncFunction
+            }
+
+            remote.imagesApi.getImage(com.spotify.protocol.types.ImageUri(uri))
+                .setResultCallback { bitmap: Bitmap ->
+                    // Convert bitmap to base64
+                    val outputStream = ByteArrayOutputStream()
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)
+                    val base64String = Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
+                    promise.resolve("data:image/jpeg;base64,$base64String")
+                }
+                .setErrorCallback { throwable ->
+                    Log.e(TAG, "Failed to get content image: ${throwable.message}", throwable)
+                    promise.reject("IMAGE_ERROR", throwable.message, throwable)
+                }
+        }
+
         // Handle app lifecycle
         OnActivityEntersForeground {
             // Attempt reconnection when app comes to foreground
@@ -365,6 +433,18 @@ class SpotifyRemoteModule : Module() {
                 "canRepeatTrack" to playerState.playbackRestrictions.canRepeatTrack,
                 "canRepeatContext" to playerState.playbackRestrictions.canRepeatContext
             )
+        )
+    }
+
+    // Convert ListItem to Map for JavaScript (Content API)
+    private fun listItemToMap(item: ListItem): Map<String, Any?> {
+        return mapOf(
+            "uri" to item.uri,
+            "title" to item.title,
+            "subtitle" to item.subtitle,
+            "imageUri" to item.imageUri?.raw,
+            "isPlayable" to item.playable,
+            "isContainer" to item.hasChildren
         )
     }
 }
