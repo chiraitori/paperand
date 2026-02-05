@@ -286,7 +286,10 @@ class SpotifyRemoteService {
      * Skip to next track
      */
     async skipNext(): Promise<boolean> {
-        if (!SpotifyRemote) return false;
+        if (!SpotifyRemote) {
+            console.warn('[SpotifyRemoteService] skipNext: SpotifyRemote not available');
+            return false;
+        }
         return SpotifyRemote.skipToNext();
     }
 
@@ -301,7 +304,10 @@ class SpotifyRemoteService {
      * Skip to previous track
      */
     async skipPrevious(): Promise<boolean> {
-        if (!SpotifyRemote) return false;
+        if (!SpotifyRemote) {
+            console.warn('[SpotifyRemoteService] skipPrevious: SpotifyRemote not available');
+            return false;
+        }
         return SpotifyRemote.skipToPrevious();
     }
 

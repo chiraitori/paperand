@@ -90,7 +90,7 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
         onPickerVisibleChange?.(showPicker);
     }, [showPicker, onPickerVisibleChange]);
 
-    // Fetch album art image on iOS (spotify:image: URIs need to be fetched via SDK)
+    // Fetch album art image (spotify:image: URIs need to be fetched via SDK)
     useEffect(() => {
         const fetchTrackImage = async () => {
             const track = playerState?.track;
@@ -99,19 +99,21 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
                 return;
             }
 
-            // On Android, imageUri is directly usable (or a raw URI we need to fetch)
-            // On iOS, it's always a spotify:image: identifier that needs fetching
-            if (Platform.OS === 'ios' || track.imageUri.startsWith('spotify:image:')) {
+            // Check if imageUri is a spotify:image: URI that needs SDK fetching
+            if (track.imageUri.startsWith('spotify:image:')) {
                 try {
-                    // Use the track URI to fetch the image via contentAPI
-                    const base64 = await SpotifyRemote.getContentItemImage(track.uri);
+                    // Pass the imageUri (not track.uri) to fetch the image
+                    const base64 = await SpotifyRemote.getContentItemImage(track.imageUri);
                     setTrackAlbumArt(base64);
                 } catch (e) {
                     console.log('[SpotifyMiniPlayer] Failed to fetch track image:', e);
                     setTrackAlbumArt(null);
                 }
+            } else if (track.imageUri.startsWith('http')) {
+                // Direct HTTP URL - use as-is
+                setTrackAlbumArt(track.imageUri);
             } else {
-                // Android with a real image URL
+                // Unknown format, try to use as-is
                 setTrackAlbumArt(track.imageUri);
             }
         };
@@ -151,22 +153,30 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
 
     const handleNext = async () => {
         if (!isConnected) return;
-        await spotifyRemoteService.skipToNext();
-        // Refresh state after a short delay to get updated track info
-        setTimeout(async () => {
-            const state = await spotifyRemoteService.refreshPlayerState();
-            if (state) setPlayerState(state);
-        }, 500);
+        try {
+            await spotifyRemoteService.skipToNext();
+            // Refresh state after a short delay to get updated track info
+            setTimeout(async () => {
+                const state = await spotifyRemoteService.refreshPlayerState();
+                if (state) setPlayerState(state);
+            }, 500);
+        } catch (error) {
+            console.error('[SpotifyMiniPlayer] handleNext error:', error);
+        }
     };
 
     const handlePrevious = async () => {
         if (!isConnected) return;
-        await spotifyRemoteService.skipToPrevious();
-        // Refresh state after a short delay to get updated track info
-        setTimeout(async () => {
-            const state = await spotifyRemoteService.refreshPlayerState();
-            if (state) setPlayerState(state);
-        }, 500);
+        try {
+            await spotifyRemoteService.skipToPrevious();
+            // Refresh state after a short delay to get updated track info
+            setTimeout(async () => {
+                const state = await spotifyRemoteService.refreshPlayerState();
+                if (state) setPlayerState(state);
+            }, 500);
+        } catch (error) {
+            console.error('[SpotifyMiniPlayer] handlePrevious error:', error);
+        }
     };
 
     const openContentPicker = async () => {
