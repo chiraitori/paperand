@@ -216,7 +216,7 @@ describe('ReadingActivity Module', () => {
             it('should start activity with all parameters', async () => {
                 const params: ReadingActivityParams = {
                     mangaTitle: 'One Piece',
-                    mangaCoverUrl: 'https://example.com/cover.jpg',
+                    mangaCoverUrl: 'https://image.chiraitori.io.vn/image',
                     chapterId: 'chapter-1',
                     chapterTitle: 'Chapter 1: Romance Dawn',
                     currentPage: 1,
@@ -233,7 +233,7 @@ describe('ReadingActivity Module', () => {
                 expect(result).toBe('activity-123');
                 expect(mockNativeModule.startReadingActivity).toHaveBeenCalledWith(
                     'One Piece',
-                    'https://example.com/cover.jpg',
+                    'https://image.chiraitori.io.vn/image',
                     'chapter-1',
                     'Chapter 1: Romance Dawn',
                     1,
@@ -365,7 +365,7 @@ describe('ReadingActivity Module', () => {
             it('should start download activity with all parameters', async () => {
                 const params: DownloadActivityParams = {
                     mangaTitle: 'One Piece',
-                    mangaCoverUrl: 'https://example.com/cover.jpg',
+                    mangaCoverUrl: 'https://image.chiraitori.io.vn/image',
                     totalCount: 10,
                 };
 
@@ -379,7 +379,7 @@ describe('ReadingActivity Module', () => {
                 expect(result).toBe('download-123');
                 expect(mockNativeModule.startDownloadActivity).toHaveBeenCalledWith(
                     'One Piece',
-                    'https://example.com/cover.jpg',
+                    'https://image.chiraitori.io.vn/image',
                     10
                 );
             });
@@ -638,7 +638,7 @@ describe('ReadingActivity Types', () => {
     it('should have correct ReadingActivityParams structure', () => {
         const params: ReadingActivityParams = {
             mangaTitle: 'Test Manga',
-            mangaCoverUrl: 'https://example.com/cover.jpg',
+            mangaCoverUrl: 'https://image.chiraitori.io.vn/image',
             chapterId: 'ch-1',
             chapterTitle: 'Chapter 1',
             currentPage: 1,
@@ -655,7 +655,7 @@ describe('ReadingActivity Types', () => {
     it('should have correct DownloadActivityParams structure', () => {
         const params: DownloadActivityParams = {
             mangaTitle: 'Test Manga',
-            mangaCoverUrl: 'https://example.com/cover.jpg',
+            mangaCoverUrl: 'https://image.chiraitori.io.vn/image',
             totalCount: 10,
         };
 

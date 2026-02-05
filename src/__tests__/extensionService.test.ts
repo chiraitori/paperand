@@ -24,7 +24,7 @@ describe('Extension Service', () => {
     });
 
     it('should install extension without errors', async () => {
-      const mockExtensionUrl = 'https://example.com/extension.js';
+      const mockExtensionUrl = 'https://image.chiraitori.io.vn/image';
       await expect(extensionService.installExtension(mockExtensionUrl)).resolves.toBeDefined();
     });
 
@@ -73,7 +73,7 @@ describe('Extension Service', () => {
 
   describe('Error Handling', () => {
     it('should handle installation failures gracefully', async () => {
-      const mockBadUrl = 'https://example.com/malformed.js';
+      const mockBadUrl = 'https://image.chiraitori.io.vn/malformed';
       // Should not crash the service
       await expect(extensionService.installExtension(mockBadUrl)).resolves.toBeDefined();
     });
@@ -85,7 +85,7 @@ describe('Extension Service', () => {
 
     it('should handle network errors safely', async () => {
       // Service should handle network issues
-      await expect(extensionService.installExtension('https://invalid.example.com/ext.js')).resolves.toBeDefined();
+      await expect(extensionService.installExtension('https://image.chiraitori.io.vn/invalid')).resolves.toBeDefined();
     });
   });
 

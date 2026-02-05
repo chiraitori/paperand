@@ -168,9 +168,9 @@ describe('Cache Service - Chapter Pages', () => {
   describe('cacheChapterPages', () => {
     it('should cache chapter pages', async () => {
       const pages = [
-        { pageNumber: 1, imageUrl: 'https://example.com/page1.jpg' },
-        { pageNumber: 2, imageUrl: 'https://example.com/page2.jpg' },
-        { pageNumber: 3, imageUrl: 'https://example.com/page3.jpg' },
+        { pageNumber: 1, imageUrl: 'https://image.chiraitori.io.vn/image' },
+        { pageNumber: 2, imageUrl: 'https://image.chiraitori.io.vn/image' },
+        { pageNumber: 3, imageUrl: 'https://image.chiraitori.io.vn/image' },
       ];
 
       await cacheChapterPages('manga-1', 'ch1', pages);
@@ -182,7 +182,7 @@ describe('Cache Service - Chapter Pages', () => {
       expect(cachedData['manga-1:ch1']).toBeDefined();
       expect(cachedData['manga-1:ch1']).toHaveLength(3);
       expect(cachedData['manga-1:ch1'][0].pageNumber).toBe(1);
-      expect(cachedData['manga-1:ch1'][2].imageUrl).toBe('https://example.com/page3.jpg');
+      expect(cachedData['manga-1:ch1'][2].imageUrl).toBe('https://image.chiraitori.io.vn/image');
     });
 
     it('should handle empty pages array', async () => {
@@ -199,8 +199,8 @@ describe('Cache Service - Chapter Pages', () => {
     it('should return cached pages', async () => {
       const mockCache = {
         'manga-1:ch1': [
-          { mangaId: 'manga-1', chapterId: 'ch1', pageNumber: 1, imageUrl: 'https://example.com/page1.jpg', cachedAt: new Date().toISOString() },
-          { mangaId: 'manga-1', chapterId: 'ch1', pageNumber: 2, imageUrl: 'https://example.com/page2.jpg', cachedAt: new Date().toISOString() },
+          { mangaId: 'manga-1', chapterId: 'ch1', pageNumber: 1, imageUrl: 'https://image.chiraitori.io.vn/image', cachedAt: new Date().toISOString() },
+          { mangaId: 'manga-1', chapterId: 'ch1', pageNumber: 2, imageUrl: 'https://image.chiraitori.io.vn/image', cachedAt: new Date().toISOString() },
         ],
       };
 
@@ -211,7 +211,7 @@ describe('Cache Service - Chapter Pages', () => {
       expect(result).toBeDefined();
       expect(result).toHaveLength(2);
       expect(result?.[0].pageNumber).toBe(1);
-      expect(result?.[1].imageUrl).toBe('https://example.com/page2.jpg');
+      expect(result?.[1].imageUrl).toBe('https://image.chiraitori.io.vn/image');
     });
 
     it('should return null when no cached pages exist', async () => {
@@ -236,7 +236,7 @@ describe('Cache Service - Manga Metadata', () => {
         title: 'Test Manga',
         author: 'Test Author',
         description: 'Test Description',
-        coverImage: 'https://example.com/cover.jpg',
+        coverImage: 'https://image.chiraitori.io.vn/image',
         genres: ['Action', 'Adventure'],
         status: 'ongoing',
         chapters: [],
@@ -265,7 +265,7 @@ describe('Cache Service - Manga Metadata', () => {
           title: 'Test Manga',
           author: 'Test Author',
           description: 'Test Description',
-          coverImage: 'https://example.com/cover.jpg',
+          coverImage: 'https://image.chiraitori.io.vn/image',
           genres: ['Action'],
           status: 'ongoing',
           cachedAt: new Date().toISOString(),

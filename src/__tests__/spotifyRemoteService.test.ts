@@ -41,7 +41,7 @@ describe('Spotify Remote Service', () => {
           artist: 'Test Artist',
           album: 'Test Album',
           duration: 180000,
-          imageUri: 'https://example.com/image.jpg',
+          imageUri: 'https://image.chiraitori.io.vn/image',
         },
         playbackPosition: 0,
         isPaused: false,
