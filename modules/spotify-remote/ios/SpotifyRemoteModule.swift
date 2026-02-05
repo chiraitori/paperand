@@ -23,7 +23,7 @@ class SpotifyManager: NSObject {
     weak var authModule: SpotifyAuthModule?
     
     // Store playerState for reference
-    private var playerState: (any SPTAppRemotePlayerState)?
+    private var playerState: SPTAppRemotePlayerState?
     
     // Access token with UserDefaults persistence
     var accessToken: String? {
@@ -108,16 +108,16 @@ class SpotifyManager: NSObject {
     }
     
     // Helper to convert player state to dictionary
-    func playerStateToDict(_ state: any SPTAppRemotePlayerState) -> [String: Any] {
+    func playerStateToDict(_ state: SPTAppRemotePlayerState) -> [String: Any] {
         let track = state.track
         return [
             "track": [
-                "uri": track.uri,
+                "uri": track.URI,
                 "name": track.name,
                 "artist": track.artist.name,
                 "album": track.album.name,
                 "duration": track.duration,
-                "imageUri": track.imageIdentifier ?? ""
+                "imageUri": track.imageIdentifier
             ],
             "playbackPosition": state.playbackPosition,
             "playbackSpeed": state.playbackSpeed,
@@ -416,7 +416,7 @@ public class SpotifyRemoteModule: Module {
                     return
                 }
                 
-                guard let state = result as? any SPTAppRemotePlayerState else {
+                guard let state = result as? SPTAppRemotePlayerState else {
                     promise.reject("PLAYBACK_ERROR", "Failed to get player state")
                     return
                 }
@@ -509,7 +509,7 @@ public class SpotifyRemoteModule: Module {
                     return
                 }
                 
-                guard let items = result as? [any SPTAppRemoteContentItem] else {
+                guard let items = result as? [SPTAppRemoteContentItem] else {
                     promise.resolve([])
                     return
                 }
@@ -519,9 +519,9 @@ public class SpotifyRemoteModule: Module {
                         "uri": item.URI,
                         "title": item.title ?? "",
                         "subtitle": item.subtitle ?? "",
-                        "imageUri": item.imageIdentifier ?? "",
-                        "isPlayable": item.isPlayable,
-                        "isContainer": item.isContainer
+                        "imageUri": item.imageIdentifier,
+                        "isPlayable": item.playable,
+                        "isContainer": item.container
                     ]
                 }
                 
@@ -543,7 +543,7 @@ public class SpotifyRemoteModule: Module {
                     return
                 }
                 
-                guard let items = result as? [any SPTAppRemoteContentItem],
+                guard let items = result as? [SPTAppRemoteContentItem],
                       let targetItem = items.first(where: { $0.URI == uri }) else {
                     promise.reject("NOT_FOUND", "Content item not found")
                     return
@@ -556,7 +556,7 @@ public class SpotifyRemoteModule: Module {
                         return
                     }
                     
-                    guard let children = childResult as? [any SPTAppRemoteContentItem] else {
+                    guard let children = childResult as? [SPTAppRemoteContentItem] else {
                         promise.resolve([])
                         return
                     }
@@ -566,9 +566,9 @@ public class SpotifyRemoteModule: Module {
                             "uri": item.URI,
                             "title": item.title ?? "",
                             "subtitle": item.subtitle ?? "",
-                            "imageUri": item.imageIdentifier ?? "",
-                            "isPlayable": item.isPlayable,
-                            "isContainer": item.isContainer
+                            "imageUri": item.imageIdentifier,
+                            "isPlayable": item.playable,
+                            "isContainer": item.container
                         ]
                     }
                     
@@ -592,7 +592,7 @@ public class SpotifyRemoteModule: Module {
                     return
                 }
                 
-                guard let contentItem = result as? (any SPTAppRemoteContentItem) else {
+                guard let contentItem = result as? SPTAppRemoteContentItem else {
                     promise.reject("NOT_FOUND", "Content item not found")
                     return
                 }
