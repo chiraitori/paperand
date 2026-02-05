@@ -112,7 +112,7 @@ class SpotifyManager: NSObject {
         let track = state.track
         return [
             "track": [
-                "uri": track.URI,
+                "uri": track.uri,
                 "name": track.name,
                 "artist": track.artist.name,
                 "album": track.album.name,
@@ -516,12 +516,12 @@ public class SpotifyRemoteModule: Module {
                 
                 let itemsArray = items.map { item -> [String: Any] in
                     return [
-                        "uri": item.URI,
+                        "uri": item.uri,
                         "title": item.title ?? "",
                         "subtitle": item.subtitle ?? "",
                         "imageUri": item.imageIdentifier,
-                        "isPlayable": item.playable,
-                        "isContainer": item.container
+                        "isPlayable": item.isPlayable,
+                        "isContainer": item.isContainer
                     ]
                 }
                 
@@ -544,7 +544,7 @@ public class SpotifyRemoteModule: Module {
                 }
                 
                 guard let items = result as? [SPTAppRemoteContentItem],
-                      let targetItem = items.first(where: { $0.URI == uri }) else {
+                      let targetItem = items.first(where: { $0.uri == uri }) else {
                     promise.reject("NOT_FOUND", "Content item not found")
                     return
                 }
@@ -563,12 +563,12 @@ public class SpotifyRemoteModule: Module {
                     
                     let childrenArray = children.map { item -> [String: Any] in
                         return [
-                            "uri": item.URI,
+                            "uri": item.uri,
                             "title": item.title ?? "",
                             "subtitle": item.subtitle ?? "",
                             "imageUri": item.imageIdentifier,
-                            "isPlayable": item.playable,
-                            "isContainer": item.container
+                            "isPlayable": item.isPlayable,
+                            "isContainer": item.isContainer
                         ]
                     }
                     
