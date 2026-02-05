@@ -31,6 +31,7 @@
         "UIBackgroundModes": [
           "fetch"
         ],
+        "NSSupportsLiveActivities": true,
         "CFBundleLocalizations": [
           "en",
           "vi",
@@ -138,7 +139,12 @@
       ],
       "expo-quick-actions",
       "expo-font",
-      "expo-live-activity",
+      [
+        "expo-live-activity",
+        {
+          "enablePushNotifications": true
+        }
+      ],
       "./plugins/withBackgroundActionsServiceType"
     ]
   }

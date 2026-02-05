@@ -45,3 +45,4 @@ yarn-error.*
 /android
 credentials/
 credentials.json
+DemoProjects/

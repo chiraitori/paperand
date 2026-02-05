@@ -120,3 +120,103 @@ workflows:
         notify:
           success: true
           failure: true
+
+  # Dev branch build - creates "Paperand Dev" variant
+  ios-dev-build:
+    name: iOS Dev Build
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    
+    environment:
+      xcode: latest
+      cocoapods: default
+      groups:
+        - ios-dev
+      vars:
+        EXPO_TOKEN: $EXPO_TOKEN
+        APP_VARIANT: dev  # This makes the app "Paperand Dev"
+    
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: 'dev'
+          include: true
+      cancel_previous_builds: true
+    
+    scripts:
+      - name: Set dev version
+        script: |
+          # Use commit short hash as build identifier
+          BUILD_ID=$(git rev-parse --short HEAD)
+          APP_VERSION="0.0.0-dev.${BUILD_ID}"
+          echo "Building dev version: $APP_VERSION"
+          echo "APP_VERSION=$APP_VERSION" >> $CM_ENV
+          
+      - name: Install Bun
+        script: |
+          curl -fsSL https://bun.sh/install | bash
+          export BUN_INSTALL="$HOME/.bun"
+          export PATH="$BUN_INSTALL/bin:$PATH"
+          echo "BUN_INSTALL=$BUN_INSTALL" >> $CM_ENV
+          echo "PATH=$BUN_INSTALL/bin:$PATH" >> $CM_ENV
+          bun --version
+          
+      - name: Install dependencies
+        script: |
+          export PATH="$BUN_INSTALL/bin:$PATH"
+          bun install
+          
+      - name: Install Expo CLI and EAS CLI
+        script: |
+          export PATH="$BUN_INSTALL/bin:$PATH"
+          bun add -g expo-cli eas-cli
+          
+      - name: Run Expo Prebuild (Dev Variant)
+        script: |
+          export PATH="$BUN_INSTALL/bin:$PATH"
+          export APP_VARIANT=dev
+          bunx expo prebuild --platform ios --clean
+          
+      - name: Install CocoaPods
+        script: |
+          cd ios && pod install
+          
+      - name: Build unsigned iOS App (Debug for Dev Client)
+        script: |
+          cd ios
+          # Get the workspace and scheme names
+          WORKSPACE=$(ls -d *.xcworkspace | head -1)
+          SCHEME=$(echo $WORKSPACE | sed 's/.xcworkspace//')
+          echo "Building $SCHEME from $WORKSPACE (Debug mode for dev-client)"
+          
+          xcodebuild -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
+            -configuration Debug \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -archivePath $CM_BUILD_DIR/build.xcarchive \
+            archive \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES
+            
+      - name: Create IPA
+        script: |
+          mkdir -p $CM_BUILD_DIR/Payload
+          cp -r $CM_BUILD_DIR/build.xcarchive/Products/Applications/*.app $CM_BUILD_DIR/Payload/
+          cd $CM_BUILD_DIR
+          zip -r paperand-dev-${APP_VERSION}.ipa Payload
+          rm -rf Payload
+
+    artifacts:
+      - "*.ipa"
+    
+    publishing:
+      email:
+        recipients:
+          - chiraitori.dev@gmail.com
+        notify:
+          success: true
+          failure: true

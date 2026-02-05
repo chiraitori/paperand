@@ -3,14 +3,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo, { NetInfoStateType } from '@react-native-community/netinfo';
 import { Chapter, DownloadedChapter, DownloadJob } from '../types';
 import { getChapterPages, decryptDrmImage, fetchImageThroughExtension } from './sourceService';
-import { getGeneralSettings } from './settingsService';
 
 const DOWNLOADS_DIR_NAME = 'downloads';
 const METADATA_KEY = '@paperback_downloads';
 
-// Default parallel download settings (used if setting fails to load)
-const DEFAULT_PARALLEL_WIFI = 3;
-const DEFAULT_PARALLEL_CELLULAR = 1;
+// Parallel download settings based on network
+const PARALLEL_CHAPTERS_WIFI = 3;
+const PARALLEL_CHAPTERS_CELLULAR = 1;
 const PARALLEL_PAGES_PER_CHAPTER = 2;
 
 // Parse DRM URL to get extensionId and actual URL
@@ -55,17 +54,13 @@ class DownloadService {
 
     private async getMaxParallelDownloads(): Promise<number> {
         try {
-            const settings = await getGeneralSettings();
             const netInfo = await NetInfo.fetch();
-
-            // On WiFi: use user setting (1-10)
-            // On cellular: always use 1 to save data
             if (netInfo.type === NetInfoStateType.wifi) {
-                return Math.max(1, Math.min(10, settings.parallelDownloads || DEFAULT_PARALLEL_WIFI));
+                return PARALLEL_CHAPTERS_WIFI;
             }
-            return DEFAULT_PARALLEL_CELLULAR;
+            return PARALLEL_CHAPTERS_CELLULAR;
         } catch {
-            return DEFAULT_PARALLEL_CELLULAR;
+            return PARALLEL_CHAPTERS_CELLULAR;
         }
     }
 
@@ -111,7 +106,7 @@ class DownloadService {
 
         // Add to pending queue
         this.pendingQueue.push({ manga, chapter });
-
+        
         // Add job to visible queue with 'queued' status
         const job: DownloadJob = {
             chapterId: chapter.id,
@@ -134,10 +129,10 @@ class DownloadService {
     cancelDownload(chapterId: string) {
         // Mark as cancelled
         this.cancelledDownloads.add(chapterId);
-
+        
         // Remove from pending queue
         this.pendingQueue = this.pendingQueue.filter(p => p.chapter.id !== chapterId);
-
+        
         // Remove from visible queue
         const index = this.downloadQueue.findIndex(j => j.chapterId === chapterId);
         if (index >= 0) {
@@ -214,7 +209,7 @@ class DownloadService {
     ) {
         const sourceId = manga.source!;
         this.activeDownloads[chapter.id] = true;
-
+        
         // Update job status to downloading
         const existingJob = this.downloadQueue.find(j => j.chapterId === chapter.id);
         const job: DownloadJob = {
@@ -241,12 +236,10 @@ class DownloadService {
             // Fetch page URLs from the source
             console.log('[Download] Fetching pages for', chapter.id, 'from source', sourceId);
             const pageUrls = await getChapterPages(sourceId, manga.id, chapter.id);
-
+            
             if (pageUrls.length === 0) {
-                console.error('[Download] No pages returned - extension may have failed to fetch chapter details');
                 throw new Error('No pages found for chapter');
             }
-            console.log('[Download] Got', pageUrls.length, 'pages for chapter', chapter.id);
 
             job.total = pageUrls.length;
             this.updateQueue({ ...job });
@@ -278,54 +271,25 @@ class DownloadService {
 
                 // Check if this is a DRM URL that needs decryption
                 const drmInfo = parseDrmUrl(pageUrl);
-
+                
                 try {
                     let imageDataUrl: string | null = null;
-
+                    
                     if (drmInfo) {
-                        // DRM protected image - try to decrypt through extension
+                        // DRM protected image - decrypt through extension
                         console.log('[Download] Decrypting DRM page', i + 1);
                         imageDataUrl = await decryptDrmImage(drmInfo.extensionId, drmInfo.actualUrl);
-
-                        // If decryption failed (e.g., headless mode with canvas limitations),
-                        // try to download the scrambled image for on-demand decryption
-                        if (!imageDataUrl) {
-                            console.log('[Download] DRM decryption unavailable, downloading scrambled image for on-demand decryption');
-                            // Strip DRM data from URL and fetch raw image
-                            const rawImageUrl = drmInfo.actualUrl.split('#')[0];
-                            try {
-                                const response = await fetch(rawImageUrl, {
-                                    headers: {
-                                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-                                        'Accept': 'image/*,*/*',
-                                    },
-                                });
-                                if (response.ok) {
-                                    const arrayBuffer = await response.arrayBuffer();
-                                    const bytes = new Uint8Array(arrayBuffer);
-                                    let binary = '';
-                                    for (let j = 0; j < bytes.length; j++) {
-                                        binary += String.fromCharCode(bytes[j]);
-                                    }
-                                    imageDataUrl = 'data:image/jpeg;base64,' + btoa(binary);
-                                    // Note: Image is scrambled - will need on-demand decryption when viewing
-                                    console.log('[Download] Downloaded scrambled image, size:', bytes.length);
-                                }
-                            } catch (fetchError) {
-                                console.error('[Download] Failed to fetch scrambled image:', fetchError);
-                            }
-                        }
                     } else {
                         // Normal URL - still fetch through extension for proper headers/cookies
                         console.log('[Download] Fetching page', i + 1, 'through extension');
                         imageDataUrl = await fetchImageThroughExtension(sourceId, pageUrl);
                     }
-
+                    
                     if (imageDataUrl) {
                         // Convert base64 data URL to file
                         const imageData = base64ToArrayBuffer(imageDataUrl);
                         targetFile.write(imageData);
-
+                        
                         if (targetFile.exists) {
                             localPages.push(targetFile.uri);
                             size += targetFile.size;
@@ -426,16 +390,16 @@ class DownloadService {
 
         const maxParallel = await this.getMaxParallelDownloads();
         const activeCount = Object.keys(this.activeDownloads).length;
-
+        
         console.log(`[Download] Background process: active=${activeCount}, pending=${this.pendingQueue.length}, maxParallel=${maxParallel}`);
 
         // Start new downloads if we have capacity
         if (activeCount < maxParallel && this.pendingQueue.length > 0) {
             const slotsAvailable = maxParallel - activeCount;
             const toStart = this.pendingQueue.splice(0, slotsAvailable);
-
+            
             console.log(`[Download] Starting ${toStart.length} downloads in background`);
-
+            
             // Don't await - let them run, we just need to start them
             for (const item of toStart) {
                 this.executeDownload(item.manga, item.chapter);
@@ -446,7 +410,7 @@ class DownloadService {
         const hasActiveDownloads = Object.keys(this.activeDownloads).length > 0;
         const hasPending = this.pendingQueue.length > 0;
         const hasQueued = this.downloadQueue.some(j => j.status === 'downloading' || j.status === 'queued');
-
+        
         return hasActiveDownloads || hasPending || hasQueued;
     }
 }

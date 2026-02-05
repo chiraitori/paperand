@@ -48,15 +48,17 @@ export const startDownloadLiveActivity = (
         const result = LiveActivity.startActivity(state, config);
         if (typeof result === 'string') {
             currentActivityId = result;
+            console.log('[LiveActivity] Started activity:', currentActivityId);
         }
-        console.log('[LiveActivity] Started activity:', currentActivityId);
     } catch (error) {
-        console.error('[LiveActivity] Failed to start:', error);
+        // Fail silently - Live Activity may not be available on all devices/builds
+        console.debug('[LiveActivity] Could not start (may need native rebuild):', error);
     }
 };
 
 /**
  * Update existing Live Activity with new progress
+ * Note: Activity must be started in foreground first via startDownloadLiveActivity
  */
 export const updateDownloadLiveActivity = (
     mangaTitle: string,
@@ -67,9 +69,9 @@ export const updateDownloadLiveActivity = (
 ): void => {
     if (Platform.OS !== 'ios') return;
 
-    // Start new activity if not exists
+    // Skip if no activity exists (must be started in foreground first)
     if (!currentActivityId) {
-        startDownloadLiveActivity(mangaTitle, chapterTitle, progress, queuedCount);
+        console.log('[LiveActivity] No active activity to update (was it started in foreground?)');
         return;
     }
 

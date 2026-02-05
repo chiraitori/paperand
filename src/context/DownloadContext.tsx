@@ -6,10 +6,13 @@ import { downloadService } from '../services/downloadService';
 import { t } from '../services/i18nService';
 import {
     initNotifications,
+    showDownloadNotification,
     showDownloadCompleteNotification,
     hideDownloadNotification,
 } from '../services/notificationService';
-import { stopBackgroundService } from '../services/backgroundTaskService';
+import {
+    isBackgroundServiceRunning,
+} from '../services/backgroundTaskService';
 
 interface DownloadContextType {
     downloads: DownloadedChapter[];
@@ -64,26 +67,31 @@ export const DownloadProvider: React.FC<{ children: ReactNode }> = ({ children }
                         lastJob.mangaTitle,
                         completedJobs.length
                     );
-
+                    
                     // Stop background service when all downloads complete
                     if (Platform.OS === 'android') {
                         stopBackgroundService().catch(err => {
                             console.error('[DownloadContext] Failed to stop background service:', err);
                         });
                     }
-
-                    // Stop iOS Live Activity
-                    if (Platform.OS === 'ios') {
-                        const { stopDownloadLiveActivity } = require('../services/liveActivityService');
-                        stopDownloadLiveActivity('Download Complete');
-                    }
                 }
             }
 
-            // Note: Download progress notifications are handled by the background service
-            // We only need to clean up when all downloads are done
-            if (updatedQueue.length === 0 && prevQueue.length > 0) {
-                hideDownloadNotification();
+            // Update download notification with progress (only if background service is not running)
+            // Background service handles its own notifications
+            const activeJob = updatedQueue.find(j => j.status === 'downloading');
+            if (!isBackgroundServiceRunning()) {
+                if (activeJob && activeJob.total > 0) {
+                    showDownloadNotification(
+                        activeJob.mangaTitle,
+                        activeJob.progress,
+                        activeJob.total,
+                        activeJob.chapterTitle
+                    );
+                } else if (updatedQueue.length === 0 && prevQueue.length > 0) {
+                    // All downloads done, hide progress notification
+                    hideDownloadNotification();
+                }
             }
 
             // Update refs and state
