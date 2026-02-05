@@ -291,11 +291,25 @@ class SpotifyRemoteService {
     }
 
     /**
+     * Skip to next track (alias)
+     */
+    async skipToNext(): Promise<boolean> {
+        return this.skipNext();
+    }
+
+    /**
      * Skip to previous track
      */
     async skipPrevious(): Promise<boolean> {
         if (!SpotifyRemote) return false;
         return SpotifyRemote.skipToPrevious();
+    }
+
+    /**
+     * Skip to previous track (alias)
+     */
+    async skipToPrevious(): Promise<boolean> {
+        return this.skipPrevious();
     }
 
     /**

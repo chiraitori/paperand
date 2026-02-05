@@ -142,16 +142,31 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
             return;
         }
         await spotifyRemoteService.togglePlayPause();
+        // Refresh state after a short delay to get updated track info
+        setTimeout(async () => {
+            const state = await spotifyRemoteService.refreshPlayerState();
+            if (state) setPlayerState(state);
+        }, 300);
     };
 
     const handleNext = async () => {
         if (!isConnected) return;
         await spotifyRemoteService.skipToNext();
+        // Refresh state after a short delay to get updated track info
+        setTimeout(async () => {
+            const state = await spotifyRemoteService.refreshPlayerState();
+            if (state) setPlayerState(state);
+        }, 500);
     };
 
     const handlePrevious = async () => {
         if (!isConnected) return;
         await spotifyRemoteService.skipToPrevious();
+        // Refresh state after a short delay to get updated track info
+        setTimeout(async () => {
+            const state = await spotifyRemoteService.refreshPlayerState();
+            if (state) setPlayerState(state);
+        }, 500);
     };
 
     const openContentPicker = async () => {
@@ -221,8 +236,11 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
         try {
             await SpotifyRemote.play(item.uri);
             setShowPicker(false);
-            // Refresh player state after playing
-            setTimeout(() => spotifyRemoteService.refreshPlayerState(), 500);
+            // Refresh player state after playing to update UI
+            setTimeout(async () => {
+                const state = await spotifyRemoteService.refreshPlayerState();
+                if (state) setPlayerState(state);
+            }, 500);
         } catch (error) {
             console.error('[SpotifyMiniPlayer] Failed to play:', error);
         }
