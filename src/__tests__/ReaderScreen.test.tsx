@@ -41,13 +41,13 @@ jest.mock('../context/DownloadContext', () => ({
 
 jest.mock('../services/sourceService', () => ({
   getChapterPages: jest.fn().mockResolvedValue([
-    'https://example.com/page1.jpg',
-    'https://example.com/page2.jpg',
-    'https://example.com/page3.jpg',
+    'https://image.chiraitori.io.vn/image',
+    'https://image.chiraitori.io.vn/image',
+    'https://image.chiraitori.io.vn/image',
   ]),
   getMangaDetails: jest.fn().mockResolvedValue({
     titles: ['Test Manga'],
-    image: 'https://example.com/cover.jpg',
+    image: 'https://image.chiraitori.io.vn/image',
     author: 'Test Author',
     desc: 'Test description',
     status: 'ongoing',
@@ -152,11 +152,11 @@ describe('ReaderScreen Page Count Logic', () => {
 
   it('calculates total pages correctly from loaded data', async () => {
     const mockPages = [
-      'https://example.com/page1.jpg',
-      'https://example.com/page2.jpg',
-      'https://example.com/page3.jpg',
-      'https://example.com/page4.jpg',
-      'https://example.com/page5.jpg',
+      'https://image.chiraitori.io.vn/image',
+      'https://image.chiraitori.io.vn/image',
+      'https://image.chiraitori.io.vn/image',
+      'https://image.chiraitori.io.vn/image',
+      'https://image.chiraitori.io.vn/image',
     ];
     
     const { getChapterPages } = require('../services/sourceService');
@@ -187,7 +187,7 @@ describe('ReaderScreen Page Count Logic', () => {
 
   it('handles single page chapter', async () => {
     const { getChapterPages } = require('../services/sourceService');
-    getChapterPages.mockResolvedValueOnce(['https://example.com/single-page.jpg']);
+    getChapterPages.mockResolvedValueOnce(['https://image.chiraitori.io.vn/image']);
     
     const { findByText, queryByText } = render(<TestReaderScreen />);
     
@@ -208,9 +208,9 @@ describe('ReaderScreen Progress Saving', () => {
 
   it('saves progress with correct page number and total', async () => {
     const mockPages = [
-      'https://example.com/page1.jpg',
-      'https://example.com/page2.jpg',
-      'https://example.com/page3.jpg',
+      'https://image.chiraitori.io.vn/image',
+      'https://image.chiraitori.io.vn/image',
+      'https://image.chiraitori.io.vn/image',
     ];
     
     const { getChapterPages } = require('../services/sourceService');
