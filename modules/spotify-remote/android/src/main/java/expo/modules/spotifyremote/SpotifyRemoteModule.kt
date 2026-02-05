@@ -393,7 +393,6 @@ class SpotifyRemoteModule : Module() {
                     promise.reject("IMAGE_ERROR", throwable.message, throwable)
                 }
         }
-        }
 
         // Handle app lifecycle
         OnActivityEntersForeground {

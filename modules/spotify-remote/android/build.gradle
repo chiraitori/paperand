@@ -38,6 +38,9 @@ repositories {
     mavenCentral()
     google()
     maven { url 'https://jitpack.io' }
+    flatDir {
+        dirs 'libs'
+    }
 }
 
 dependencies {
@@ -46,8 +49,8 @@ dependencies {
 
     // Spotify Android SDK - Auth 2.1.0 (Maven) + App Remote 0.8.0 (local AAR)
     implementation 'com.spotify.android:auth:2.1.0'
-    // App Remote SDK - Place spotify-app-remote-release-0.8.0.aar in libs/
-    implementation fileTree(dir: 'libs', include: ['*.aar'])
+    // App Remote SDK - using compileOnly to avoid AAR packaging issues
+    compileOnly(name: 'spotify-app-remote-release-0.8.0', ext: 'aar')
 }
 
 def safeExtGet(prop, fallback) {

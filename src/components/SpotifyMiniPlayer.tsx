@@ -21,7 +21,7 @@ interface SpotifyMiniPlayerProps {
     onPickerVisibleChange?: (visible: boolean) => void;
 }
 
-export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({ 
+export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
     visible = true,
     style,
     onPickerVisibleChange,
@@ -34,6 +34,7 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
     const [contentItems, setContentItems] = useState<SpotifyContentItem[]>([]);
     const [loadingContent, setLoadingContent] = useState(false);
     const [imageCache, setImageCache] = useState<Record<string, string>>({});
+    const [trackAlbumArt, setTrackAlbumArt] = useState<string | null>(null);
     const expandAnim = useState(new Animated.Value(0))[0];
 
     // Helper to get image - iOS uses content URI, Android uses imageUri
@@ -43,7 +44,7 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
             // Android: use imageUri directly with imagesApi
             const imageKey = Platform.OS === 'ios' ? item.uri : item.imageUri;
             if (!imageKey) return null;
-            
+
             return await SpotifyRemote.getContentItemImage(imageKey);
         } catch (e) {
             console.log(`[SpotifyMiniPlayer] Failed to load image for ${item.title}`);
@@ -89,9 +90,38 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
         onPickerVisibleChange?.(showPicker);
     }, [showPicker, onPickerVisibleChange]);
 
+    // Fetch album art image on iOS (spotify:image: URIs need to be fetched via SDK)
+    useEffect(() => {
+        const fetchTrackImage = async () => {
+            const track = playerState?.track;
+            if (!track?.imageUri) {
+                setTrackAlbumArt(null);
+                return;
+            }
+
+            // On Android, imageUri is directly usable (or a raw URI we need to fetch)
+            // On iOS, it's always a spotify:image: identifier that needs fetching
+            if (Platform.OS === 'ios' || track.imageUri.startsWith('spotify:image:')) {
+                try {
+                    // Use the track URI to fetch the image via contentAPI
+                    const base64 = await SpotifyRemote.getContentItemImage(track.uri);
+                    setTrackAlbumArt(base64);
+                } catch (e) {
+                    console.log('[SpotifyMiniPlayer] Failed to fetch track image:', e);
+                    setTrackAlbumArt(null);
+                }
+            } else {
+                // Android with a real image URL
+                setTrackAlbumArt(track.imageUri);
+            }
+        };
+
+        fetchTrackImage();
+    }, [playerState?.track?.uri, playerState?.track?.imageUri]);
+
     const handleConnect = async () => {
         if (isConnecting) return;
-        
+
         setIsConnecting(true);
         try {
             const connected = await spotifyRemoteService.connect();
@@ -126,19 +156,20 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
 
     const openContentPicker = async () => {
         if (!isConnected) {
+            console.warn('[SpotifyMiniPlayer] Cannot open picker - not connected');
             return;
         }
-        
+
         setShowPicker(true);
         setLoadingContent(true);
-        
+
         try {
             const items = await SpotifyRemote.getRecommendedContentItems();
-            
+
             // The API returns categories/containers. We want playable items.
             // Flatten by fetching children of containers
             let playableItems: SpotifyContentItem[] = [];
-            
+
             for (const item of items.slice(0, 6)) { // Check first 6 categories
                 if (item.isContainer) {
                     try {
@@ -152,14 +183,14 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
                     playableItems.push(item);
                 }
             }
-            
+
             // Deduplicate by URI
-            const uniqueItems = playableItems.filter((item, index, self) => 
+            const uniqueItems = playableItems.filter((item, index, self) =>
                 index === self.findIndex(t => t.uri === item.uri)
             ).slice(0, 12);
-            
+
             setContentItems(uniqueItems);
-            
+
             // Load images in the background - don't block the UI
             loadImagesInBackground(uniqueItems);
         } catch (error) {
@@ -215,7 +246,7 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
                             <Ionicons name="musical-notes" size={24} color="#1DB954" />
                             <Text style={styles.modalTitle}>Pick Music</Text>
                         </View>
-                        <TouchableOpacity 
+                        <TouchableOpacity
                             style={styles.modalClose}
                             onPress={() => setShowPicker(false)}
                         >
@@ -247,10 +278,10 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
                                         />
                                     ) : (
                                         <View style={[styles.gridItemImage, styles.gridItemPlaceholder]}>
-                                            <Ionicons 
-                                                name={item.isContainer ? "albums" : "musical-note"} 
-                                                size={32} 
-                                                color="#1DB954" 
+                                            <Ionicons
+                                                name={item.isContainer ? "albums" : "musical-note"}
+                                                size={32}
+                                                color="#1DB954"
                                             />
                                         </View>
                                     )}
@@ -283,10 +314,10 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
                     disabled={isConnecting}
                 >
                     <View style={styles.spotifyIconContainer}>
-                        <Ionicons 
-                            name={isConnecting ? "hourglass-outline" : "musical-notes"} 
-                            size={20} 
-                            color="#1DB954" 
+                        <Ionicons
+                            name={isConnecting ? "hourglass-outline" : "musical-notes"}
+                            size={20}
+                            color="#1DB954"
                         />
                     </View>
                 </TouchableOpacity>
@@ -321,15 +352,15 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
 
     return (
         <Animated.View style={[styles.container, style, { height: containerHeight }]}>
-            <TouchableOpacity 
+            <TouchableOpacity
                 style={styles.contentRow}
                 onPress={() => setExpanded(!expanded)}
                 activeOpacity={0.8}
             >
                 {/* Album Art */}
-                {track?.imageUri ? (
+                {trackAlbumArt ? (
                     <Image
-                        source={{ uri: track.imageUri }}
+                        source={{ uri: trackAlbumArt }}
                         style={styles.albumArt}
                     />
                 ) : (
@@ -351,27 +382,27 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
                 {/* Controls */}
                 <View style={styles.controls}>
                     {expanded && (
-                        <TouchableOpacity 
+                        <TouchableOpacity
                             style={styles.controlButton}
                             onPress={handlePrevious}
                         >
                             <Ionicons name="play-skip-back" size={18} color="#fff" />
                         </TouchableOpacity>
                     )}
-                    
-                    <TouchableOpacity 
+
+                    <TouchableOpacity
                         style={styles.playButton}
                         onPress={handlePlayPause}
                     >
-                        <Ionicons 
-                            name={isPaused ? "play" : "pause"} 
-                            size={20} 
-                            color="#000" 
+                        <Ionicons
+                            name={isPaused ? "play" : "pause"}
+                            size={20}
+                            color="#000"
                         />
                     </TouchableOpacity>
 
                     {expanded && (
-                        <TouchableOpacity 
+                        <TouchableOpacity
                             style={styles.controlButton}
                             onPress={handleNext}
                         >
@@ -383,7 +414,7 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
 
             {/* Expanded - Pick Music button */}
             {expanded && (
-                <TouchableOpacity 
+                <TouchableOpacity
                     style={styles.openSpotifyButton}
                     onPress={openContentPicker}
                 >

@@ -1208,10 +1208,10 @@ export const ReaderScreen: React.FC = () => {
       // Get the first visible item (most visible)
       const visibleItem = viewableItems[0];
       const pageIndex = visibleItem.index;
-      
+
       if (pageIndex !== undefined && pageIndex !== currentPage) {
         setCurrentPage(pageIndex);
-        
+
         // Save progress when page changes
         if (pageIndex !== lastSavedPageRef.current) {
           lastSavedPageRef.current = pageIndex;

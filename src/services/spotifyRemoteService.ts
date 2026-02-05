@@ -82,11 +82,11 @@ class SpotifyRemoteService {
 
         this.clientId = clientId;
         this.redirectUri = redirectUri;
-        
+
         console.log('[SpotifyRemoteService] Configuring with clientId:', clientId, 'redirectUri:', redirectUri);
-        
+
         SpotifyRemote.configure(clientId, redirectUri);
-        
+
         // Also configure auth module if available (Android)
         if (SpotifyAuth) {
             console.log('[SpotifyRemoteService] Configuring SpotifyAuth module');
@@ -94,7 +94,7 @@ class SpotifyRemoteService {
         } else {
             console.log('[SpotifyRemoteService] SpotifyAuth module not available');
         }
-        
+
         this.isConfigured = true;
 
         // Set up native event listeners
@@ -111,16 +111,16 @@ class SpotifyRemoteService {
         try {
             const token = await AsyncStorage.getItem(SPOTIFY_ACCESS_TOKEN_KEY);
             const expiry = await AsyncStorage.getItem(SPOTIFY_TOKEN_EXPIRY_KEY);
-            
+
             if (!token || !expiry) {
                 return false;
             }
-            
+
             // Check if token is still valid (with 5 minute buffer)
             const expiryTime = parseInt(expiry, 10);
             const now = Date.now();
             const isValid = expiryTime > now + 5 * 60 * 1000;
-            
+
             console.log('[SpotifyRemoteService] Token valid:', isValid);
             return isValid;
         } catch (error) {
@@ -148,7 +148,7 @@ class SpotifyRemoteService {
 
         try {
             const result = await SpotifyAuth.authorize(scopes);
-            
+
             // Save token to AsyncStorage
             if (result.accessToken) {
                 const expiryTime = Date.now() + (result.expiresIn * 1000);
@@ -156,7 +156,7 @@ class SpotifyRemoteService {
                 await AsyncStorage.setItem(SPOTIFY_TOKEN_EXPIRY_KEY, expiryTime.toString());
                 console.log('[SpotifyRemoteService] Token saved to storage');
             }
-            
+
             return result;
         } catch (error) {
             console.error('[SpotifyRemoteService] Authorization failed:', error);
