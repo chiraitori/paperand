@@ -111,6 +111,58 @@ class SpotifyRemoteModule : Module() {
             })
         }
 
+        // Connect silently to Spotify app (without opening Spotify)
+        // On Android, this attempts to connect to an already-running Spotify instance
+        AsyncFunction("connectSilent") { promise: Promise ->
+            if (clientId.isEmpty() || redirectUri.isEmpty()) {
+                promise.reject("NOT_CONFIGURED", "SpotifyRemote not configured. Call configure() first.", null)
+                return@AsyncFunction
+            }
+
+            spotifyAppRemote?.let {
+                if (it.isConnected) {
+                    promise.resolve(mapOf("connected" to true))
+                    return@AsyncFunction
+                }
+            }
+
+            // Check if Spotify is installed
+            if (!SpotifyAppRemote.isSpotifyInstalled(context)) {
+                Log.e(TAG, "Spotify app is not installed")
+                promise.reject("SPOTIFY_NOT_INSTALLED", "Spotify app is not installed on this device", null)
+                return@AsyncFunction
+            }
+
+            // Try to connect silently without showing auth view
+            val connectionParams = ConnectionParams.Builder(clientId)
+                .setRedirectUri(redirectUri)
+                .showAuthView(false)
+                .build()
+
+            Log.d(TAG, "Attempting silent connection to Spotify...")
+
+            SpotifyAppRemote.connect(context, connectionParams, object : Connector.ConnectionListener {
+                override fun onConnected(appRemote: SpotifyAppRemote) {
+                    spotifyAppRemote = appRemote
+                    Log.d(TAG, "Silent connection to Spotify successful!")
+
+                    sendEvent("onConnectionStatusChanged", mapOf(
+                        "connected" to true,
+                        "status" to "connected"
+                    ))
+
+                    promise.resolve(mapOf("connected" to true))
+                }
+
+                override fun onFailure(throwable: Throwable) {
+                    Log.d(TAG, "Silent connection failed: ${throwable.message}")
+                    // Silent connection failed - this is expected if Spotify isn't running
+                    // Don't emit error event for silent failures
+                    promise.resolve(mapOf("connected" to false))
+                }
+            })
+        }
+
         // Disconnect from Spotify app
         AsyncFunction("disconnect") { promise: Promise ->
             spotifyAppRemote?.let {
