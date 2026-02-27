@@ -104,6 +104,7 @@ jobs:
         run: eas build --platform android --profile preview --local --non-interactive --output ./build/paperand-${{ steps.version.outputs.version }}.apk
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
 
       - name: Upload Android APK Artifact
         uses: actions/upload-artifact@v4

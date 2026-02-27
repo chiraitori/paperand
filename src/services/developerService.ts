@@ -206,9 +206,39 @@ export const initLogCapture = () => {
 };
 
 const addLog = (level: LogEntry['level'], args: any[]) => {
-  const message = args.map(arg =>
-    typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
-  ).join(' ');
+  const message = args.map(arg => {
+    if (arg === null) return 'null';
+    if (arg === undefined) return 'undefined';
+    if (typeof arg === 'object') {
+      try {
+        // Handle circular references and BigInt
+        const seen = new WeakSet();
+        return JSON.stringify(arg, (key, value) => {
+          if (typeof value === 'bigint') {
+            return value.toString() + 'n';
+          }
+          if (typeof value === 'object' && value !== null) {
+            if (seen.has(value)) {
+              return '[Circular]';
+            }
+            seen.add(value);
+          }
+          return value;
+        }, 2);
+      } catch (e) {
+        // If JSON.stringify fails, try to extract some info
+        try {
+          if (arg instanceof Error) {
+            return `Error: ${arg.message}\nStack: ${arg.stack}`;
+          }
+          return `[Object: ${Object.keys(arg).join(', ')}]`;
+        } catch {
+          return '[Unserializable Object]';
+        }
+      }
+    }
+    return String(arg);
+  }).join(' ');
 
   logs.unshift({
     timestamp: new Date().toISOString(),
