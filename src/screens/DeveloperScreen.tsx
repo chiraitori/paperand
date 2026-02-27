@@ -90,25 +90,39 @@ export const DeveloperScreen: React.FC = () => {
   const exportLogs = async () => {
     try {
       const logs = getLogs();
+      console.log('[DeveloperScreen] Exporting logs, count:', logs.length);
+      
       if (logs.length === 0) {
         Alert.alert('No Logs', 'There are no logs to export.');
         return;
       }
 
-      const logContent = logs.map(log =>
+      // Reverse to get chronological order (oldest first)
+      const chronologicalLogs = [...logs].reverse();
+      
+      const logContent = chronologicalLogs.map(log =>
         `[${log.timestamp}] [${log.level.toUpperCase()}] ${log.message}`
       ).join('\n');
 
-      const docDir = (FileSystem as any).documentDirectory as string | null;
+      console.log('[DeveloperScreen] Log content size:', logContent.length, 'bytes');
+
+      const docDir = FileSystem.documentDirectory;
       if (!docDir) {
         Alert.alert('Export Failed', 'Could not access document directory');
         return;
       }
 
-      const fileUri = docDir + `developer_logs_${Date.now()}.txt`;
-      await (FileSystem as any).writeAsStringAsync(fileUri, logContent, {
-        encoding: 'utf8',
+      const fileName = `developer_logs_${Date.now()}.txt`;
+      const fileUri = docDir + fileName;
+      
+      // Write file with explicit encoding
+      await FileSystem.writeAsStringAsync(fileUri, logContent, {
+        encoding: FileSystem.EncodingType.UTF8,
       });
+
+      // Verify file was written
+      const fileInfo = await FileSystem.getInfoAsync(fileUri);
+      console.log('[DeveloperScreen] File written:', fileInfo);
 
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(fileUri, {
@@ -119,7 +133,11 @@ export const DeveloperScreen: React.FC = () => {
         Alert.alert('Export Complete', `Logs saved to: ${fileUri}`);
       }
     } catch (error) {
-      Alert.alert('Export Failed', 'Could not export logs');
+      console.error('[DeveloperScreen] Export failed:', error);
+      Alert.alert(
+        'Export Failed',
+        `Could not export logs: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
     }
   };
 

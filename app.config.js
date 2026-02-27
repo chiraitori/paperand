@@ -35,7 +35,7 @@ module.exports = {
     expo: {
         name: getAppName(),
         slug: IS_DEV ? 'paperback-android-dev' : 'paperback-android',
-        version: '0.0.13',
+        version: '0.0.14',
         scheme: getScheme(),
         orientation: 'default',
         icon: './assets/icon.png',
