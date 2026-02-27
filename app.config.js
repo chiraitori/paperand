@@ -35,7 +35,7 @@ module.exports = {
     expo: {
         name: getAppName(),
         slug: IS_DEV ? 'paperback-android-dev' : 'paperback-android',
-        version: '0.0.13',
+        version: '0.0.14',
         scheme: getScheme(),
         orientation: 'default',
         icon: './assets/icon.png',
@@ -57,7 +57,7 @@ module.exports = {
         ios: {
             supportsTablet: true,
             bundleIdentifier: getBundleIdentifier('ios'),
-            buildNumber: '13',
+            buildNumber: '14',
             infoPlist: {
                 ITSAppUsesNonExemptEncryption: false,
                 CFBundleAllowMixedLocalizations: true,
@@ -89,7 +89,7 @@ module.exports = {
                 backgroundColor: '#ffffff'
             },
             package: getBundleIdentifier('android'),
-            versionCode: 13,
+            versionCode: 14,
             permissions: [
                 'android.permission.REQUEST_INSTALL_PACKAGES',
                 'android.permission.FOREGROUND_SERVICE',
