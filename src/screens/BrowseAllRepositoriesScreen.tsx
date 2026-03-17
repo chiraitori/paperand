@@ -226,7 +226,7 @@ export const BrowseAllRepositoriesScreen: React.FC = () => {
         <View style={[styles.iconContainer, { backgroundColor: '#2A2A2D' }]}>
           {ext.icon && repoBaseUrl ? (
             <Image
-              source={{ uri: `${repoBaseUrl} / ${ext.id} / includes / ${ext.icon}` }}
+              source={{ uri: `${repoBaseUrl}/${ext.id}/includes/${ext.icon}` }}
               style={styles.iconImage}
               defaultSource={require('../../assets/icon.png')}
             />
