@@ -9,12 +9,14 @@ import {
   RefreshControl,
   ImageBackground,
   useWindowDimensions,
+  Modal,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { WebView } from 'react-native-webview';
 import { useTheme } from '../context/ThemeContext';
 import { LoadingIndicator } from '../components';
 import {
@@ -68,6 +70,8 @@ export const DiscoverScreen: React.FC = () => {
   const [featuredItems, setFeaturedItems] = useState<SourceManga[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [browserVisible, setBrowserVisible] = useState(false);
+  const [browserUrl, setBrowserUrl] = useState<string>('');
   const activeSourceRef = useRef<string>('');
   const initialLoadDone = useRef(false);
 
@@ -208,13 +212,24 @@ export const DiscoverScreen: React.FC = () => {
     const activeExtension = installedExtensions.find(ext => ext.id === activeSource);
 
     if (activeExtension) {
-      navigation.navigate('ExtensionSettings', {
-        extensionId: activeExtension.id,
-        extensionName: activeExtension.name,
-      });
-      return;
+      const url = activeExtension.websiteBaseURL || activeExtension.website || activeExtension.repoBaseUrl || '';
+      if (url) {
+        setBrowserUrl(url);
+        setBrowserVisible(true);
+        return;
+      }
     }
 
+    if (installedExtensions.length > 0) {
+      const fallback = installedExtensions[0].websiteBaseURL || installedExtensions[0].website || installedExtensions[0].repoBaseUrl || '';
+      if (fallback) {
+        setBrowserUrl(fallback);
+        setBrowserVisible(true);
+        return;
+      }
+    }
+
+    // If we have no URL to open, fall back to extension manager.
     navigation.navigate('Extensions' as any);
   };
 
@@ -470,6 +485,42 @@ export const DiscoverScreen: React.FC = () => {
       {/* Source Tabs */}
       {renderSourceTabs()}
 
+      {/* Mini browser for active source website (Paperback-like globe action) */}
+      <Modal
+        visible={browserVisible}
+        animationType="slide"
+        onRequestClose={() => setBrowserVisible(false)}
+      >
+        <View style={[styles.browserContainer, { backgroundColor: theme.background }]}> 
+          <View style={[styles.browserHeader, { borderBottomColor: theme.border, backgroundColor: theme.background }]}>
+            <TouchableOpacity onPress={() => setBrowserVisible(false)} style={styles.browserHeaderButton}>
+              <Ionicons name="close" size={24} color={theme.primary} />
+            </TouchableOpacity>
+            <Text style={[styles.browserTitle, { color: theme.text }]} numberOfLines={1}>
+              {browserUrl}
+            </Text>
+            <View style={styles.browserHeaderButton} />
+          </View>
+
+          {browserUrl ? (
+            <WebView
+              source={{ uri: browserUrl }}
+              style={styles.browserWebView}
+              startInLoadingState={true}
+              renderLoading={() => (
+                <View style={styles.browserLoading}>
+                  <LoadingIndicator message={t('common.loading')} />
+                </View>
+              )}
+            />
+          ) : (
+            <View style={styles.browserLoading}>
+              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>No URL available</Text>
+            </View>
+          )}
+        </View>
+      </Modal>
+
       {/* Content */}
       {loading ? (
         <LoadingIndicator message={t('common.loading')} />
@@ -533,6 +584,38 @@ const styles = StyleSheet.create({
     height: 40,
     justifyContent: 'center',
     alignItems: 'flex-end',
+  },
+  browserContainer: {
+    flex: 1,
+  },
+  browserHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 50,
+    paddingHorizontal: 12,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+  },
+  browserHeaderButton: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  browserTitle: {
+    flex: 1,
+    marginHorizontal: 8,
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  browserWebView: {
+    flex: 1,
+  },
+  browserLoading: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   tabsWrapper: {
     borderBottomWidth: 1,
