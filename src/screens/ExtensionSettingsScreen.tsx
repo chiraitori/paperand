@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Alert,
   TextInput,
+  Switch,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -305,6 +306,26 @@ export const ExtensionSettingsScreen: React.FC = () => {
                 <Ionicons name="add" size={20} color={theme.text} />
               </TouchableOpacity>
             </View>
+          </View>
+        );
+
+      case 'switch':
+        return (
+          <View key={row.id || index} style={[styles.row, { backgroundColor: theme.card }]}>
+            <Text style={[styles.rowLabel, { color: theme.text }]}>{row.label}</Text>
+            <Switch
+              value={Boolean(row.value)}
+              onValueChange={async (newValue) => {
+                const basePath = getCurrentPath();
+                const fullPath = basePath ? `${basePath}/${sectionId}/${row.id}` : `${sectionId}/${row.id}`;
+                const success = await updateExtensionSetting(extensionId, fullPath, newValue);
+                if (success) {
+                  await loadSettings();
+                }
+              }}
+              trackColor={{ false: '#767577', true: theme.primary }}
+              thumbColor={Boolean(row.value) ? '#fff' : '#f4f3f4'}
+            />
           </View>
         );
 

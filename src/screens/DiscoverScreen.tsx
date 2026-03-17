@@ -204,6 +204,20 @@ export const DiscoverScreen: React.FC = () => {
     });
   };
 
+  const openGlobalSourceAction = () => {
+    const activeExtension = installedExtensions.find(ext => ext.id === activeSource);
+
+    if (activeExtension) {
+      navigation.navigate('ExtensionSettings', {
+        extensionId: activeExtension.id,
+        extensionName: activeExtension.name,
+      });
+      return;
+    }
+
+    navigation.navigate('Extensions' as any);
+  };
+
   const renderSourceTabs = () => {
     if (installedExtensions.length === 0) {
       return (
@@ -447,7 +461,7 @@ export const DiscoverScreen: React.FC = () => {
         <Text style={[styles.headerTitle, { color: theme.text }]}>{t('discover.title')}</Text>
         <TouchableOpacity
           style={styles.globeButton}
-          onPress={() => navigation.navigate('Extensions' as any)}
+          onPress={openGlobalSourceAction}
         >
           <Ionicons name="globe-outline" size={24} color={theme.primary} />
         </TouchableOpacity>
