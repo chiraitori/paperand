@@ -705,6 +705,7 @@ export const ReaderScreen: React.FC = () => {
   const [showControls, setShowControls] = useState(false);
   const [readingMode, setReadingMode] = useState<'vertical' | 'horizontal'>('vertical');
   const [pages, setPages] = useState<PreloadedPage[]>([]);
+  const [chapterLoadError, setChapterLoadError] = useState<string | null>(null);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [isBookmarked, setIsBookmarked] = useState(false);
 
@@ -875,6 +876,7 @@ export const ReaderScreen: React.FC = () => {
   const loadData = async () => {
     try {
       setLoading(true);
+      setChapterLoadError(null);
 
       console.log('[Reader] loadData called with:', { mangaId, chapterId, sourceId });
 
@@ -1078,6 +1080,8 @@ export const ReaderScreen: React.FC = () => {
       }
     } catch (error) {
       console.error('Failed to load reader data:', error);
+      const errorMessage = error instanceof Error ? error.message : 'No pages found';
+      setChapterLoadError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -1280,7 +1284,7 @@ export const ReaderScreen: React.FC = () => {
         </TouchableOpacity>
         <View style={styles.errorContainer}>
           <Ionicons name="alert-circle-outline" size={48} color="#666" />
-          <Text style={styles.errorText}>No pages found</Text>
+          <Text style={styles.errorText}>{chapterLoadError || 'No pages found'}</Text>
         </View>
       </View>
     );

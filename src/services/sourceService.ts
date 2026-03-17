@@ -426,6 +426,7 @@ export const getChapterPages = async (
 ): Promise<string[]> => {
   const extensions = await getInstalledExtensions();
   const ext = extensions.find(e => e.id === extensionId);
+  let lastError: unknown = null;
 
   if (!ext) return [];
 
@@ -442,6 +443,7 @@ export const getChapterPages = async (
 
         if (result?.pages) return result.pages;
       } catch (error) {
+        lastError = error;
         console.error(`[SourceService] Error getting chapter pages via WebView:`, error);
       }
     }
@@ -466,6 +468,7 @@ export const getChapterPages = async (
 
         if (result?.pages) return result.pages;
       } catch (error) {
+        lastError = error;
         console.error(`[SourceService] Error getting chapter pages via WebView:`, error);
       }
     }
@@ -481,11 +484,17 @@ export const getChapterPages = async (
     );
 
     if (result?.pages) return result.pages;
-    return [];
+    lastError = new Error('No pages found for chapter');
   } catch (error) {
+    lastError = error;
     console.error(`[SourceService] Error getting chapter pages via headless runtime:`, error);
-    return [];
   }
+
+  const message = lastError instanceof Error ? lastError.message : String(lastError ?? 'No pages found for chapter');
+  if (message.includes('CLOUDFLARE BYPASS ERROR')) {
+    throw new Error('Cloudflare protection blocked chapter pages. Open source home and run Cloudflare bypass, then retry.');
+  }
+  throw new Error(message || 'No pages found for chapter');
 };
 
 /**
