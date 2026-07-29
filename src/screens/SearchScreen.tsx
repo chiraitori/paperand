@@ -19,6 +19,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useLibrary } from '../context/LibraryContext';
 import { EmptyState, LoadingIndicator, MangaPreviewModal } from '../components';
 import { getInstalledExtensions, searchManga, InstalledExtension, SourceManga, SearchResult } from '../services/sourceService';
+import { getInstalledExtensionIconUrl } from '../services/extensionStorageService';
 import { RootStackParamList, Manga } from '../types';
 import { getGeneralSettings, GeneralSettings, defaultSettings } from '../services/settingsService';
 import { t } from '../services/i18nService';
@@ -327,10 +328,7 @@ export const SearchScreen: React.FC = () => {
   };
 
   const getExtensionIconUrl = (ext: InstalledExtension): string | null => {
-    if (ext.icon && ext.repoBaseUrl) {
-      return `${ext.repoBaseUrl}/${ext.id}/includes/${ext.icon}`;
-    }
-    return null;
+    return getInstalledExtensionIconUrl(ext);
   };
 
   const renderSourceIcons = () => (

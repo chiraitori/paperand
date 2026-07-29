@@ -166,9 +166,10 @@ export type RootStackParamList = {
   Developer: undefined;
   DownloadManager: undefined;
   Credits: undefined;
-  Category: { sourceId: string; sectionId: string; title: string; initialItems?: any[]; tagId?: string };
+  Category: { sourceId: string; sectionId: string; title: string; initialItems?: any[]; initialMetadata?: any; initialHasMore?: boolean; tagId?: string; searchQuery?: any };
   SearchResults: { sourceId: string; sourceName: string; query: string; initialItems?: any[] };
   GenreList: { sourceId: string; tags: { id: string; label: string }[] };
+  WebView: { url: string; title?: string; headers?: Record<string, string>; method?: string; cookieSync?: boolean };
 };
 
 export type BottomTabParamList = {

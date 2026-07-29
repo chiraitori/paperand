@@ -317,6 +317,23 @@ interface PreloadedPage extends Page {
   loading?: boolean; // Currently loading
 }
 
+const getImageRequestHeaders = (uri: string): Record<string, string> | undefined => {
+  try {
+    const hostname = new URL(uri).hostname.toLowerCase();
+
+    if (hostname === 'db.yurigarden.com' || hostname === 'cdn.yurigarden.moe') {
+      return {
+        referer: 'https://yurigarden.moe/',
+        origin: 'https://yurigarden.moe',
+      };
+    }
+  } catch {
+    return undefined;
+  }
+
+  return undefined;
+};
+
 // Preload a single page - decrypt DRM or fetch normal URL
 const preloadSinglePage = async (page: Page): Promise<PreloadedPage> => {
   const drmInfo = parseDrmUrl(page.imageUrl);
@@ -334,6 +351,12 @@ const preloadSinglePage = async (page: Page): Promise<PreloadedPage> => {
     }
     return { ...page, resolvedUrl: page.imageUrl, preloaded: false };
   } else {
+    const requestHeaders = getImageRequestHeaders(page.imageUrl);
+
+    if (requestHeaders) {
+      return { ...page, resolvedUrl: page.imageUrl, preloaded: true };
+    }
+
     // Normal URL - just prefetch
     try {
       await Image.prefetch(page.imageUrl);
@@ -416,20 +439,30 @@ const PreloadedImage: React.FC<{
   const { width: screenWidth } = useWindowDimensions();
   const [imageHeight, setImageHeight] = useState(screenWidth * 1.4);
   const [error, setError] = useState(false);
+  const requestHeaders = getImageRequestHeaders(page.resolvedUrl);
+  const imageSource = requestHeaders
+    ? { uri: page.resolvedUrl, headers: requestHeaders }
+    : { uri: page.resolvedUrl };
 
   useEffect(() => {
+    setError(false);
+
     // Only get size if page is loaded
     if (!page.loading && page.preloaded) {
-      Image.getSize(
-        page.resolvedUrl,
-        (w, h) => {
-          const ratio = screenWidth / w;
-          setImageHeight(h * ratio);
-        },
-        () => setImageHeight(screenWidth * 1.4)
-      );
+      const handleSuccess = (w: number, h: number) => {
+        const ratio = screenWidth / w;
+        setImageHeight(h * ratio);
+      };
+      const handleFailure = () => setImageHeight(screenWidth * 1.4);
+      const getSizeWithHeaders = (Image as any).getSizeWithHeaders;
+
+      if (requestHeaders && typeof getSizeWithHeaders === 'function') {
+        getSizeWithHeaders(page.resolvedUrl, requestHeaders, handleSuccess, handleFailure);
+      } else {
+        Image.getSize(page.resolvedUrl, handleSuccess, handleFailure);
+      }
     }
-  }, [page.resolvedUrl, page.loading, page.preloaded, screenWidth]);
+  }, [page.resolvedUrl, page.loading, page.preloaded, requestHeaders, screenWidth]);
 
   // Show skeleton while page is loading
   if (page.loading) {
@@ -465,10 +498,13 @@ const PreloadedImage: React.FC<{
   return (
     <TouchableOpacity activeOpacity={1} onPress={onPress}>
       <Image
-        source={{ uri: page.resolvedUrl }}
+        source={imageSource}
         style={{ width: screenWidth, height: imageHeight }}
         resizeMode="contain"
-        onError={() => setError(true)}
+        onError={() => {
+          console.warn('[Reader] Failed to render page image:', page.pageNumber, page.resolvedUrl);
+          setError(true);
+        }}
       />
     </TouchableOpacity>
   );
@@ -1140,12 +1176,20 @@ export const ReaderScreen: React.FC = () => {
   const getAdjacentChapters = useCallback(() => {
     if (!manga || !chapter) return { previous: null, next: null };
 
-    const currentIndex = manga.chapters.findIndex(ch => ch.id === chapter.id);
-    // Chapters are sorted descending (newest first)
-    // Previous (older) = higher index
-    // Next (newer) = lower index
-    const previous = currentIndex < manga.chapters.length - 1 ? manga.chapters[currentIndex + 1] : null;
-    const next = currentIndex > 0 ? manga.chapters[currentIndex - 1] : null;
+    const sortedChapters = [...manga.chapters].sort((a, b) => {
+      const numberDiff = (a.number || 0) - (b.number || 0);
+      if (numberDiff !== 0) return numberDiff;
+
+      const aDate = new Date(a.releaseDate || 0).getTime();
+      const bDate = new Date(b.releaseDate || 0).getTime();
+      return aDate - bDate;
+    });
+
+    const currentIndex = sortedChapters.findIndex(ch => ch.id === chapter.id);
+    if (currentIndex === -1) return { previous: null, next: null };
+
+    const previous = currentIndex > 0 ? sortedChapters[currentIndex - 1] : null;
+    const next = currentIndex < sortedChapters.length - 1 ? sortedChapters[currentIndex + 1] : null;
 
     return { previous, next };
   }, [manga, chapter]);

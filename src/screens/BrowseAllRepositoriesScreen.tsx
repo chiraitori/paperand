@@ -21,8 +21,11 @@ import {
   ExtensionRepository,
   DEFAULT_REPOSITORIES,
   fetchRepositoryVersioning,
+  getExtensionIconUrl,
   getTagColor,
 } from '../services/extensionService';
+import { downloadExtensionBundle } from '../services/extensionStorageService';
+import { clearExtensionCache } from '../services/sourceService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { t } from '../services/i18nService';
 
@@ -131,15 +134,8 @@ export const BrowseAllRepositoriesScreen: React.FC = () => {
     setLoadingIds((prev) => new Set(prev).add(ext.id));
 
     try {
-      // Download the extension's source.js
-      const sourceUrl = `${repoBaseUrl}/${ext.id}/source.js`;
-      console.log(`Downloading extension source from: ${sourceUrl}`);
-
-      const sourceResponse = await fetch(sourceUrl);
-      if (!sourceResponse.ok) {
-        throw new Error(`Failed to download source.js: ${sourceResponse.status}`);
-      }
-      const sourceJs = await sourceResponse.text();
+      const sourceJs = await downloadExtensionBundle({ ...ext, repoBaseUrl });
+      if (!sourceJs) throw new Error(`Failed to download ${ext.bundleFilename}`);
 
       // Create full extension data with repo info and source code
       const installedExt: InstalledExtension = {
@@ -171,11 +167,24 @@ export const BrowseAllRepositoriesScreen: React.FC = () => {
     });
   };
 
-  const handleReload = async (ext: ExtensionSource) => {
+  const handleReload = async (ext: ExtensionSource, repoId: string, repoBaseUrl: string) => {
     setLoadingIds((prev) => new Set(prev).add(ext.id));
+    let reloaded = false;
 
-    // Simulate reload delay
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    try {
+      const sourceJs = await downloadExtensionBundle({ ...ext, repoBaseUrl });
+      if (!sourceJs) throw new Error(`Failed to download ${ext.bundleFilename}`);
+      const updated = installedExtensions.map(item =>
+        item.id === ext.id ? { ...item, ...ext, repoId, repoBaseUrl, sourceJs } : item
+      );
+      setInstalledExtensions(updated);
+      await AsyncStorage.setItem(INSTALLED_EXTENSIONS_KEY, JSON.stringify(updated));
+      await clearExtensionCache(ext.id);
+      reloaded = true;
+    } catch (error) {
+      console.error('Error reloading extension:', error);
+      showAppDialog(t('common.error'), String(error));
+    }
 
     setLoadingIds((prev) => {
       const next = new Set(prev);
@@ -183,7 +192,9 @@ export const BrowseAllRepositoriesScreen: React.FC = () => {
       return next;
     });
 
-    showAppDialog(t('repositories.reloaded'), t('repositories.reloadedMessage', { name: ext.name }));
+    if (reloaded) {
+      showAppDialog(t('repositories.reloaded'), t('repositories.reloadedMessage', { name: ext.name }));
+    }
   };
 
   const handleUninstall = async (ext: ExtensionSource) => {
@@ -226,7 +237,7 @@ export const BrowseAllRepositoriesScreen: React.FC = () => {
         <View style={[styles.iconContainer, { backgroundColor: '#2A2A2D' }]}>
           {ext.icon && repoBaseUrl ? (
             <Image
-              source={{ uri: `${repoBaseUrl}/${ext.id}/includes/${ext.icon}` }}
+              source={{ uri: getExtensionIconUrl(repoBaseUrl, ext) }}
               style={styles.iconImage}
               defaultSource={require('../../assets/icon.png')}
             />
@@ -271,7 +282,7 @@ export const BrowseAllRepositoriesScreen: React.FC = () => {
               borderColor: theme.primary,
             },
           ]}
-          onPress={() => (isInstalled ? handleReload(ext) : handleInstall(ext, repoId, repoBaseUrl))}
+          onPress={() => (isInstalled ? handleReload(ext, repoId, repoBaseUrl) : handleInstall(ext, repoId, repoBaseUrl))}
           onLongPress={() => isInstalled && handleUninstall(ext)}
           disabled={isLoading}
         >

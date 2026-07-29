@@ -45,6 +45,15 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+modules/*/android/.gradle/
+modules/*/android/build/
 credentials/
 credentials.json
 DemoProjects/
+
+# Local editor and browser automation state
+.idea/
+.kilocode/
+.playwright-mcp/
+.temp/
+.vscode/mcp.json

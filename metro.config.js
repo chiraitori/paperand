@@ -6,5 +6,6 @@ const config = getDefaultConfig(__dirname);
 
 // Add ts extension support
 config.resolver.sourceExts = ['js', 'jsx', 'json', 'ts', 'tsx'];
+config.resolver.assetExts.push('pbjs');
 
 module.exports = config;

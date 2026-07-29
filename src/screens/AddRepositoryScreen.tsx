@@ -110,17 +110,21 @@ export const AddRepositoryScreen: React.FC = () => {
         return;
       }
 
-      // Try to get name from HTML <title> tag first
+      // Paperback 0.9 repositories publish their display name in versioning.json.
       let finalName = repoName.trim();
       if (!finalName) {
-        const htmlTitle = await fetchRepoNameFromHtml(cleanUrl);
-        if (htmlTitle) {
-          finalName = htmlTitle;
+        if (versioning.repository?.name) {
+          finalName = versioning.repository.name;
         } else {
-          // Fallback: generate name from URL
-          const urlParts = cleanUrl.split('/');
-          finalName = urlParts[urlParts.length - 1] || urlParts[urlParts.length - 2] || 'Unknown Repository';
-          finalName = finalName.charAt(0).toUpperCase() + finalName.slice(1);
+          const htmlTitle = await fetchRepoNameFromHtml(cleanUrl);
+          if (htmlTitle) {
+            finalName = htmlTitle;
+          } else {
+            // Fallback: generate name from URL
+            const urlParts = cleanUrl.split('/');
+            finalName = urlParts[urlParts.length - 1] || urlParts[urlParts.length - 2] || 'Unknown Repository';
+            finalName = finalName.charAt(0).toUpperCase() + finalName.slice(1);
+          }
         }
       }
 

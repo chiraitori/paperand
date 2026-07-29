@@ -28,6 +28,10 @@ export interface SourceManga {
   image: string;
   subtitle?: string;
   extensionId: string;
+  itemType?: string;
+  chapterId?: string;
+  searchQuery?: any;
+  metadata?: any;
 }
 
 export interface HomeSection {
@@ -35,7 +39,8 @@ export interface HomeSection {
   title: string;
   items: SourceManga[];
   containsMoreItems: boolean;
-  type?: 'singleRowNormal' | 'singleRowLarge' | 'doubleRow' | 'featured';
+  type?: 'singleRowNormal' | 'singleRowLarge' | 'doubleRow' | 'featured' | 'prominent' | 'chapterUpdates' | 'genres';
+  metadata?: any;
 }
 
 export interface Chapter {
@@ -56,6 +61,7 @@ export interface MangaDetails {
   desc?: string;
   status?: string;
   tags?: { id: string; label: string }[];
+  shareUrl?: string;
 }
 
 export interface Tag {
@@ -74,8 +80,14 @@ export interface ExtensionBridge {
     method: string,
     args: any[]
   ) => Promise<any>;
-  loadExtension: (extensionId: string, sourceJs: string) => Promise<boolean>;
+  loadExtension: (
+    extensionId: string,
+    sourceJs: string,
+    apiVersion?: InstalledExtension['apiVersion'],
+    initialState?: Record<string, any>
+  ) => Promise<boolean>;
   isLoaded: (extensionId: string) => boolean;
+  invalidateExtension: (extensionId: string) => Promise<void>;
 }
 
 export const setExtensionBridge = (bridge: ExtensionBridge) => {
@@ -149,7 +161,42 @@ const ensureExtensionLoaded = async (ext: InstalledExtension): Promise<boolean> 
     }
   }
 
-  return await extensionBridge!.loadExtension(ext.id, sourceJs);
+  let initialState: Record<string, any> = {};
+  if (ext.apiVersion === '0.9') {
+    try {
+      const savedState = await AsyncStorage.getItem(`@extension_state_${ext.id}_paperback09`);
+      initialState = savedState ? JSON.parse(savedState) : {};
+    } catch (error) {
+      console.warn(`Failed to restore Paperback 0.9 state for ${ext.id}:`, error);
+    }
+  }
+
+  return await extensionBridge!.loadExtension(ext.id, sourceJs, ext.apiVersion, initialState);
+};
+
+const normalizeSourceManga = (item: any, extensionId: string): SourceManga => {
+  const fallbackId = item?.type === 'genresCarouselItem'
+    ? `genre-${item?.name || item?.title || ''}`
+    : '';
+  const mangaId = String(item?.mangaId ?? item?.id ?? fallbackId);
+  return {
+    id: mangaId,
+    mangaId,
+    title: String(item?.title ?? item?.name ?? ''),
+    image: String(item?.image ?? item?.imageUrl ?? item?.thumbnailUrl ?? ''),
+    subtitle: item?.subtitle ? String(item.subtitle) : '',
+    extensionId,
+    itemType: item?.type,
+    chapterId: item?.chapterId,
+    searchQuery: item?.searchQuery,
+    metadata: item?.metadata,
+  };
+};
+
+const normalizePagedItems = (result: any): any[] => {
+  if (Array.isArray(result?.results)) return result.results;
+  if (Array.isArray(result?.items)) return result.items;
+  return [];
 };
 
 /**
@@ -204,16 +251,10 @@ export const getHomeSections = async (extensionId: string): Promise<HomeSection[
     return result.map((section: any) => ({
       id: section.id, // Keep original section ID for getViewMoreItems
       title: section.title,
-      items: (section.items || []).map((item: any) => ({
-        id: item.mangaId || item.id,
-        mangaId: item.mangaId || item.id,
-        title: item.title || '',
-        image: item.image || '',
-        subtitle: item.subtitle || '',
-        extensionId,
-      })),
-      containsMoreItems: section.containsMoreItems || false,
+      items: (section.items || []).map((item: any) => normalizeSourceManga(item, extensionId)),
+      containsMoreItems: section.containsMoreItems ?? section.metadata != null,
       type: section.type,
+      metadata: section.metadata,
     }));
   } catch (error) {
     console.error(`Error getting home sections for ${extensionId}:`, error);
@@ -255,16 +296,12 @@ export const getViewMoreItems = async (
       [sectionId, metadata]
     );
 
-    if (!result || !result.results) return { results: [], metadata: null };
+    const items = normalizePagedItems(result);
+    if (!result || items.length === 0) {
+      return { results: [], metadata: result?.metadata ?? null };
+    }
 
-    const mangaResults = result.results.map((item: any) => ({
-      id: item.mangaId || item.id,
-      mangaId: item.mangaId || item.id,
-      title: item.title || '',
-      image: item.image || '',
-      subtitle: item.subtitle || '',
-      extensionId,
-    }));
+    const mangaResults = items.map((item: any) => normalizeSourceManga(item, extensionId));
 
     return {
       results: mangaResults,
@@ -310,16 +347,12 @@ export const searchManga = async (
       [{ title: query, includedTags: [] }, metadata]
     );
 
-    if (!result || !result.results) return { results: [], metadata: null };
+    const items = normalizePagedItems(result);
+    if (!result || items.length === 0) {
+      return { results: [], metadata: result?.metadata ?? null };
+    }
 
-    const mangaResults = result.results.map((item: any) => ({
-      id: item.mangaId || item.id,
-      mangaId: item.mangaId || item.id,
-      title: item.title || '',
-      image: item.image || '',
-      subtitle: item.subtitle || '',
-      extensionId,
-    }));
+    const mangaResults = items.map((item: any) => normalizeSourceManga(item, extensionId));
 
     return {
       results: mangaResults,
@@ -358,18 +391,129 @@ export const getMangaDetails = async (extensionId: string, mangaId: string): Pro
 
     if (!result) return null;
 
+    const mangaInfo = result.mangaInfo || result;
+    const primaryTitle = mangaInfo.primaryTitle || mangaInfo.title || '';
+    const secondaryTitles = Array.isArray(mangaInfo.secondaryTitles) ? mangaInfo.secondaryTitles : [];
+    const tagGroups = Array.isArray(mangaInfo.tagGroups) ? mangaInfo.tagGroups : [];
+    const normalizedTags = tagGroups.flatMap((group: any) =>
+      (Array.isArray(group?.tags) ? group.tags : []).map((tag: any) => ({
+        id: String(tag?.id || ''),
+        label: String(tag?.label || tag?.title || ''),
+      }))
+    );
+
     return {
       id: mangaId,
-      titles: result.titles || [result.title],
-      image: result.image || '',
-      author: result.author || '',
-      artist: result.artist || '',
-      desc: result.desc || '',
-      status: result.status || '',
-      tags: result.tags || [],
+      titles: result.titles || [primaryTitle, ...secondaryTitles].filter(Boolean),
+      image: mangaInfo.image || mangaInfo.thumbnailUrl || '',
+      author: mangaInfo.author || '',
+      artist: mangaInfo.artist || '',
+      desc: mangaInfo.desc || mangaInfo.synopsis || '',
+      status: mangaInfo.status || '',
+      tags: result.tags || normalizedTags,
+      shareUrl: mangaInfo.shareUrl,
     };
   } catch (error) {
     console.error(`Error getting manga details:`, error);
+    return null;
+  }
+};
+
+/**
+ * Get manga share URL
+ */
+export const getMangaShareUrl = async (extensionId: string, mangaId: string): Promise<string | null> => {
+  const extensions = await getInstalledExtensions();
+  const ext = extensions.find(e => e.id === extensionId);
+
+  if (!ext) return null;
+
+  // Wait for bridge if not available
+  if (!extensionBridge) {
+    await waitForBridge(5000);
+  }
+  if (!extensionBridge) return null;
+
+  const loaded = await ensureExtensionLoaded(ext);
+  if (!loaded) return null;
+
+  try {
+    const result = await extensionBridge.runExtensionMethod(
+      extensionId,
+      'getMangaShareUrl',
+      [mangaId]
+    );
+
+    return result || null;
+  } catch (error) {
+    // Paperback 0.9 stores the share URL inside MangaInfo instead of exposing
+    // getMangaShareUrl as a separate method.
+    const details = await getMangaDetails(extensionId, mangaId);
+    return details?.shareUrl || null;
+  }
+};
+
+/**
+ * Execute an extension-provided Paperback SearchQuery. Discover genre items in
+ * API 0.9 carry opaque metadata which must be passed back to that extension.
+ */
+export const searchByQuery = async (
+  extensionId: string,
+  query: any,
+  metadata?: any
+): Promise<SearchResult> => {
+  const extensions = await getInstalledExtensions();
+  const ext = extensions.find(e => e.id === extensionId);
+  if (!ext) return { results: [], metadata: null };
+
+  if (!extensionBridge) await waitForBridge(5000);
+  if (!extensionBridge) return { results: [], metadata: null };
+  if (!await ensureExtensionLoaded(ext)) return { results: [], metadata: null };
+
+  try {
+    const result = await extensionBridge.runExtensionMethod(
+      extensionId,
+      'getSearchResults',
+      [query || { title: '' }, metadata]
+    );
+    return {
+      results: normalizePagedItems(result).map(item => normalizeSourceManga(item, extensionId)),
+      metadata: result?.metadata ?? null,
+    };
+  } catch (error) {
+    console.error(`searchByQuery error for ${extensionId}:`, error);
+    return { results: [], metadata: null };
+  }
+};
+
+/**
+ * Get Cloudflare Bypass Request
+ */
+export const getCloudflareBypassRequest = async (extensionId: string): Promise<any | null> => {
+  const extensions = await getInstalledExtensions();
+  const ext = extensions.find(e => e.id === extensionId);
+
+  if (!ext) return null;
+
+  // Wait for bridge if not available
+  if (!extensionBridge) {
+    await waitForBridge(5000);
+  }
+  if (!extensionBridge) return null;
+
+  const loaded = await ensureExtensionLoaded(ext);
+  if (!loaded) return null;
+
+  try {
+    const result = await extensionBridge.runExtensionMethod(
+      extensionId,
+      'getCloudflareBypassRequestAsync',
+      []
+    );
+
+    return result || null;
+  } catch (error) {
+    // Expected to fail if extension doesn't support it
     return null;
   }
 };
@@ -402,11 +546,11 @@ export const getChapters = async (extensionId: string, mangaId: string): Promise
     if (!result || !Array.isArray(result)) return [];
 
     return result.map((ch: any) => ({
-      id: String(ch.id),
+      id: String(ch.chapterId ?? ch.id),
       chapNum: ch.chapNum || 0,
-      name: ch.name || '',
+      name: ch.name || ch.title || '',
       langCode: ch.langCode || '',
-      time: ch.time || '',
+      time: ch.time || ch.publishDate || ch.creationDate || '',
       group: ch.group || '',
     }));
   } catch (error) {
@@ -643,8 +787,13 @@ export const getTags = async (extensionId: string): Promise<Tag[]> => {
     // Flatten tag sections into a single list
     const allTags: Tag[] = [];
     for (const section of result) {
-      if (section.tags && Array.isArray(section.tags)) {
-        for (const tag of section.tags) {
+      const sectionTags = Array.isArray(section.tags)
+        ? section.tags
+        : Array.isArray(section.options)
+          ? section.options
+          : [];
+      if (sectionTags.length > 0) {
+        for (const tag of sectionTags) {
           allTags.push({
             id: tag.id || '',
             label: tag.label || tag.title || '',
@@ -687,27 +836,31 @@ export const searchByTag = async (
   if (!loaded) return { results: [], metadata: null };
 
   try {
-    const result = await extensionBridge.runExtensionMethod(
-      extensionId,
-      'getSearchResults',
-      [{ title: '', includedTags: [{ id: tagId, label: '' }] }, metadata]
-    );
+    let currentMetadata = metadata;
 
-    if (!result || !result.results) return { results: [], metadata: null };
+    while (true) {
+      const result = await extensionBridge.runExtensionMethod(
+        extensionId,
+        'getSearchResults',
+        [{ title: '', includedTags: [{ id: tagId, label: '' }] }, currentMetadata]
+      );
 
-    const mangaResults = result.results.map((item: any) => ({
-      id: item.mangaId || item.id,
-      mangaId: item.mangaId || item.id,
-      title: item.title || '',
-      image: item.image || '',
-      subtitle: item.subtitle || '',
-      extensionId,
-    }));
+      const items = normalizePagedItems(result);
+      if (!result || items.length === 0) {
+        return { results: [], metadata: result?.metadata ?? null };
+      }
 
-    return {
-      results: mangaResults,
-      metadata: result.metadata || null,
-    };
+      const mangaResults = items.map((item: any) => normalizeSourceManga(item, extensionId));
+
+      if (mangaResults.length > 0 || !result.metadata) {
+        return {
+          results: mangaResults,
+          metadata: result.metadata || null,
+        };
+      }
+
+      currentMetadata = result.metadata;
+    }
   } catch (error) {
     console.error(`searchByTag error for ${extensionId}/${tagId}:`, error);
     return { results: [], metadata: null };
@@ -717,8 +870,11 @@ export const searchByTag = async (
 /**
  * Clear extension cache
  */
-export const clearExtensionCache = () => {
-  // Will be implemented by the WebView bridge
+export const clearExtensionCache = async (extensionId?: string) => {
+  if (extensionId && extensionBridge) {
+    await extensionBridge.invalidateExtension(extensionId);
+  }
+  headlessRuntime.clearCache(extensionId);
 };
 
 // Extension Settings Types

@@ -3,7 +3,7 @@ import { NavigationContainer, createNavigationContainerRef } from '@react-naviga
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useTheme } from '../context/ThemeContext';
 import { BottomTabNavigator } from './BottomTabNavigator';
-import { MangaDetailScreen, ReaderScreen, GeneralSettingsScreen, LanguageSettingsScreen, ThemeSettingsScreen, BackupsScreen, ExtensionsScreen, ExtensionDetailScreen, ExtensionSettingsScreen, AddRepositoryScreen, BrowseRepositoryScreen, BrowseAllRepositoriesScreen, DeveloperScreen, DownloadManagerScreen, CreditsScreen, CategoryScreen, SearchResultsScreen, GenreListScreen } from '../screens';
+import { MangaDetailScreen, ReaderScreen, GeneralSettingsScreen, LanguageSettingsScreen, ThemeSettingsScreen, BackupsScreen, ExtensionsScreen, ExtensionDetailScreen, ExtensionSettingsScreen, AddRepositoryScreen, BrowseRepositoryScreen, BrowseAllRepositoriesScreen, DeveloperScreen, DownloadManagerScreen, CreditsScreen, CategoryScreen, SearchResultsScreen, GenreListScreen, WebViewScreen } from '../screens';
 import { RootStackParamList } from '../types';
 
 export const navigationRef = createNavigationContainerRef<RootStackParamList>();
@@ -46,6 +46,7 @@ export const AppNavigator: React.FC = () => {
         <Stack.Screen name="Category" component={CategoryScreen} />
         <Stack.Screen name="SearchResults" component={SearchResultsScreen} />
         <Stack.Screen name="GenreList" component={GenreListScreen} />
+        <Stack.Screen name="WebView" component={WebViewScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

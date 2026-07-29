@@ -5,7 +5,7 @@
  * for iOS and Android using native Spotify SDKs.
  */
 
-import { requireNativeModule, EventEmitter } from 'expo-modules-core';
+import { requireNativeModule } from 'expo-modules-core';
 import type { NativeModule } from 'expo-modules-core';
 
 // Types for Spotify Remote
@@ -68,8 +68,15 @@ export interface SpotifyContentItem {
     isContainer: boolean;
 }
 
-// Define the native module interface
-interface SpotifyRemoteNativeModule extends NativeModule {
+type SpotifyRemoteModuleEvents = {
+    onPlayerStateChanged: (state: SpotifyPlayerState) => void;
+    onConnectionStatusChanged: (status: ConnectionStatus) => void;
+    onError: (error: { error: string }) => void;
+};
+
+// Expo SDK 54 native modules are event emitters themselves. Declaring the
+// event map here keeps addListener type-safe on both Android and iOS.
+declare class SpotifyRemoteNativeModule extends NativeModule<SpotifyRemoteModuleEvents> {
     configure(clientId: string, redirectUri: string): void;
     connect(): Promise<{ connected: boolean }>;
     connectSilent(): Promise<{ connected: boolean }>;
@@ -95,9 +102,6 @@ interface SpotifyRemoteNativeModule extends NativeModule {
 
 // Get the native module
 const SpotifyRemoteNative = requireNativeModule<SpotifyRemoteNativeModule>('SpotifyRemote');
-
-// Create event emitter for the module
-const emitter = new EventEmitter(SpotifyRemoteNative as unknown as NativeModule);
 
 /**
  * SpotifyRemote - Cross-platform Spotify remote control
@@ -278,21 +282,21 @@ export const SpotifyRemote = {
      * Must call subscribeToPlayerState() first
      */
     addPlayerStateListener(callback: (state: SpotifyPlayerState) => void): EventSubscription {
-        return emitter.addListener('onPlayerStateChanged', callback);
+        return SpotifyRemoteNative.addListener('onPlayerStateChanged', callback);
     },
 
     /**
      * Add a listener for connection status changes
      */
     addConnectionStatusListener(callback: (status: ConnectionStatus) => void): EventSubscription {
-        return emitter.addListener('onConnectionStatusChanged', callback);
+        return SpotifyRemoteNative.addListener('onConnectionStatusChanged', callback);
     },
 
     /**
      * Add a listener for errors
      */
     addErrorListener(callback: (error: { error: string }) => void): EventSubscription {
-        return emitter.addListener('onError', callback);
+        return SpotifyRemoteNative.addListener('onError', callback);
     },
 
     // Content API
@@ -330,7 +334,7 @@ export const SpotifyRemote = {
 
 // Default export
 // Get the auth native module (iOS and Android)
-interface SpotifyAuthNativeModule extends NativeModule {
+declare class SpotifyAuthNativeModule extends NativeModule {
     configure(clientId: string, redirectUri: string): void;
     authorize(scopes: string[]): Promise<{ accessToken: string; expiresIn: number }>;
     isAuthorized(): boolean;

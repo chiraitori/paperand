@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { spotifyRemoteService, SpotifyPlayerState } from '../services/spotifyRemoteService';
-import { SpotifyRemote, SpotifyContentItem } from '../../modules/spotify-remote/src';
+import { SpotifyRemote, SpotifyContentItem } from 'spotify-remote';
 
 interface SpotifyMiniPlayerProps {
     visible?: boolean;
@@ -340,6 +340,8 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
                     style={[styles.collapsedContainer, style]}
                     onPress={handleConnect}
                     disabled={isConnecting}
+                    accessibilityRole="button"
+                    accessibilityLabel={isConnecting ? "Connecting to Spotify" : "Connect Spotify"}
                 >
                     <View style={styles.spotifyIconContainer}>
                         <Ionicons
@@ -361,6 +363,8 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
                 <TouchableOpacity
                     style={[styles.miniContainer, style]}
                     onPress={openContentPicker}
+                    accessibilityRole="button"
+                    accessibilityLabel="Open Spotify music picker"
                 >
                     <Ionicons name="musical-notes" size={20} color="#1DB954" />
                     <Text style={styles.noTrackText}>Tap to pick music</Text>
@@ -384,6 +388,8 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
                 style={styles.contentRow}
                 onPress={() => setExpanded(!expanded)}
                 activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="Toggle Spotify player details"
             >
                 {/* Album Art */}
                 {trackAlbumArt ? (
@@ -413,6 +419,8 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
                         <TouchableOpacity
                             style={styles.controlButton}
                             onPress={handlePrevious}
+                            accessibilityRole="button"
+                            accessibilityLabel="Previous Spotify track"
                         >
                             <Ionicons name="play-skip-back" size={18} color="#fff" />
                         </TouchableOpacity>
@@ -421,6 +429,8 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
                     <TouchableOpacity
                         style={styles.playButton}
                         onPress={handlePlayPause}
+                        accessibilityRole="button"
+                        accessibilityLabel={isPaused ? "Resume Spotify" : "Pause Spotify"}
                     >
                         <Ionicons
                             name={isPaused ? "play" : "pause"}
@@ -433,6 +443,8 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
                         <TouchableOpacity
                             style={styles.controlButton}
                             onPress={handleNext}
+                            accessibilityRole="button"
+                            accessibilityLabel="Next Spotify track"
                         >
                             <Ionicons name="play-skip-forward" size={18} color="#fff" />
                         </TouchableOpacity>
@@ -445,6 +457,8 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
                 <TouchableOpacity
                     style={styles.openSpotifyButton}
                     onPress={openContentPicker}
+                    accessibilityRole="button"
+                    accessibilityLabel="Open Spotify music picker"
                 >
                     <Ionicons name="musical-notes" size={14} color="#1DB954" />
                     <Text style={styles.openSpotifyText}>Pick Music</Text>

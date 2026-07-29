@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { RootStackParamList } from '../types';
 import { ExtensionSource, ExtensionRepository, DEFAULT_REPOSITORIES, getTagColor } from '../services/extensionService';
+import { getInstalledExtensionIconUrl } from '../services/extensionStorageService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { t } from '../services/i18nService';
 import { AppDialog } from '../components/AppDialog';
@@ -129,9 +130,7 @@ export const ExtensionsScreen: React.FC = () => {
 
   const renderExtensionItem = (ext: InstalledExtension) => {
     // Build icon URL if we have repo info
-    const iconUrl = ext.repoBaseUrl && ext.icon
-      ? `${ext.repoBaseUrl}/${ext.id}/includes/${ext.icon}`
-      : null;
+    const iconUrl = getInstalledExtensionIconUrl(ext);
 
     return (
       <View key={ext.id} style={[styles.extensionRow, { borderBottomColor: theme.border }]}>

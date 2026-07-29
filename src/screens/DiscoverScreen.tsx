@@ -9,14 +9,15 @@ import {
   RefreshControl,
   ImageBackground,
   useWindowDimensions,
-  Modal,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { WebView } from 'react-native-webview';
+import { AppState, AppStateStatus } from 'react-native';
+import { getCookies as getNativeCookies, launchBypassActivity } from 'cloudflare-bypass';
+import { setCookiesForDomain } from '../services/cookieStore';
 import { useTheme } from '../context/ThemeContext';
 import { LoadingIndicator } from '../components';
 import {
@@ -27,6 +28,7 @@ import {
   SourceManga,
   getTags,
   Tag,
+  getCloudflareBypassRequest,
 } from '../services/sourceService';
 import { RootStackParamList } from '../types';
 import { t } from '../services/i18nService';
@@ -70,8 +72,6 @@ export const DiscoverScreen: React.FC = () => {
   const [featuredItems, setFeaturedItems] = useState<SourceManga[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [browserVisible, setBrowserVisible] = useState(false);
-  const [browserUrl, setBrowserUrl] = useState<string>('');
   const activeSourceRef = useRef<string>('');
   const initialLoadDone = useRef(false);
 
@@ -87,7 +87,11 @@ export const DiscoverScreen: React.FC = () => {
   useFocusEffect(
     useCallback(() => {
       loadExtensions();
-    }, [])
+      // Reload data when returning from WebView bypass (if we had no content due to Cloudflare)
+      if (activeSource && sections.length === 0 && !loading) {
+        loadSourceData(activeSource);
+      }
+    }, [activeSource, sections.length, loading])
   );
 
   useEffect(() => {
@@ -185,7 +189,63 @@ export const DiscoverScreen: React.FC = () => {
     setRefreshing(false);
   };
 
+  const handleOpenSourceWebsite = async () => {
+    if (!activeSource) return;
+
+    const activeExtension = installedExtensions.find(ext => ext.id === activeSource);
+    const bypassRequest = await getCloudflareBypassRequest(activeSource);
+    const targetUrl =
+      bypassRequest?.url
+      || activeExtension?.websiteBaseURL
+      || activeExtension?.website
+      || activeExtension?.repoBaseUrl
+      || '';
+
+    if (!targetUrl) {
+      navigation.navigate('Extensions' as any);
+      return;
+    }
+
+    const sourceName = activeExtension?.name || 'Website';
+    const authCaptureJson = Object.entries(bypassRequest?.headers || {})
+      .find(([key]) => key.toLowerCase() === 'x-paperback-auth-capture')?.[1] || '';
+    let leftReactActivity = false;
+    const subscription = AppState.addEventListener('change', async (state: AppStateStatus) => {
+      if (state !== 'active') {
+        leftReactActivity = true;
+        return;
+      }
+      if (!leftReactActivity) return;
+
+      subscription.remove();
+      try {
+        const cookies = await getNativeCookies(targetUrl);
+        if (cookies) {
+          setCookiesForDomain(targetUrl, cookies);
+        }
+      } catch (error) {
+        console.warn('[Discover] Failed to sync website cookies:', error);
+      }
+
+      await loadSourceData(activeSourceRef.current);
+    });
+
+    // Website, login and Cloudflare verification share one globe action.
+    // Cloud icons remain reserved for local/cloud storage and downloads.
+    await launchBypassActivity(targetUrl, sourceName, activeSource, String(authCaptureJson));
+  };
+
   const navigateToManga = (manga: SourceManga) => {
+    if (manga.itemType === 'genresCarouselItem' && manga.searchQuery) {
+      navigation.navigate('Category', {
+        sourceId: manga.extensionId,
+        sectionId: manga.id,
+        title: manga.title,
+        searchQuery: manga.searchQuery,
+      });
+      return;
+    }
+
     navigation.navigate('MangaDetail', {
       mangaId: manga.mangaId || manga.id,
       sourceId: manga.extensionId,
@@ -206,31 +266,6 @@ export const DiscoverScreen: React.FC = () => {
       sourceId: activeSource,
       tags: tags,
     });
-  };
-
-  const openGlobalSourceAction = () => {
-    const activeExtension = installedExtensions.find(ext => ext.id === activeSource);
-
-    if (activeExtension) {
-      const url = activeExtension.websiteBaseURL || activeExtension.website || activeExtension.repoBaseUrl || '';
-      if (url) {
-        setBrowserUrl(url);
-        setBrowserVisible(true);
-        return;
-      }
-    }
-
-    if (installedExtensions.length > 0) {
-      const fallback = installedExtensions[0].websiteBaseURL || installedExtensions[0].website || installedExtensions[0].repoBaseUrl || '';
-      if (fallback) {
-        setBrowserUrl(fallback);
-        setBrowserVisible(true);
-        return;
-      }
-    }
-
-    // If we have no URL to open, fall back to extension manager.
-    navigation.navigate('Extensions' as any);
   };
 
   const renderSourceTabs = () => {
@@ -431,7 +466,24 @@ export const DiscoverScreen: React.FC = () => {
       sectionId: section.id,
       title: section.title,
       initialItems: section.items,
+      initialMetadata: section.metadata,
+      initialHasMore: section.containsMoreItems,
     });
+  };
+
+  const renderDiscoverGenreCard = (manga: SourceManga, sectionId: string, index: number) => {
+    const color = GENRE_COLORS[index % GENRE_COLORS.length];
+    return (
+      <TouchableOpacity
+        key={`${sectionId}-${manga.id}-${index}`}
+        style={[styles.genreCard, { backgroundColor: color, width: GENRE_CARD_WIDTH }]}
+        onPress={() => navigateToManga(manga)}
+        activeOpacity={0.8}
+      >
+        <Text style={styles.genreText} numberOfLines={1}>{manga.title}</Text>
+        <Ionicons name="arrow-forward" size={16} color="rgba(255,255,255,0.8)" />
+      </TouchableOpacity>
+    );
   };
 
   const renderSection = (section: HomeSection) => {
@@ -442,6 +494,19 @@ export const DiscoverScreen: React.FC = () => {
     // Skip featured sections - they're rendered as the banner
     if (section.type === 'featured') {
       return null;
+    }
+
+    if (section.type === 'genres' || section.items.every(item => item.itemType === 'genresCarouselItem')) {
+      return (
+        <View key={section.id} style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>{section.title}</Text>
+          </View>
+          <View style={styles.genresGrid}>
+            {section.items.map((manga, index) => renderDiscoverGenreCard(manga, section.id, index))}
+          </View>
+        </View>
+      );
     }
 
     return (
@@ -474,52 +539,22 @@ export const DiscoverScreen: React.FC = () => {
       <View style={styles.header}>
         <View style={styles.headerSpacer} />
         <Text style={[styles.headerTitle, { color: theme.text }]}>{t('discover.title')}</Text>
-        <TouchableOpacity
-          style={styles.globeButton}
-          onPress={openGlobalSourceAction}
-        >
-          <Ionicons name="globe-outline" size={24} color={theme.primary} />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={styles.headerActionButton}
+            onPress={handleOpenSourceWebsite}
+            accessibilityRole="button"
+            accessibilityLabel="Open source website"
+            accessibilityHint="Open the active extension website to sign in or complete verification"
+            hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+          >
+            <Ionicons name="globe-outline" size={24} color={theme.primary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Source Tabs */}
       {renderSourceTabs()}
-
-      {/* Mini browser for active source website (Paperback-like globe action) */}
-      <Modal
-        visible={browserVisible}
-        animationType="slide"
-        onRequestClose={() => setBrowserVisible(false)}
-      >
-        <View style={[styles.browserContainer, { backgroundColor: theme.background }]}> 
-          <View style={[styles.browserHeader, { borderBottomColor: theme.border, backgroundColor: theme.background }]}>
-            <TouchableOpacity onPress={() => setBrowserVisible(false)} style={styles.browserHeaderButton}>
-              <Ionicons name="close" size={24} color={theme.primary} />
-            </TouchableOpacity>
-            <Text style={[styles.browserTitle, { color: theme.text }]} numberOfLines={1}>
-              {browserUrl}
-            </Text>
-            <View style={styles.browserHeaderButton} />
-          </View>
-
-          {browserUrl ? (
-            <WebView
-              source={{ uri: browserUrl }}
-              style={styles.browserWebView}
-              startInLoadingState={true}
-              renderLoading={() => (
-                <View style={styles.browserLoading}>
-                  <LoadingIndicator message={t('common.loading')} />
-                </View>
-              )}
-            />
-          ) : (
-            <View style={styles.browserLoading}>
-              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>No URL available</Text>
-            </View>
-          )}
-        </View>
-      </Modal>
 
       {/* Content */}
       {loading ? (
@@ -572,48 +607,20 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
   },
   headerSpacer: {
-    width: 40,
+    width: 48,
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: '600',
     textAlign: 'center',
   },
-  globeButton: {
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'flex-end',
-  },
-  browserContainer: {
-    flex: 1,
-  },
-  browserHeader: {
+  headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: 50,
-    paddingHorizontal: 12,
-    paddingBottom: 10,
-    borderBottomWidth: 1,
   },
-  browserHeaderButton: {
-    width: 32,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  browserTitle: {
-    flex: 1,
-    marginHorizontal: 8,
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  browserWebView: {
-    flex: 1,
-  },
-  browserLoading: {
-    flex: 1,
+  headerActionButton: {
+    width: 48,
+    height: 48,
     justifyContent: 'center',
     alignItems: 'center',
   },

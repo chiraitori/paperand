@@ -1,0 +1,15 @@
+{
+  "name": "cloudflare-bypass",
+  "version": "1.0.0",
+  "description": "Generic native Android browser handoff for extension-defined verification and authentication",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "expoModule": {
+    "name": "CloudflareBypass"
+  },
+  "peerDependencies": {
+    "expo": "*",
+    "react": "*",
+    "react-native": "*"
+  }
+}

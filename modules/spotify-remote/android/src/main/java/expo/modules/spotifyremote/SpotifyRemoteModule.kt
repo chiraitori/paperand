@@ -65,6 +65,15 @@ class SpotifyRemoteModule : Module() {
                 }
             }
 
+            if (pendingConnectionPromise != null) {
+                promise.reject(
+                    "CONNECTION_IN_PROGRESS",
+                    "A Spotify connection request is already in progress",
+                    null
+                )
+                return@AsyncFunction
+            }
+
             pendingConnectionPromise = promise
 
             // Check if Spotify is installed before attempting connection
@@ -169,6 +178,13 @@ class SpotifyRemoteModule : Module() {
                 SpotifyAppRemote.disconnect(it)
                 spotifyAppRemote = null
             }
+            isSubscribed = false
+            pendingConnectionPromise?.reject(
+                "CONNECTION_CANCELLED",
+                "Spotify connection was cancelled",
+                null
+            )
+            pendingConnectionPromise = null
 
             sendEvent("onConnectionStatusChanged", mapOf(
                 "connected" to false,
@@ -459,6 +475,13 @@ class SpotifyRemoteModule : Module() {
         OnDestroy {
             isSubscribed = false
             spotifyAppRemote?.let { SpotifyAppRemote.disconnect(it) }
+            spotifyAppRemote = null
+            pendingConnectionPromise?.reject(
+                "MODULE_DESTROYED",
+                "Spotify module was destroyed before connecting",
+                null
+            )
+            pendingConnectionPromise = null
         }
     }
 

@@ -47,9 +47,10 @@ dependencies {
     implementation project(':expo-modules-core')
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:${safeExtGet('kotlinVersion', '1.9.24')}"
 
-    // Spotify Android SDK - Auth 2.1.0 (Maven) + App Remote 0.8.0 (local AAR)
+    // Spotify Android SDK - Auth 2.1.0 (Maven) + App Remote 0.8.0 (local AAR).
+    // App Remote is compileOnly here because Android library modules cannot
+    // embed a local AAR. The Expo config plugin packages it in :app instead.
     implementation 'com.spotify.android:auth:2.1.0'
-    // App Remote SDK - using compileOnly to avoid AAR packaging issues
     compileOnly(name: 'spotify-app-remote-release-0.8.0', ext: 'aar')
 }
 

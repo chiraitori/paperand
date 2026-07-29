@@ -2,8 +2,8 @@
  * Expo Config Plugin for Spotify SDK
  * 
  * Configures the native projects for Spotify SDK integration:
- * - Adds URL scheme for Spotify auth callback
  * - Configures Android manifest for Spotify app queries
+ * - Packages the Spotify App Remote AAR in the Android application
  * - Adds required permissions
  */
 
@@ -35,37 +35,6 @@ const withSpotifyAndroid = (config, { clientId, redirectScheme }) => {
 
         if (!hasSpotifyQuery) {
             manifest.queries.push(spotifyQuery);
-        }
-
-        // Add intent filter for Spotify auth callback
-        const mainApplication = manifest.application?.[0];
-        if (mainApplication) {
-            const mainActivity = mainApplication.activity?.find(
-                (activity) => activity.$?.['android:name'] === '.MainActivity'
-            );
-
-            if (mainActivity) {
-                if (!mainActivity['intent-filter']) {
-                    mainActivity['intent-filter'] = [];
-                }
-
-                // Check if redirect scheme filter already exists
-                const hasRedirectFilter = mainActivity['intent-filter'].some(
-                    (filter) =>
-                        filter.data?.some((d) => d.$?.['android:scheme'] === redirectScheme)
-                );
-
-                if (!hasRedirectFilter && redirectScheme) {
-                    mainActivity['intent-filter'].push({
-                        action: [{ $: { 'android:name': 'android.intent.action.VIEW' } }],
-                        category: [
-                            { $: { 'android:name': 'android.intent.category.DEFAULT' } },
-                            { $: { 'android:name': 'android.intent.category.BROWSABLE' } },
-                        ],
-                        data: [{ $: { 'android:scheme': redirectScheme } }],
-                    });
-                }
-            }
         }
 
         return config;
@@ -115,7 +84,7 @@ const withSpotifyIOS = (config, { clientId, redirectScheme }) => {
 const withSpotifyBuildGradle = (config, { redirectScheme }) => {
     return withAppBuildGradle(config, (config) => {
         if (config.modResults.language === 'groovy') {
-            const buildGradle = config.modResults.contents;
+            let buildGradle = config.modResults.contents;
 
             // Check if manifest placeholders already exist
             if (!buildGradle.includes('redirectSchemeName')) {
@@ -128,8 +97,23 @@ const withSpotifyBuildGradle = (config, { redirectScheme }) => {
             redirectHostName: "callback"
         ]
 `;
-                config.modResults.contents = buildGradle.replace(defaultConfigRegex, replacement);
+                buildGradle = buildGradle.replace(defaultConfigRegex, replacement);
             }
+
+            // The native Expo module compiles against App Remote with compileOnly.
+            // Package the local AAR at the application level so its classes are
+            // present in the final APK without trying to embed an AAR inside an AAR.
+            const appRemoteAar = '../../modules/spotify-remote/android/libs/spotify-app-remote-release-0.8.0.aar';
+            if (!buildGradle.includes(appRemoteAar)) {
+                buildGradle = buildGradle.replace(
+                    /dependencies\s*\{/,
+                    `dependencies {
+    // Spotify App Remote runtime (the native module uses compileOnly)
+    implementation files("${appRemoteAar}")`
+                );
+            }
+
+            config.modResults.contents = buildGradle;
         }
         return config;
     });

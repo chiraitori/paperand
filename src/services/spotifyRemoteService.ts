@@ -97,10 +97,14 @@ class SpotifyRemoteService {
 
         this.isConfigured = true;
 
-        // Set up native event listeners
-        this.setupEventListeners();
+        // Configure can be called again from Developer settings. Keep a single
+        // native subscription set so player events are not delivered twice.
+        if (this.nativeSubscriptions.length === 0) {
+            this.setupEventListeners();
+        }
 
-        // Set up app state listener for auto-reconnect
+        // Replace the existing app state listener instead of stacking another.
+        this.appStateSubscription?.remove();
         this.appStateSubscription = AppState.addEventListener('change', this.handleAppStateChange);
     }
 
@@ -169,6 +173,7 @@ class SpotifyRemoteService {
      */
     async clearToken(): Promise<void> {
         try {
+            SpotifyAuth?.logout();
             await AsyncStorage.removeItem(SPOTIFY_ACCESS_TOKEN_KEY);
             await AsyncStorage.removeItem(SPOTIFY_TOKEN_EXPIRY_KEY);
             console.log('[SpotifyRemoteService] Token cleared');

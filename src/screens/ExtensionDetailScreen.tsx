@@ -15,6 +15,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { ExtensionSource } from '../services/extensionService';
+import { getInstalledExtensionIconUrl } from '../services/extensionStorageService';
 import { hasExtensionSettings } from '../services/sourceService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { RootStackParamList } from '../types';
@@ -42,9 +43,7 @@ export const ExtensionDetailScreen: React.FC = () => {
   const [hasSettings, setHasSettings] = useState(false);
 
   // Build icon URL
-  const iconUrl = extension.repoBaseUrl && extension.icon
-    ? `${extension.repoBaseUrl}/${extension.id}/includes/${extension.icon}`
-    : null;
+  const iconUrl = getInstalledExtensionIconUrl(extension);
 
   // Check if extension has settings
   useEffect(() => {

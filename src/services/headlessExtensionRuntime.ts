@@ -7,11 +7,273 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as jpeg from 'jpeg-js';
+import { getBrowserAuthHosts, getBrowserAuthToken } from 'cloudflare-bypass';
 import { getInstalledExtensions, downloadSourceJs, InstalledExtension } from './extensionStorageService';
+import { appendPaperbackRequestParams } from './paperbackRequestUtils';
 
 // Loaded extensions cache
 const loadedExtensions: Record<string, any> = {};
+const loadedExtensionMeta: Record<string, {
+    apiVersion: '0.8' | '0.9';
+    manga: Record<string, any>;
+    chapters: Record<string, any>;
+}> = {};
 const extensionStates: Record<string, any> = {};
+const paperback09States: Record<string, Record<string, any>> = {};
+const paperback09Interceptors: Record<string, { id: string; request: string; response: string }[]> = {};
+const paperback09Selectors = new Map<string, (...args: any[]) => any>();
+let paperback09SelectorSequence = 0;
+let activePaperback09Extension: string | null = null;
+let headlessRunQueue: Promise<any> = Promise.resolve();
+const YURI_GARDEN_SCRAMBLE_PREFIX = 'yg-scramble:';
+
+const addNativeBrowserAuth = async (
+    extensionId: string,
+    url: string,
+    headers: Record<string, string>,
+): Promise<void> => {
+    if (Object.keys(headers).some(key => key.toLowerCase() === 'authorization')) return;
+
+    try {
+        const [token, allowedHosts] = await Promise.all([
+            getBrowserAuthToken(extensionId),
+            getBrowserAuthHosts(extensionId),
+        ]);
+        const requestHost = new URL(url).hostname.toLowerCase();
+        const hostAllowed = allowedHosts.some(
+            host => requestHost === host || requestHost.endsWith(`.${host}`)
+        );
+        if (token && hostAllowed) {
+            headers.Authorization = `Bearer ${token}`;
+        }
+    } catch {
+        // The native module or an auth session may not exist in background tests.
+    }
+};
+
+const paperbackMd5 = (value: string | ArrayBuffer): string => {
+    const bytes = typeof value === 'string' ? new TextEncoder().encode(value) : new Uint8Array(value);
+    const paddedLength = (((bytes.length + 8) >>> 6) + 1) * 64;
+    const data = new Uint8Array(paddedLength);
+    data.set(bytes);
+    data[bytes.length] = 0x80;
+
+    const bitLengthLow = (bytes.length * 8) >>> 0;
+    const bitLengthHigh = Math.floor(bytes.length / 0x20000000) >>> 0;
+    for (let index = 0; index < 4; index++) {
+        data[paddedLength - 8 + index] = (bitLengthLow >>> (index * 8)) & 0xff;
+        data[paddedLength - 4 + index] = (bitLengthHigh >>> (index * 8)) & 0xff;
+    }
+
+    const shifts = [
+        7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
+        5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20,
+        4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
+        6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
+    ];
+    const constants = Array.from(
+        { length: 64 },
+        (_, index) => Math.floor(Math.abs(Math.sin(index + 1)) * 0x100000000) >>> 0
+    );
+    let a0 = 0x67452301;
+    let b0 = 0xefcdab89;
+    let c0 = 0x98badcfe;
+    let d0 = 0x10325476;
+
+    for (let offset = 0; offset < data.length; offset += 64) {
+        const words = new Uint32Array(16);
+        for (let word = 0; word < 16; word++) {
+            const index = offset + word * 4;
+            words[word] = (
+                data[index]
+                | (data[index + 1] << 8)
+                | (data[index + 2] << 16)
+                | (data[index + 3] << 24)
+            ) >>> 0;
+        }
+
+        let a = a0;
+        let b = b0;
+        let c = c0;
+        let d = d0;
+        for (let index = 0; index < 64; index++) {
+            let f: number;
+            let wordIndex: number;
+            if (index < 16) {
+                f = (b & c) | (~b & d);
+                wordIndex = index;
+            } else if (index < 32) {
+                f = (d & b) | (~d & c);
+                wordIndex = (5 * index + 1) % 16;
+            } else if (index < 48) {
+                f = b ^ c ^ d;
+                wordIndex = (3 * index + 5) % 16;
+            } else {
+                f = c ^ (b | ~d);
+                wordIndex = (7 * index) % 16;
+            }
+            const sum = (a + (f >>> 0) + constants[index] + words[wordIndex]) >>> 0;
+            const rotated = ((sum << shifts[index]) | (sum >>> (32 - shifts[index]))) >>> 0;
+            a = d;
+            d = c;
+            c = b;
+            b = (b + rotated) >>> 0;
+        }
+
+        a0 = (a0 + a) >>> 0;
+        b0 = (b0 + b) >>> 0;
+        c0 = (c0 + c) >>> 0;
+        d0 = (d0 + d) >>> 0;
+    }
+
+    return [a0, b0, c0, d0].map(word =>
+        [0, 8, 16, 24].map(shift => ((word >>> shift) & 0xff).toString(16).padStart(2, '0')).join('')
+    ).join('');
+};
+
+const createPaperback09Application = () => ({
+    isResourceLimited: false,
+    filterAdultTitles: false,
+    filterMatureTitles: false,
+    decodeHTMLEntities: (value: string) => value
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'"),
+    sleep: (seconds: number) => new Promise(resolve => setTimeout(resolve, Math.max(0, seconds * 1000))),
+    getDefaultUserAgent: async () => 'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36',
+    Selector: (object: any, symbol: string) => {
+        const id = `selector-${++paperback09SelectorSequence}`;
+        paperback09Selectors.set(id, object[symbol].bind(object));
+        return id;
+    },
+    SelectorRegistry: {
+        selector: (id: string) => {
+            const callback = paperback09Selectors.get(id);
+            if (!callback) throw new Error(`Selector not found: ${id}`);
+            return callback;
+        },
+    },
+    registerInterceptor: (id: string, request: string, response: string) => {
+        if (!activePaperback09Extension) return;
+        const list = paperback09Interceptors[activePaperback09Extension] || [];
+        const next = list.filter(item => item.id !== id);
+        next.push({ id, request, response });
+        paperback09Interceptors[activePaperback09Extension] = next;
+    },
+    unregisterInterceptor: (id: string) => {
+        if (!activePaperback09Extension) return;
+        paperback09Interceptors[activePaperback09Extension] =
+            (paperback09Interceptors[activePaperback09Extension] || []).filter(item => item.id !== id);
+    },
+    setRedirectHandler: () => undefined,
+    scheduleRequest: async (request: any) => {
+        const extensionId = activePaperback09Extension;
+        const interceptors = paperback09Interceptors[extensionId || ''] || [];
+        let finalRequest = { ...request, headers: { ...(request.headers || {}) } };
+
+        for (const interceptor of interceptors) {
+            const callback = paperback09Selectors.get(interceptor.request);
+            if (callback) finalRequest = await callback(finalRequest);
+        }
+
+        if (finalRequest.cookies) {
+            const cookieHeader = Object.entries(finalRequest.cookies)
+                .map(([name, value]) => `${name}=${value}`)
+                .join('; ');
+            if (cookieHeader) finalRequest.headers.Cookie = cookieHeader;
+        }
+
+        let body = finalRequest.body;
+        if (body && typeof body === 'object' && !(body instanceof ArrayBuffer) && !ArrayBuffer.isView(body)) {
+            body = JSON.stringify(body);
+            finalRequest.headers['Content-Type'] ||= 'application/json';
+        }
+
+        const response = await fetch(finalRequest.url, {
+            method: finalRequest.method || 'GET',
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36',
+                ...finalRequest.headers,
+            },
+            body,
+        });
+        let data = await response.arrayBuffer();
+        const responseInfo = {
+            url: response.url || finalRequest.url,
+            headers: Object.fromEntries(response.headers.entries()),
+            status: response.status,
+            mimeType: response.headers.get('content-type') || undefined,
+            cookies: [],
+        };
+
+        for (const interceptor of [...interceptors].reverse()) {
+            const callback = paperback09Selectors.get(interceptor.response);
+            if (callback) data = await callback(finalRequest, responseInfo, data);
+        }
+        return [responseInfo, data];
+    },
+    arrayBufferToUTF8String: (buffer: ArrayBuffer) => new TextDecoder('utf-8').decode(buffer),
+    arrayBufferToASCIIString: (buffer: ArrayBuffer) =>
+        Array.from(new Uint8Array(buffer)).map(value => String.fromCharCode(value & 0x7f)).join(''),
+    arrayBufferToUTF16String: (buffer: ArrayBuffer) => new TextDecoder('utf-16').decode(buffer),
+    base64Encode: (value: string | ArrayBuffer) => {
+        const bytes = typeof value === 'string' ? new TextEncoder().encode(value) : new Uint8Array(value);
+        return btoa(Array.from(bytes).map(byte => String.fromCharCode(byte)).join(''));
+    },
+    base64Decode: (value: string) => {
+        const binary = atob(value);
+        const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
+        return new TextDecoder('utf-8').decode(bytes);
+    },
+    crypto_md5Hash: paperbackMd5,
+    getState: (key: string) => paperback09States[activePaperback09Extension || '']?.[key],
+    setState: (value: any, key: string) => {
+        if (!activePaperback09Extension) return;
+        const extensionId = activePaperback09Extension;
+        const state = paperback09States[extensionId] || {};
+        state[key] = value;
+        paperback09States[extensionId] = state;
+        void AsyncStorage.setItem(`@extension_state_${extensionId}_paperback09`, JSON.stringify(state));
+    },
+    getSecureState: (key: string) => paperback09States[activePaperback09Extension || '']?.[`secure:${key}`],
+    setSecureState: (value: any, key: string) => {
+        if (!activePaperback09Extension) return;
+        const extensionId = activePaperback09Extension;
+        const state = paperback09States[extensionId] || {};
+        state[`secure:${key}`] = value;
+        paperback09States[extensionId] = state;
+        void AsyncStorage.setItem(`@extension_state_${extensionId}_paperback09`, JSON.stringify(state));
+    },
+    resetAllState: () => {
+        if (activePaperback09Extension) paperback09States[activePaperback09Extension] = {};
+    },
+    registerDiscoverSection: () => undefined,
+    unregisterDiscoverSection: () => undefined,
+    registeredDiscoverSections: () => [],
+    invalidateDiscoverSections: () => undefined,
+    executeInWebView: async () => {
+        throw new Error('executeInWebView requires the foreground extension runtime');
+    },
+    formDidChange: () => undefined,
+});
+
+const paperback09Application = createPaperback09Application();
+
+const encodeYuriGardenScramblePayload = (payload: { url: string; decoded?: number[] }): string | null => {
+    try {
+        return YURI_GARDEN_SCRAMBLE_PREFIX + btoa(JSON.stringify(payload));
+    } catch (error: any) {
+        console.log('[HeadlessRuntime] Failed to encode YuriGarden scramble payload:', error?.message || error);
+        return null;
+    }
+};
+
+const isYuriGardenChapterImageUrl = (url: string): boolean => {
+    if (typeof url !== 'string') return false;
+    return /^https:\/\/(?:db\.yurigarden\.com|cdn\.yurigarden\.moe)\/.+\/chapters\/\d+\/.+/i.test(url);
+};
 
 // Cheerio-like HTML parser using regex (simplified for common patterns)
 const createSimpleCheerio = () => {
@@ -78,12 +340,18 @@ const createApp = (extensionId: string) => ({
                         }
                     }
 
+                    const requestUrl = appendPaperbackRequestParams(finalRequest.url, finalRequest.param);
+                    if (requestUrl !== finalRequest.url) {
+                        finalRequest = { ...finalRequest, url: requestUrl };
+                    }
+
                     // Make the actual fetch request
                     const headers: Record<string, string> = {
                         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
                         'Accept': 'application/json, text/plain, */*',
                         ...finalRequest.headers,
                     };
+                    await addNativeBrowserAuth(extensionId, finalRequest.url, headers);
 
                     const isImageRequest = finalRequest.url.includes('drm_data=') ||
                         /\.(jpg|jpeg|png|gif|webp)(\?|#|$)/i.test(finalRequest.url);
@@ -363,13 +631,14 @@ const loadExtension = async (ext: InstalledExtension): Promise<boolean> => {
 
     console.log('[HeadlessRuntime] Loading extension:', ext.id);
 
-    let sourceJs = ext.sourceJs;
+    let sourceJs: string | undefined = ext.sourceJs;
     if (!sourceJs) {
-        sourceJs = await downloadSourceJs(ext);
-        if (!sourceJs) {
-            console.error('[HeadlessRuntime] Failed to download source.js for', ext.id);
+        const downloaded = await downloadSourceJs(ext);
+        if (!downloaded) {
+            console.error('[HeadlessRuntime] Failed to download extension bundle for', ext.id);
             return false;
         }
+        sourceJs = downloaded;
     }
 
     try {
@@ -381,11 +650,23 @@ const loadExtension = async (ext: InstalledExtension): Promise<boolean> => {
         const prevApp = (globalThis as any).App;
         const prevCheerio = (globalThis as any).cheerio;
         const prevSources = (globalThis as any).Sources;
+        const prevSource = (globalThis as any).source;
+        const prevApplication = (globalThis as any).Application;
+        const isPaperback09 = ext.apiVersion === '0.9'
+            || (sourceJs.includes('var source=') && !sourceJs.includes('Sources='));
+
+        if (isPaperback09) {
+            const savedState = await AsyncStorage.getItem(`@extension_state_${ext.id}_paperback09`);
+            paperback09States[ext.id] = savedState ? JSON.parse(savedState) : {};
+            activePaperback09Extension = ext.id;
+        }
 
         // Inject globals that extensions expect
         (globalThis as any).App = App;
         (globalThis as any).cheerio = cheerio;
         (globalThis as any).Sources = undefined;
+        (globalThis as any).source = undefined;
+        (globalThis as any).Application = paperback09Application;
 
         // Also inject common Paperback SDK types if not present
         if (!(globalThis as any).ContentRating) {
@@ -438,38 +719,51 @@ const loadExtension = async (ext: InstalledExtension): Promise<boolean> => {
             (globalThis as any).App = prevApp;
             (globalThis as any).cheerio = prevCheerio;
             (globalThis as any).Sources = prevSources;
+            (globalThis as any).source = prevSource;
+            (globalThis as any).Application = prevApplication;
+            activePaperback09Extension = null;
             throw new Error(`Eval error: ${evalError.message}`);
         }
 
-        // Get the Sources object that was created by the extension
+        // Get the export container created by the extension.
         const Sources = (globalThis as any).Sources;
+        const paperback09Exports = (globalThis as any).source;
+        const exportContainer = isPaperback09 ? paperback09Exports : Sources;
 
         // Restore previous globals
         (globalThis as any).App = prevApp;
         (globalThis as any).cheerio = prevCheerio;
         (globalThis as any).Sources = prevSources;
+        (globalThis as any).source = prevSource;
+        (globalThis as any).Application = prevApplication;
 
-        if (!Sources) {
-            throw new Error('No Sources found after loading extension');
+        if (!exportContainer) {
+            activePaperback09Extension = null;
+            throw new Error('No Paperback exports found after loading extension');
         }
 
         // Find the extension class
-        const availableKeys = Object.keys(Sources);
-        let ExtensionClass = Sources[ext.id];
+        const availableKeys = Object.keys(exportContainer);
+        let ExtensionClass = exportContainer[ext.id];
 
         if (!ExtensionClass) {
             // Try case-insensitive match
             const lowerExtId = ext.id.toLowerCase();
             for (const key of availableKeys) {
                 if (key.toLowerCase() === lowerExtId) {
-                    ExtensionClass = Sources[key];
+                    ExtensionClass = exportContainer[key];
                     break;
                 }
             }
         }
 
-        if (!ExtensionClass && availableKeys.length === 1) {
-            ExtensionClass = Sources[availableKeys[0]];
+        if (!ExtensionClass) {
+            const usableKeys = availableKeys.filter(key =>
+                !/Extension$/.test(key)
+                && exportContainer[key]
+                && typeof exportContainer[key] === 'object'
+            );
+            if (usableKeys.length === 1) ExtensionClass = exportContainer[usableKeys[0]];
         }
 
         if (!ExtensionClass) {
@@ -493,9 +787,22 @@ const loadExtension = async (ext: InstalledExtension): Promise<boolean> => {
         }
 
         loadedExtensions[ext.id] = instance;
+        loadedExtensionMeta[ext.id] = {
+            apiVersion: isPaperback09 ? '0.9' : '0.8',
+            manga: {},
+            chapters: {},
+        };
+
+        if (isPaperback09 && typeof instance.initialise === 'function') {
+            (globalThis as any).Application = paperback09Application;
+            await instance.initialise();
+            (globalThis as any).Application = prevApplication;
+        }
+        activePaperback09Extension = null;
         console.log('[HeadlessRuntime] Extension loaded successfully:', ext.id);
         return true;
     } catch (error: any) {
+        activePaperback09Extension = null;
         console.error('[HeadlessRuntime] Failed to load extension:', ext.id, error.message);
         return false;
     }
@@ -506,6 +813,7 @@ const loadExtension = async (ext: InstalledExtension): Promise<boolean> => {
  */
 const runMethod = async (extensionId: string, method: string, args: any[]): Promise<any> => {
     const extension = loadedExtensions[extensionId];
+    const meta = loadedExtensionMeta[extensionId];
     if (!extension) {
         throw new Error(`Extension not loaded: ${extensionId}`);
     }
@@ -516,9 +824,44 @@ const runMethod = async (extensionId: string, method: string, args: any[]): Prom
 
     console.log('[HeadlessRuntime] Running method:', extensionId, method);
 
+    const invoke = async (): Promise<any> => {
+        const previousApplication = (globalThis as any).Application;
+        if (meta?.apiVersion === '0.9') {
+            activePaperback09Extension = extensionId;
+            (globalThis as any).Application = paperback09Application;
+        }
+
+        try {
+            if (meta?.apiVersion === '0.9' && method === 'getChapterDetails') {
+                const [mangaId, chapterId] = args;
+                let sourceManga = meta.manga[mangaId];
+                if (!sourceManga) {
+                    sourceManga = await extension.getMangaDetails(mangaId);
+                    meta.manga[mangaId] = sourceManga;
+                }
+
+                let chapter = meta.chapters[chapterId];
+                if (!chapter) {
+                    const chapters = await extension.getChapters(sourceManga);
+                    for (const item of chapters || []) {
+                        meta.chapters[item.chapterId || item.id] = item;
+                    }
+                    chapter = meta.chapters[chapterId];
+                }
+                if (!chapter) throw new Error(`Chapter not found: ${chapterId}`);
+                return extension.getChapterDetails(chapter);
+            }
+
+            return extension[method](...args);
+        } finally {
+            activePaperback09Extension = null;
+            (globalThis as any).Application = previousApplication;
+        }
+    };
+
     if (method === 'getChapterDetails') {
-        const rawResult = await extension[method](...args);
-        let pages: string[] = [];
+        const rawResult = await invoke();
+        let pages: any[] = [];
 
         if (rawResult) {
             if (rawResult.pages && Array.isArray(rawResult.pages)) {
@@ -542,6 +885,25 @@ const runMethod = async (extensionId: string, method: string, args: any[]): Prom
                     url = String(p);
                 }
 
+                const yuriGardenPayload = (() => {
+                    if (p && typeof p === 'object' && Array.isArray(p.decoded) && p.decoded.length > 0) {
+                        return encodeYuriGardenScramblePayload({
+                            url,
+                            decoded: p.decoded,
+                        });
+                    }
+
+                    if (isYuriGardenChapterImageUrl(url)) {
+                        return encodeYuriGardenScramblePayload({ url });
+                    }
+
+                    return null;
+                })();
+
+                if (yuriGardenPayload) {
+                    url = 'drm://' + extensionId + '/' + yuriGardenPayload;
+                }
+
                 // Mark DRM URLs
                 if (url && url.includes('#drm_data=')) {
                     url = 'drm://' + extensionId + '/' + url;
@@ -554,7 +916,7 @@ const runMethod = async (extensionId: string, method: string, args: any[]): Prom
         return { pages };
     }
 
-    return await extension[method](...args);
+    return invoke();
 };
 
 /**
@@ -588,20 +950,30 @@ export const headlessRuntime = {
      * Run a method on an extension
      */
     runExtensionMethod: async (extensionId: string, method: string, args: any[]): Promise<any> => {
-        // Ensure extension is loaded
-        if (!loadedExtensions[extensionId]) {
-            const loaded = await headlessRuntime.loadExtension(extensionId);
-            if (!loaded) {
-                throw new Error(`Failed to load extension: ${extensionId}`);
+        const execute = async () => {
+            // Ensure extension is loaded
+            if (!loadedExtensions[extensionId]) {
+                const loaded = await headlessRuntime.loadExtension(extensionId);
+                if (!loaded) {
+                    throw new Error(`Failed to load extension: ${extensionId}`);
+                }
             }
-        }
-        return runMethod(extensionId, method, args);
+            return runMethod(extensionId, method, args);
+        };
+
+        const queued = headlessRunQueue.then(execute, execute);
+        headlessRunQueue = queued.catch(() => undefined);
+        return queued;
     },
 
     /**
      * Clear loaded extensions cache
      */
-    clearCache: () => {
-        Object.keys(loadedExtensions).forEach(key => delete loadedExtensions[key]);
+    clearCache: (extensionId?: string) => {
+        const keys = extensionId ? [extensionId] : Object.keys(loadedExtensions);
+        keys.forEach(key => {
+            delete loadedExtensions[key];
+            delete loadedExtensionMeta[key];
+        });
     },
 };

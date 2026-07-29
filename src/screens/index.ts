@@ -21,3 +21,4 @@ export { ReaderScreen } from './ReaderScreen';
 export { CategoryScreen } from './CategoryScreen';
 export { SearchResultsScreen } from './SearchResultsScreen';
 export { GenreListScreen } from './GenreListScreen';
+export * from './WebViewScreen';

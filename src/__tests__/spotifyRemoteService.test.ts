@@ -31,7 +31,7 @@ describe('Spotify Remote Service', () => {
   describe('Player State Listeners', () => {
     it('should register and call player state listeners', (done) => {
       const mockListener = jest.fn();
-      spotifyRemoteService.onPlayerStateChanged(mockListener);
+      spotifyRemoteService.addPlayerStateListener(mockListener);
 
       // Simulate state change
       const testState: SpotifyPlayerState = {
@@ -58,7 +58,7 @@ describe('Spotify Remote Service', () => {
 
     it('should unregister player state listeners', (done) => {
       const mockListener = jest.fn();
-      const unsubscribe = spotifyRemoteService.onPlayerStateChanged(mockListener);
+      const unsubscribe = spotifyRemoteService.addPlayerStateListener(mockListener);
       
       unsubscribe();
       
@@ -72,7 +72,7 @@ describe('Spotify Remote Service', () => {
   describe('Connection Listeners', () => {
     it('should register and call connection listeners', (done) => {
       const mockListener = jest.fn();
-      spotifyRemoteService.onConnectionChanged(mockListener);
+      spotifyRemoteService.addConnectionListener(mockListener);
 
       setTimeout(() => {
         expect(mockListener).toBeDefined();
@@ -82,7 +82,7 @@ describe('Spotify Remote Service', () => {
 
     it('should unregister connection listeners', (done) => {
       const mockListener = jest.fn();
-      const unsubscribe = spotifyRemoteService.onConnectionChanged(mockListener);
+      const unsubscribe = spotifyRemoteService.addConnectionListener(mockListener);
       
       unsubscribe();
       

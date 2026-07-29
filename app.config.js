@@ -35,7 +35,7 @@ module.exports = {
     expo: {
         name: getAppName(),
         slug: IS_DEV ? 'paperback-android-dev' : 'paperback-android',
-        version: '0.0.14',
+        version: '0.0.16',
         scheme: getScheme(),
         orientation: 'default',
         icon: './assets/icon.png',
@@ -57,7 +57,7 @@ module.exports = {
         ios: {
             supportsTablet: true,
             bundleIdentifier: getBundleIdentifier('ios'),
-            buildNumber: '14',
+            buildNumber: '16',
             infoPlist: {
                 ITSAppUsesNonExemptEncryption: false,
                 CFBundleAllowMixedLocalizations: true,
@@ -89,7 +89,7 @@ module.exports = {
                 backgroundColor: '#ffffff'
             },
             package: getBundleIdentifier('android'),
-            versionCode: 14,
+            versionCode: 16,
             permissions: [
                 'android.permission.REQUEST_INSTALL_PACKAGES',
                 'android.permission.FOREGROUND_SERVICE',
@@ -127,6 +127,7 @@ module.exports = {
                 clientId: process.env.SPOTIFY_CLIENT_ID || 'YOUR_SPOTIFY_CLIENT_ID',
                 redirectScheme: 'paperand-spotify'
             }],
+            'expo-web-browser',
             // Dev client for development builds - allows connecting to local Expo server
             ...(IS_DEV ? ['expo-dev-client'] : [])
         ]

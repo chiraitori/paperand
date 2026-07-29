@@ -15,7 +15,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { LoadingIndicator } from '../components';
-import { getViewMoreItems, searchByTag, SourceManga } from '../services/sourceService';
+import { getViewMoreItems, searchByQuery, searchByTag, SourceManga } from '../services/sourceService';
 import { getGeneralSettings, GeneralSettings, defaultSettings } from '../services/settingsService';
 import { RootStackParamList } from '../types';
 import { t } from '../services/i18nService';
@@ -30,14 +30,18 @@ export const CategoryScreen: React.FC = () => {
   const { theme } = useTheme();
   const navigation = useNavigation<CategoryScreenNavigationProp>();
   const route = useRoute<CategoryScreenRouteProp>();
-  const { sourceId, sectionId, title, initialItems, tagId } = route.params;
+  const { sourceId, sectionId, title, initialItems, initialMetadata, initialHasMore, tagId, searchQuery } = route.params;
   const { width, height } = useWindowDimensions();
 
   const [results, setResults] = useState<SourceManga[]>(initialItems || []);
   const [loading, setLoading] = useState(initialItems?.length === 0);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [metadata, setMetadata] = useState<any>(null);
-  const [hasMoreResults, setHasMoreResults] = useState(true);
+  const [metadata, setMetadata] = useState<any>(initialMetadata ?? null);
+  const [hasMoreResults, setHasMoreResults] = useState(
+    initialItems?.length
+      ? (initialHasMore ?? (initialMetadata != null || Boolean(tagId)))
+      : true
+  );
   const [settings, setSettings] = useState<GeneralSettings>(defaultSettings);
   const isInitialLoad = useRef(true);
 
@@ -65,8 +69,6 @@ export const CategoryScreen: React.FC = () => {
       isInitialLoad.current = false;
       if (!initialItems || initialItems.length === 0) {
         loadItems(true);
-      } else {
-        loadItems(true);
       }
     }
   }, []);
@@ -81,7 +83,13 @@ export const CategoryScreen: React.FC = () => {
     try {
       let result;
 
-      if (tagId) {
+      if (searchQuery) {
+        result = await searchByQuery(
+          sourceId,
+          searchQuery,
+          isFirstLoad ? null : metadata
+        );
+      } else if (tagId) {
         result = await searchByTag(
           sourceId,
           tagId,
@@ -99,11 +107,7 @@ export const CategoryScreen: React.FC = () => {
         setHasMoreResults(false);
       } else {
         if (isFirstLoad) {
-          if (initialItems && initialItems.length > 0) {
-            setResults([...initialItems, ...result.results]);
-          } else {
-            setResults(result.results);
-          }
+          setResults(result.results);
         } else {
           setResults(prev => [...prev, ...result.results]);
         }

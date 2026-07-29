@@ -11,9 +11,21 @@ jest.mock('expo-image', () => ({
 
 jest.mock('expo-file-system', () => ({
   Directory: jest.fn(),
-  File: jest.fn(),
+  File: jest.fn(() => ({
+    text: jest.fn().mockResolvedValue('globalThis.Sources = globalThis.Sources || {};'),
+  })),
   Paths: {
     document: '/mock/documents',
+  },
+}));
+
+jest.mock('expo-asset', () => ({
+  Asset: {
+    fromModule: jest.fn(() => ({
+      uri: '/mock/YuriGarden.pbjs',
+      localUri: '/mock/YuriGarden.pbjs',
+      downloadAsync: jest.fn().mockResolvedValue(undefined),
+    })),
   },
 }));
 
@@ -90,6 +102,16 @@ jest.mock('react-native-webview', () => 'WebView');
 
 jest.mock('expo-localization', () => ({
   locale: 'en-US',
+}));
+
+jest.mock('cloudflare-bypass', () => ({
+  getCookies: jest.fn().mockResolvedValue(''),
+  setCookies: jest.fn().mockResolvedValue(true),
+  clearCookies: jest.fn().mockResolvedValue(true),
+  getBrowserAuthToken: jest.fn().mockResolvedValue(''),
+  getBrowserAuthHosts: jest.fn().mockResolvedValue([]),
+  clearBrowserAuthToken: jest.fn().mockResolvedValue(true),
+  launchBypassActivity: jest.fn().mockResolvedValue(true),
 }));
 
 jest.mock('expo-linking', () => ({

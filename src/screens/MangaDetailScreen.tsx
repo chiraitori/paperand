@@ -10,6 +10,9 @@ import {
   Platform,
   Linking,
 } from 'react-native';
+import { AppState } from 'react-native';
+import { getCookies as getNativeCookies, launchBypassActivity } from 'cloudflare-bypass';
+import { setCookiesForDomain } from '../services/cookieStore';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,7 +20,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useLibrary } from '../context/LibraryContext';
 import { ChapterListItem, LoadingIndicator, NativeDropdown } from '../components';
 import { useDownloads } from '../context/DownloadContext';
-import { getMangaDetails, getChapters } from '../services/sourceService';
+import { getMangaDetails, getChapters, getMangaShareUrl, getCloudflareBypassRequest } from '../services/sourceService';
 import { getGeneralSettings, updateGeneralSetting } from '../services/settingsService';
 import {
   cacheMangaMetadata,
@@ -309,6 +312,51 @@ export const MangaDetailScreen: React.FC = () => {
     await toggleFavorite(manga.id);
   };
 
+  const handleOpenWeb = async () => {
+    if (!manga || !sourceId) return;
+
+    const [shareUrl, bypassRequest] = await Promise.all([
+      getMangaShareUrl(sourceId, manga.id),
+      getCloudflareBypassRequest(sourceId),
+    ]);
+    const targetUrl = shareUrl || bypassRequest?.url;
+
+    if (!targetUrl) {
+      console.log('[MangaDetail] No web URL available for this manga');
+      return;
+    }
+
+    let leftReactActivity = false;
+    const subscription = AppState.addEventListener('change', async (state) => {
+      if (state !== 'active') {
+        leftReactActivity = true;
+        return;
+      }
+      if (!leftReactActivity) return;
+
+      subscription.remove();
+      try {
+        const cookies = await getNativeCookies(targetUrl);
+        if (cookies) {
+          setCookiesForDomain(targetUrl, cookies);
+        }
+      } catch (error) {
+        console.warn('[MangaDetail] Failed to sync website cookies:', error);
+      }
+
+      await loadManga();
+    });
+
+    const authCaptureJson = Object.entries(bypassRequest?.headers || {})
+      .find(([key]) => key.toLowerCase() === 'x-paperback-auth-capture')?.[1] || '';
+    await launchBypassActivity(
+      targetUrl,
+      manga.title || 'Website',
+      sourceId,
+      String(authCaptureJson),
+    );
+  };
+
   const openReader = (chapterId: string) => {
     if (!manga) return;
     console.log('[MangaDetail] openReader called with chapterId:', chapterId, 'sourceId:', sourceId);
@@ -420,19 +468,28 @@ export const MangaDetailScreen: React.FC = () => {
           <View style={styles.secondaryActions}>
             <TouchableOpacity
               style={[styles.iconButton, { backgroundColor: theme.card }]}
-              onPress={handleLibraryToggle}
+              onPress={handleOpenWeb}
+              accessibilityRole="button"
+              accessibilityLabel="Open manga website"
+              accessibilityHint="Open the website to sign in or complete verification"
             >
-              <Text style={styles.iconButtonText}>
-                {inLibrary ? '📖' : '➕'}
-              </Text>
+              <Ionicons name="globe-outline" size={24} color={theme.text} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.iconButton, { backgroundColor: theme.card }]}
+              onPress={handleLibraryToggle}
+              accessibilityRole="button"
+              accessibilityLabel={inLibrary ? 'Remove from library' : 'Add to library'}
+            >
+              <Ionicons name={inLibrary ? 'library' : 'library-outline'} size={24} color={theme.text} />
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.iconButton, { backgroundColor: theme.card }]}
               onPress={handleFavoriteToggle}
+              accessibilityRole="button"
+              accessibilityLabel={favorite ? 'Remove from favorites' : 'Add to favorites'}
             >
-              <Text style={styles.iconButtonText}>
-                {favorite ? '❤️' : '🤍'}
-              </Text>
+              <Ionicons name={favorite ? 'heart' : 'heart-outline'} size={24} color={favorite ? theme.primary : theme.text} />
             </TouchableOpacity>
           </View>
         </View>
@@ -681,9 +738,6 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 12,
     alignItems: 'center',
-  },
-  iconButtonText: {
-    fontSize: 24,
   },
   genresContainer: {
     flexDirection: 'row',

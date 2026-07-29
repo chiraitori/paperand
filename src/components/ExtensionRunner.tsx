@@ -8,7 +8,13 @@
 import React, { useRef, useEffect, useCallback } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { WebView, WebViewMessageEvent } from 'react-native-webview';
+import {
+  getBrowserAuthHosts,
+  getBrowserAuthToken,
+  getCookies as getNativeCookies,
+} from 'cloudflare-bypass';
 import { setExtensionBridge, ExtensionBridge } from '../services/sourceService';
+import { getCookiesForUrl, getGlobalUserAgent } from '../services/cookieStore';
 
 interface PendingRequest {
   resolve: (value: any) => void;
@@ -54,18 +60,65 @@ export const ExtensionRunner: React.FC = () => {
 
       // Handle fetch proxy requests from WebView
       if (type === 'fetchProxy') {
-        const { url, options } = data;
+        const { url, options, extensionId } = data;
         console.log('[ExtensionRunner] Proxying fetch:', url, 'method:', options?.method);
 
         // Support both body and data (some extensions use data for form data)
         let requestBody = options?.body || options?.data;
 
+        // Get the real user agent if available, otherwise use fallback
+        const userAgent = getGlobalUserAgent() || 'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36';
+
         // Merge default headers with request headers (request headers take priority)
         const defaultHeaders: Record<string, string> = {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+          'User-Agent': userAgent,
           'Accept': 'application/json, text/plain, */*',
         };
         const headers: Record<string, string> = { ...defaultHeaders, ...options?.headers };
+
+        // Include stored cookies from WebView bypass (Cloudflare cf_clearance etc.)
+        let storedCookies = getCookiesForUrl(url);
+
+        // Fallback: try reading from native Android CookieManager
+        if (!storedCookies || !storedCookies.includes('cf_clearance')) {
+          try {
+            const nativeCookies = await getNativeCookies(url);
+            if (nativeCookies && nativeCookies.includes('cf_clearance')) {
+              storedCookies = nativeCookies;
+              // Also update the in-memory store for future requests
+              const { setCookiesForDomain } = require('../services/cookieStore');
+              setCookiesForDomain(url, nativeCookies);
+            }
+          } catch (e) {
+            // Native module not available, skip
+          }
+        }
+
+        if (storedCookies) {
+          headers['Cookie'] = headers['Cookie']
+            ? `${headers['Cookie']}; ${storedCookies}`
+            : storedCookies;
+        }
+
+        const hasAuthorization = Object.keys(headers)
+          .some(key => key.toLowerCase() === 'authorization');
+        if (!hasAuthorization && extensionId) {
+          try {
+            const [token, allowedHosts] = await Promise.all([
+              getBrowserAuthToken(extensionId),
+              getBrowserAuthHosts(extensionId),
+            ]);
+            const requestHost = new URL(url).hostname.toLowerCase();
+            const hostAllowed = allowedHosts.some(
+              host => requestHost === host || requestHost.endsWith(`.${host}`)
+            );
+            if (token && hostAllowed) {
+              headers.Authorization = `Bearer ${token}`;
+            }
+          } catch {
+            // No configured native auth session for this extension.
+          }
+        }
 
         // Check if this is likely an image request (for DRM handling)
         const isImageRequest = url.includes('drm_data=') ||
@@ -75,7 +128,13 @@ export const ExtensionRunner: React.FC = () => {
         // Log the request details for debugging
         if (!isImageRequest) {
           console.log('[ExtensionRunner] Request method:', options?.method || 'GET');
-          console.log('[ExtensionRunner] Request headers:', JSON.stringify(headers, null, 2));
+          const safeHeaders = Object.fromEntries(
+            Object.entries(headers).map(([key, value]) => [
+              key,
+              /authorization|cookie/i.test(key) ? '[redacted]' : value,
+            ])
+          );
+          console.log('[ExtensionRunner] Request headers:', JSON.stringify(safeHeaders, null, 2));
           if (requestBody) {
             console.log('[ExtensionRunner] Request body type:', typeof requestBody);
             console.log('[ExtensionRunner] Request body:', typeof requestBody === 'string' ? requestBody.substring(0, 200) : JSON.stringify(requestBody).substring(0, 200));
@@ -97,6 +156,16 @@ export const ExtensionRunner: React.FC = () => {
           clearTimeout(timeoutId);
 
           let responseData: any;
+          const responseHeaders: Record<string, string> = {};
+          response.headers.forEach((value, key) => {
+            responseHeaders[key] = value;
+          });
+          const responseMeta = {
+            url: response.url || url,
+            headers: responseHeaders,
+            mimeType: response.headers.get('content-type') || undefined,
+            cookies: [],
+          };
 
           if (isImageRequest) {
             // For image requests, return as base64 for binary processing
@@ -114,6 +183,7 @@ export const ExtensionRunner: React.FC = () => {
               rawData: base64, // Base64 encoded binary data
               status: response.status,
               isBinary: true,
+              ...responseMeta,
             };
           } else {
             // For text/JSON requests
@@ -124,6 +194,7 @@ export const ExtensionRunner: React.FC = () => {
               requestId,
               data: text,
               status: response.status,
+              ...responseMeta,
             };
           }
 
@@ -206,9 +277,9 @@ export const ExtensionRunner: React.FC = () => {
   // Create the bridge when WebView signals it's ready
   const setupBridge = useCallback(() => {
     const bridge: ExtensionBridge = {
-      loadExtension: async (extensionId: string, sourceJs: string) => {
+      loadExtension: async (extensionId, sourceJs, apiVersion, initialState) => {
         try {
-          await sendMessage('loadExtension', { extensionId, sourceJs });
+          await sendMessage('loadExtension', { extensionId, sourceJs, apiVersion, initialState });
           loadedExtensionsRef.current.add(extensionId);
           return true;
         } catch (e) {
@@ -223,6 +294,11 @@ export const ExtensionRunner: React.FC = () => {
 
       isLoaded: (extensionId: string) => {
         return loadedExtensionsRef.current.has(extensionId);
+      },
+
+      invalidateExtension: async (extensionId: string) => {
+        loadedExtensionsRef.current.delete(extensionId);
+        await sendMessage('unloadExtension', { extensionId });
       },
     };
 
@@ -355,7 +431,15 @@ const cheerio = createCheerio();
 
 // Storage for loaded extensions
 const loadedExtensions = {};
+const loadedExtensionMeta = {};
 const extensionStates = {};
+const extensionRuntimeStates = {};
+const extensionInterceptors = {};
+const extensionDiscoverSections = {};
+const selectorRegistry = new Map();
+let selectorSequence = 0;
+let activeExtensionId = null;
+let extensionRunQueue = Promise.resolve();
 
 // Fetch pending requests for proxy
 const fetchPendingRequests = {};
@@ -394,6 +478,7 @@ const proxyFetch = async (url, options) => {
     sendToRN({
       type: 'fetchProxy',
       requestId,
+      extensionId: activeExtensionId,
       url,
       options: {
         method: options?.method || 'GET',
@@ -411,6 +496,32 @@ const proxyFetch = async (url, options) => {
       }
     }, 60000);
   });
+};
+
+const appendRequestParams = (url, param) => {
+  if (!param) return url;
+
+  if (typeof param === 'string') {
+    const query = param.replace(/^\\?/, '');
+    if (!query) return url;
+    return url + (url.includes('?') ? '&' : '?') + query;
+  }
+
+  const pairs = [];
+  const entries = typeof URLSearchParams !== 'undefined' && param instanceof URLSearchParams
+    ? Array.from(param.entries())
+    : Object.entries(param);
+
+  for (const [key, rawValue] of entries) {
+    if (rawValue === undefined || rawValue === null) continue;
+    const values = Array.isArray(rawValue) ? rawValue : [rawValue];
+    for (const value of values) {
+      pairs.push(encodeURIComponent(key) + '=' + encodeURIComponent(String(value)));
+    }
+  }
+
+  if (!pairs.length) return url;
+  return url + (url.includes('?') ? '&' : '?') + pairs.join('&');
 };
 
 // Mock App object that Paperback extensions expect
@@ -431,6 +542,11 @@ const App = {
             } catch (e) {
               log('Interceptor error:', e.message);
             }
+          }
+
+          const requestUrl = appendRequestParams(finalRequest.url, finalRequest.param);
+          if (requestUrl !== finalRequest.url) {
+            finalRequest = { ...finalRequest, url: requestUrl };
           }
           
           // Check if this might be an image request for DRM
@@ -743,6 +859,289 @@ const App = {
 // Make App globally available
 window.App = App;
 
+// Paperback 0.9 host API. The 0.9 index.js bundle contains the Paperback
+// types and parser implementation, but expects the app to provide this global.
+function paperbackMd5(value) {
+  const bytes = typeof value === 'string' ? new TextEncoder().encode(value) : new Uint8Array(value);
+  const paddedLength = (((bytes.length + 8) >>> 6) + 1) * 64;
+  const data = new Uint8Array(paddedLength);
+  data.set(bytes);
+  data[bytes.length] = 0x80;
+
+  const bitLengthLow = (bytes.length * 8) >>> 0;
+  const bitLengthHigh = Math.floor(bytes.length / 0x20000000) >>> 0;
+  for (let index = 0; index < 4; index++) {
+    data[paddedLength - 8 + index] = (bitLengthLow >>> (index * 8)) & 0xff;
+    data[paddedLength - 4 + index] = (bitLengthHigh >>> (index * 8)) & 0xff;
+  }
+
+  const shifts = [
+    7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
+    5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20,
+    4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
+    6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
+  ];
+  const constants = Array.from(
+    { length: 64 },
+    (_, index) => Math.floor(Math.abs(Math.sin(index + 1)) * 0x100000000) >>> 0
+  );
+  let a0 = 0x67452301;
+  let b0 = 0xefcdab89;
+  let c0 = 0x98badcfe;
+  let d0 = 0x10325476;
+
+  for (let offset = 0; offset < data.length; offset += 64) {
+    const words = new Uint32Array(16);
+    for (let word = 0; word < 16; word++) {
+      const index = offset + word * 4;
+      words[word] = (
+        data[index]
+        | (data[index + 1] << 8)
+        | (data[index + 2] << 16)
+        | (data[index + 3] << 24)
+      ) >>> 0;
+    }
+
+    let a = a0;
+    let b = b0;
+    let c = c0;
+    let d = d0;
+    for (let index = 0; index < 64; index++) {
+      let f;
+      let wordIndex;
+      if (index < 16) {
+        f = (b & c) | (~b & d);
+        wordIndex = index;
+      } else if (index < 32) {
+        f = (d & b) | (~d & c);
+        wordIndex = (5 * index + 1) % 16;
+      } else if (index < 48) {
+        f = b ^ c ^ d;
+        wordIndex = (3 * index + 5) % 16;
+      } else {
+        f = c ^ (b | ~d);
+        wordIndex = (7 * index) % 16;
+      }
+      const sum = (a + (f >>> 0) + constants[index] + words[wordIndex]) >>> 0;
+      const rotated = ((sum << shifts[index]) | (sum >>> (32 - shifts[index]))) >>> 0;
+      a = d;
+      d = c;
+      c = b;
+      b = (b + rotated) >>> 0;
+    }
+
+    a0 = (a0 + a) >>> 0;
+    b0 = (b0 + b) >>> 0;
+    c0 = (c0 + c) >>> 0;
+    d0 = (d0 + d) >>> 0;
+  }
+
+  return [a0, b0, c0, d0].map(word =>
+    [0, 8, 16, 24].map(shift => ((word >>> shift) & 0xff).toString(16).padStart(2, '0')).join('')
+  ).join('');
+}
+
+const Application = {
+  isResourceLimited: false,
+  filterAdultTitles: false,
+  filterMatureTitles: false,
+
+  decodeHTMLEntities: (value) => {
+    const textarea = document.createElement('textarea');
+    textarea.innerHTML = String(value || '');
+    return textarea.value;
+  },
+  sleep: (seconds) => new Promise(resolve => setTimeout(resolve, Math.max(0, Number(seconds) * 1000))),
+  getDefaultUserAgent: async () => 'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36',
+
+  Selector: (object, symbol) => {
+    const id = 'selector-' + (++selectorSequence);
+    const callback = object && object[symbol];
+    if (typeof callback !== 'function') {
+      throw new Error('Invalid selector: ' + String(symbol));
+    }
+    selectorRegistry.set(id, callback.bind(object));
+    return id;
+  },
+  SelectorRegistry: {
+    selector: (id) => {
+      const callback = selectorRegistry.get(id);
+      if (!callback) throw new Error('Selector not found: ' + String(id));
+      return callback;
+    },
+  },
+
+  registerInterceptor: (interceptorId, requestSelector, responseSelector) => {
+    const extensionId = activeExtensionId;
+    if (!extensionId) return;
+    const list = extensionInterceptors[extensionId] || [];
+    const existingIndex = list.findIndex(item => item.id === interceptorId);
+    const entry = { id: interceptorId, requestSelector, responseSelector };
+    if (existingIndex >= 0) list[existingIndex] = entry;
+    else list.push(entry);
+    extensionInterceptors[extensionId] = list;
+  },
+  unregisterInterceptor: (interceptorId) => {
+    const extensionId = activeExtensionId;
+    if (!extensionId) return;
+    extensionInterceptors[extensionId] = (extensionInterceptors[extensionId] || [])
+      .filter(item => item.id !== interceptorId);
+  },
+  setRedirectHandler: () => {},
+
+  scheduleRequest: async (request) => {
+    const extensionId = activeExtensionId;
+    let finalRequest = { ...request, headers: { ...(request.headers || {}) } };
+    const interceptors = extensionInterceptors[extensionId] || [];
+
+    for (const interceptor of interceptors) {
+      const callback = selectorRegistry.get(interceptor.requestSelector);
+      if (callback) finalRequest = await callback(finalRequest);
+    }
+
+    if (finalRequest.cookies && Object.keys(finalRequest.cookies).length > 0) {
+      const cookieHeader = Object.entries(finalRequest.cookies)
+        .map(([name, value]) => name + '=' + value)
+        .join('; ');
+      finalRequest.headers.Cookie = finalRequest.headers.Cookie
+        ? finalRequest.headers.Cookie + '; ' + cookieHeader
+        : cookieHeader;
+    }
+
+    let body = finalRequest.body;
+    if (body && typeof body === 'object' && !(body instanceof ArrayBuffer) && !ArrayBuffer.isView(body)) {
+      body = JSON.stringify(body);
+      if (!finalRequest.headers['Content-Type'] && !finalRequest.headers['content-type']) {
+        finalRequest.headers['Content-Type'] = 'application/json';
+      }
+    } else if (body instanceof ArrayBuffer || ArrayBuffer.isView(body)) {
+      const bytes = body instanceof ArrayBuffer
+        ? new Uint8Array(body)
+        : new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
+      let binary = '';
+      for (let index = 0; index < bytes.length; index++) binary += String.fromCharCode(bytes[index]);
+      body = atob(btoa(binary));
+    }
+
+    const proxyResponse = await proxyFetch(finalRequest.url, {
+      method: finalRequest.method || 'GET',
+      headers: finalRequest.headers,
+      body,
+      responseType: 'arraybuffer',
+    });
+
+    let data;
+    if (proxyResponse.rawData) {
+      const binary = atob(proxyResponse.rawData);
+      const bytes = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+      data = bytes.buffer;
+    } else {
+      data = new TextEncoder().encode(proxyResponse.data || '').buffer;
+    }
+
+    const response = {
+      url: proxyResponse.url || finalRequest.url,
+      headers: proxyResponse.headers || {},
+      status: proxyResponse.status || 0,
+      mimeType: proxyResponse.mimeType,
+      cookies: proxyResponse.cookies || [],
+    };
+
+    for (const interceptor of [...interceptors].reverse()) {
+      const callback = selectorRegistry.get(interceptor.responseSelector);
+      if (callback) data = await callback(finalRequest, response, data);
+    }
+
+    return [response, data];
+  },
+
+  arrayBufferToUTF8String: (buffer) => new TextDecoder('utf-8').decode(buffer),
+  arrayBufferToASCIIString: (buffer) => {
+    const bytes = new Uint8Array(buffer);
+    let value = '';
+    for (let index = 0; index < bytes.length; index++) value += String.fromCharCode(bytes[index] & 0x7f);
+    return value;
+  },
+  arrayBufferToUTF16String: (buffer) => new TextDecoder('utf-16').decode(buffer),
+  base64Encode: (value) => {
+    const bytes = typeof value === 'string' ? new TextEncoder().encode(value) : new Uint8Array(value);
+    let binary = '';
+    for (let index = 0; index < bytes.length; index++) binary += String.fromCharCode(bytes[index]);
+    return btoa(binary);
+  },
+  base64Decode: (value) => {
+    const encoded = typeof value === 'string'
+      ? value
+      : new TextDecoder('utf-8').decode(value);
+    const binary = atob(encoded);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+    try {
+      return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    } catch {
+      return bytes.buffer;
+    }
+  },
+  crypto_md5Hash: paperbackMd5,
+
+  getState: (key) => extensionRuntimeStates[activeExtensionId]?.[key],
+  setState: (value, key) => {
+    if (!activeExtensionId) return;
+    const state = extensionRuntimeStates[activeExtensionId] || {};
+    state[key] = value;
+    extensionRuntimeStates[activeExtensionId] = state;
+    sendToRN({
+      type: 'stateStore',
+      requestId: ++stateRequestId,
+      extensionId: activeExtensionId,
+      key: 'paperback09',
+      value: state,
+    });
+  },
+  getSecureState: (key) => extensionRuntimeStates[activeExtensionId]?.['secure:' + key],
+  setSecureState: (value, key) => Application.setState(value, 'secure:' + key),
+  resetAllState: () => {
+    if (activeExtensionId) extensionRuntimeStates[activeExtensionId] = {};
+  },
+
+  registerDiscoverSection: (section, selector) => {
+    if (!activeExtensionId) return;
+    const sections = extensionDiscoverSections[activeExtensionId] || [];
+    sections.push({ ...section, selector });
+    extensionDiscoverSections[activeExtensionId] = sections;
+  },
+  unregisterDiscoverSection: (sectionId) => {
+    if (!activeExtensionId) return;
+    extensionDiscoverSections[activeExtensionId] =
+      (extensionDiscoverSections[activeExtensionId] || []).filter(section => section.id !== sectionId);
+  },
+  registeredDiscoverSections: () => extensionDiscoverSections[activeExtensionId] || [],
+  invalidateDiscoverSections: () => {
+    if (activeExtensionId) extensionDiscoverSections[activeExtensionId] = [];
+  },
+
+  executeInWebView: async (context) => {
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    iframe.srcdoc = context?.source?.html || '<html><body></body></html>';
+    document.body.appendChild(iframe);
+    await new Promise(resolve => {
+      iframe.onload = resolve;
+      setTimeout(resolve, 100);
+    });
+    try {
+      const result = iframe.contentWindow.eval(context.inject);
+      return { result: await result, storage: context.storage || { cookies: [] } };
+    } finally {
+      iframe.remove();
+    }
+  },
+  formDidChange: () => {},
+};
+
+window.Application = Application;
+
 // Send message to React Native
 function sendToRN(data) {
   window.ReactNativeWebView.postMessage(JSON.stringify(data));
@@ -757,52 +1156,77 @@ function log(...args) {
 window.handleMessage = function(messageStr) {
   try {
     const message = JSON.parse(messageStr);
-    const { type, requestId, extensionId, sourceJs, method, args } = message;
+    const { type, requestId, extensionId, sourceJs, apiVersion, initialState, method, args } = message;
 
     if (type === 'loadExtension') {
-      loadExtension(extensionId, sourceJs, requestId);
+      extensionRunQueue = extensionRunQueue
+        .catch(() => undefined)
+        .then(() => loadExtension(extensionId, sourceJs, apiVersion, initialState, requestId));
+    } else if (type === 'unloadExtension') {
+      extensionRunQueue = extensionRunQueue
+        .catch(() => undefined)
+        .then(() => unloadExtension(extensionId, requestId));
     } else if (type === 'runMethod') {
-      runExtensionMethod(extensionId, method, args, requestId);
+      extensionRunQueue = extensionRunQueue
+        .catch(() => undefined)
+        .then(() => runExtensionMethod(extensionId, method, args, requestId));
     }
   } catch (e) {
     log('Error handling message:', e.message);
   }
 };
 
-// Load an extension from source.js
-function loadExtension(extensionId, sourceJs, requestId) {
+async function unloadExtension(extensionId, requestId) {
+  delete loadedExtensions[extensionId];
+  delete loadedExtensionMeta[extensionId];
+  delete extensionDiscoverSections[extensionId];
+  delete extensionInterceptors[extensionId];
+  sendToRN({ requestId, result: true });
+}
+
+// Load either a Paperback 0.8 source.js or Paperback 0.9 index.js bundle.
+async function loadExtension(extensionId, sourceJs, apiVersion, initialState, requestId) {
+  const originalSources = window.Sources;
+  const originalSource = window.source;
   try {
     log('Loading extension:', extensionId);
+    activeExtensionId = extensionId;
+    extensionRuntimeStates[extensionId] = initialState || extensionRuntimeStates[extensionId] || {};
     
     // IMPORTANT: Clear window.Sources BEFORE loading to ensure we get a fresh object
     // This prevents cross-contamination between extensions (e.g., Cuutruyen showing Pixiv data)
-    const originalSources = window.Sources;
     window.Sources = undefined;
+    window.source = undefined;
     
-    // Execute the source code - this will set window.Sources
-    eval(sourceJs);
+    // Indirect eval executes at global scope, which is required for the 0.9
+    // bundle's top-level "var source = ..." export.
+    (0, eval)(sourceJs);
     
-    // Get the Sources object that was just created by this extension
+    // 0.8 exports window.Sources; 0.9 exports window.source.
     const Sources = window.Sources;
+    const paperback09Exports = window.source;
+    const isPaperback09 = apiVersion === '0.9' || (!Sources && paperback09Exports);
     
-    if (!Sources) {
+    if (!Sources && !paperback09Exports) {
       window.Sources = originalSources; // Restore
-      throw new Error('No Sources found after loading extension');
+      window.source = originalSource;
+      throw new Error('No Paperback exports found after loading extension');
     }
     
     // Log available sources for debugging
-    const availableKeys = Object.keys(Sources);
+    const exportContainer = isPaperback09 ? paperback09Exports : Sources;
+    const availableKeys = Object.keys(exportContainer);
     log('Available source classes:', availableKeys.join(', '));
     
     // Find the extension class - try exact match first, then case-insensitive match
-    let ExtensionClass = Sources[extensionId];
+    let ExtensionClass = exportContainer[extensionId];
     
     if (!ExtensionClass) {
       // Try case-insensitive match
       const lowerExtId = extensionId.toLowerCase();
       for (const key of availableKeys) {
         if (key.toLowerCase() === lowerExtId) {
-          ExtensionClass = Sources[key];
+          ExtensionClass = exportContainer[key];
           log('Found extension via case-insensitive match:', key);
           break;
         }
@@ -812,21 +1236,26 @@ function loadExtension(extensionId, sourceJs, requestId) {
     if (!ExtensionClass) {
       // Only use first key if there's exactly ONE source in the bundle
       // This prevents picking the wrong extension when multiple are cached
-      if (availableKeys.length === 1) {
-        ExtensionClass = Sources[availableKeys[0]];
-        log('Using single available source:', availableKeys[0]);
+      const usableKeys = availableKeys.filter(key =>
+        !/Extension$/.test(key) && exportContainer[key] && typeof exportContainer[key] === 'object'
+      );
+      if (usableKeys.length === 1) {
+        ExtensionClass = exportContainer[usableKeys[0]];
+        log('Using single available source:', usableKeys[0]);
       } else {
         window.Sources = originalSources; // Restore
+        window.source = originalSource;
         throw new Error('Extension class not found for ' + extensionId + '. Available: ' + availableKeys.join(', '));
       }
     }
     
     if (!ExtensionClass) {
       window.Sources = originalSources; // Restore
+      window.source = originalSource;
       throw new Error('No extension class found for ' + extensionId);
     }
     
-    // Instantiate it - some extensions expect cheerio to be passed
+    // Instantiate 0.8 classes. Paperback 0.9 normally exports a ready instance.
     let instance;
     if (typeof ExtensionClass === 'function') {
       try {
@@ -850,16 +1279,477 @@ function loadExtension(extensionId, sourceJs, requestId) {
     }
     
     loadedExtensions[extensionId] = instance;
+    loadedExtensionMeta[extensionId] = {
+      apiVersion: isPaperback09 ? '0.9' : '0.8',
+      sections: {},
+      manga: {},
+      chapters: {},
+    };
+
+    if (isPaperback09 && typeof instance.initialise === 'function') {
+      await instance.initialise();
+    }
     
     log('Extension loaded successfully:', extensionId);
     sendToRN({ requestId, result: true });
     
     // Restore original Sources (though we might want to keep it cleared)
     window.Sources = originalSources;
+    window.source = originalSource;
+    activeExtensionId = null;
   } catch (e) {
+    window.Sources = originalSources;
+    window.source = originalSource;
+    activeExtensionId = null;
     log('Failed to load extension:', e.message);
     sendToRN({ requestId, error: e.message });
   }
+}
+
+const YURI_GARDEN_SCRAMBLE_PREFIX = 'yg-scramble:';
+const YURI_GARDEN_SEGMENT_GAP = 4;
+const YURI_GARDEN_BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+const YURI_GARDEN_FACTORIAL_TABLE = [1, 1, 2, 6, 24, 120, 720, 5040, 40320, 362880, 3628800];
+
+function encodeYuriGardenScramblePayload(payload) {
+  try {
+    return YURI_GARDEN_SCRAMBLE_PREFIX + btoa(JSON.stringify(payload));
+  } catch (error) {
+    log('Failed to encode YuriGarden scramble payload:', error?.message || error);
+    return null;
+  }
+}
+
+function decodeYuriGardenScramblePayload(value) {
+  if (typeof value !== 'string' || !value.startsWith(YURI_GARDEN_SCRAMBLE_PREFIX)) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(atob(value.slice(YURI_GARDEN_SCRAMBLE_PREFIX.length)));
+  } catch (error) {
+    log('Failed to decode YuriGarden scramble payload:', error?.message || error);
+    return null;
+  }
+}
+
+function isYuriGardenChapterImageUrl(url) {
+  if (typeof url !== 'string') return false;
+  return /^https:\/\/(?:db\.yurigarden\.com|cdn\.yurigarden\.moe)\/.+\/chapters\/\d+\/.+/i.test(url);
+}
+
+function extractYuriGardenChapterId(url) {
+  const match = typeof url === 'string' ? url.match(/\/chapters\/(\d+)\//i) : null;
+  return match ? match[1] : null;
+}
+
+function tryDecodeYuriGardenPageKey(encoded) {
+  try {
+    if (typeof encoded !== 'string' || !/^H[1-9A-HJ-NP-Za-km-z]+$/.test(encoded)) {
+      return null;
+    }
+
+    const body = encoded.slice(1, -1);
+    const checksum = encoded.slice(-1);
+    let value = 0;
+
+    for (const char of body) {
+      const index = YURI_GARDEN_BASE58_ALPHABET.indexOf(char);
+      if (index < 0) return null;
+      value = value * 58 + index;
+    }
+
+    if (YURI_GARDEN_BASE58_ALPHABET[value % 58] !== checksum) {
+      return null;
+    }
+
+    const pool = Array.from({ length: 10 }, (_, index) => index);
+    const decoded = [];
+
+    for (let index = 9; index >= 0; index--) {
+      const factorial = YURI_GARDEN_FACTORIAL_TABLE[index] || 1;
+      const pick = Math.floor(value / factorial);
+      value = value % factorial;
+
+      const item = pool.splice(pick, 1)[0];
+      if (item === undefined) {
+        return null;
+      }
+
+      decoded.push(item);
+    }
+
+    return decoded;
+  } catch (error) {
+    log('Failed to decode YuriGarden page key:', error?.message || error);
+    return null;
+  }
+}
+
+function normalizeYuriGardenPageUrl(url) {
+  return typeof url === 'string' ? url.replace('_credit', '') : url;
+}
+
+function normalizeYuriGardenChapterPages(payload) {
+  const pages = Array.isArray(payload?.pages)
+    ? payload.pages
+    : payload?.pages && typeof payload.pages === 'object'
+      ? Object.values(payload.pages)
+      : [];
+
+  return pages
+    .map((page) => {
+      const url = normalizeYuriGardenPageUrl(page?.url);
+      if (typeof url !== 'string' || !url) {
+        return null;
+      }
+
+      const decoded = typeof page?.key === 'string'
+        ? tryDecodeYuriGardenPageKey(page.key.replace(/^.{4}/, ''))
+        : null;
+
+      return {
+        url,
+        decoded,
+      };
+    })
+    .filter(Boolean);
+}
+
+async function fetchYuriGardenScramblePayload(extension, imageUrl) {
+  const chapterId = extractYuriGardenChapterId(imageUrl);
+  if (!chapterId) {
+    return null;
+  }
+
+  const response = await extension.requestManager.schedule(
+    App.createRequest({
+      url: 'https://api.yurigarden.moe/api/chapters/pages/' + chapterId,
+      method: 'GET',
+    }),
+    1
+  );
+
+  const rawText = typeof response?.data === 'string' ? response.data : '';
+  if (!rawText) {
+    return null;
+  }
+
+  const payload = JSON.parse(rawText);
+  const normalizedPages = normalizeYuriGardenChapterPages(payload);
+  const normalizedUrl = normalizeYuriGardenPageUrl(imageUrl);
+
+  return normalizedPages.find((page) => page.url === normalizedUrl && Array.isArray(page.decoded) && page.decoded.length > 0) || null;
+}
+
+function invertPermutation(order) {
+  const inverted = new Array(order.length).fill(0);
+  for (let index = 0; index < order.length; index++) {
+    inverted[order[index]] = index;
+  }
+  return inverted;
+}
+
+function splitHeightEvenly(totalHeight, segmentCount) {
+  const base = Math.floor(totalHeight / segmentCount);
+  const remainder = totalHeight % segmentCount;
+  const heights = [];
+
+  for (let index = 0; index < segmentCount; index++) {
+    heights.push(base + (index < remainder ? 1 : 0));
+  }
+
+  return heights;
+}
+
+async function rebuildYuriGardenImage(imageBytes, metadata) {
+  const decodedOrder = Array.isArray(metadata?.decoded)
+    ? metadata.decoded.filter((value) => Number.isInteger(value))
+    : [];
+
+  if (!decodedOrder.length) {
+    throw new Error('Missing YuriGarden decode order');
+  }
+
+  const sourceImage = App.createPBImage({ data: imageBytes });
+  const segmentCount = decodedOrder.length;
+  const outputHeight = sourceImage.height - YURI_GARDEN_SEGMENT_GAP * (segmentCount - 1);
+
+  if (outputHeight <= 0) {
+    throw new Error('Invalid YuriGarden image height');
+  }
+
+  const destinationHeights = splitHeightEvenly(outputHeight, segmentCount);
+  const sourceHeights = decodedOrder.map((value) => destinationHeights[value] || 0);
+  const sourceOrder = invertPermutation(decodedOrder);
+  const canvas = App.createPBCanvas();
+
+  canvas.setSize(sourceImage.width, outputHeight);
+
+  let destinationY = 0;
+  for (let destinationIndex = 0; destinationIndex < sourceOrder.length; destinationIndex++) {
+    const sourceIndex = sourceOrder[destinationIndex];
+    const sourceY = sourceHeights
+      .slice(0, sourceIndex)
+      .reduce((sum, value) => sum + value, 0) + YURI_GARDEN_SEGMENT_GAP * sourceIndex;
+    const sourceHeight = sourceHeights[sourceIndex];
+
+    canvas.drawImage(
+      sourceImage,
+      0,
+      sourceY,
+      sourceImage.width,
+      sourceHeight,
+      0,
+      destinationY
+    );
+
+    destinationY += sourceHeight;
+  }
+
+  return canvas.encode('image/jpeg');
+}
+
+function paperback09SectionType(type) {
+  const value = typeof type === 'string' ? type : Number(type);
+  if (value === 0 || value === 'featured') return 'featured';
+  if (value === 2 || value === 'prominentCarousel') return 'prominent';
+  if (value === 3 || value === 'chapterUpdates') return 'chapterUpdates';
+  if (value === 4 || value === 'genres') return 'genres';
+  return 'singleRowNormal';
+}
+
+function paperback09Item(item) {
+  const fallbackId = item?.type === 'genresCarouselItem'
+    ? 'genre-' + (item?.name || item?.title || '')
+    : '';
+  return {
+    ...item,
+    mangaId: item?.mangaId || item?.id || fallbackId,
+    id: item?.mangaId || item?.id || fallbackId,
+    image: item?.image || item?.imageUrl || item?.thumbnailUrl || '',
+    title: item?.title || item?.name || '',
+    subtitle: item?.subtitle || '',
+  };
+}
+
+async function paperback09Manga(extension, meta, mangaId) {
+  if (!meta.manga[mangaId]) {
+    meta.manga[mangaId] = await extension.getMangaDetails(mangaId);
+  }
+  return meta.manga[mangaId];
+}
+
+async function paperback09Chapters(extension, meta, mangaId) {
+  const sourceManga = await paperback09Manga(extension, meta, mangaId);
+  const chapters = await extension.getChapters(sourceManga);
+  for (const chapter of chapters || []) {
+    meta.chapters[chapter.chapterId || chapter.id] = chapter;
+  }
+  return chapters || [];
+}
+
+async function paperback09SearchQuery(extension, rawQuery) {
+  const filters = typeof extension.getSearchFilters === 'function'
+    ? await extension.getSearchFilters()
+    : [];
+  const includedTags = rawQuery?.includedTags || [];
+
+  for (const selectedTag of includedTags) {
+    const filter = filters.find(candidate =>
+      (candidate.options || candidate.items || []).some(option => option.id === selectedTag.id)
+    );
+    if (!filter) continue;
+    if (filter.type === 'multiselect') {
+      filter.value = { ...(filter.value || {}), [selectedTag.id]: 'included' };
+    } else if (Array.isArray(filter.value)) {
+      filter.value = [selectedTag.id];
+    } else {
+      filter.value = selectedTag.id;
+    }
+  }
+
+  return {
+    ...rawQuery,
+    title: rawQuery?.title || '',
+    filters: rawQuery?.filters || filters,
+    metadata: rawQuery?.metadata ?? filters,
+  };
+}
+
+async function resolvePaperback09SettingsForm(extension, meta) {
+  const form = await extension.getSettingsForm();
+  const sections = await form.getSections();
+  meta.settingsActions = {};
+  const rows = [];
+
+  for (const section of sections || []) {
+    for (const item of section.items || []) {
+      const row = {
+        id: item.id,
+        label: item.title || item.subtitle || section.header || item.id,
+        value: item.value,
+      };
+
+      if (item.onValueChange) meta.settingsActions[item.id] = item.onValueChange;
+      if (item.onSelect) meta.settingsActions[item.id] = item.onSelect;
+
+      if (item.type === 'toggleRow') row.type = 'switch';
+      else if (item.type === 'inputRow') row.type = item.isSecureEntry ? 'secureInput' : 'input';
+      else if (item.type === 'stepperRow') {
+        row.type = 'stepper';
+        row.minValue = item.minValue;
+        row.maxValue = item.maxValue;
+        row.step = item.stepValue;
+      } else if (item.type === 'buttonRow') {
+        row.type = 'button';
+        row.hasOnTap = true;
+      } else if (item.type === 'navigationRow') {
+        row.type = 'navigation';
+        const childSections = await item.form.getSections();
+        row.form = childSections.map(child => ({
+          id: child.id,
+          header: child.header,
+          footer: child.footer,
+          rows: (child.items || []).map(childItem => ({
+            id: childItem.id,
+            label: childItem.title || childItem.id,
+            type: childItem.type === 'labelRow' ? 'label' : 'button',
+            value: childItem.value,
+          })),
+        }));
+      } else {
+        row.type = 'label';
+      }
+      rows.push(row);
+    }
+  }
+
+  return { id: 'paperback09', header: 'Source Settings', rows };
+}
+
+async function runPaperback09Method(extensionId, extension, meta, method, args) {
+  if (method === 'getHomePageSections') {
+    let sections = typeof extension.getDiscoverSections === 'function'
+      ? await extension.getDiscoverSections()
+      : Application.registeredDiscoverSections();
+    const output = [];
+
+    for (const section of sections || []) {
+      meta.sections[section.id] = section;
+      let paged;
+      if (section.selector) {
+        paged = await Application.SelectorRegistry.selector(section.selector)(section, undefined);
+      } else {
+        paged = await extension.getDiscoverSectionItems(section, undefined);
+      }
+      output.push({
+        id: section.id,
+        title: section.title,
+        type: paperback09SectionType(section.type),
+        items: (paged?.items || []).map(paperback09Item),
+        metadata: paged?.metadata,
+        containsMoreItems: paged?.metadata != null,
+      });
+    }
+    return output;
+  }
+
+  if (method === 'getViewMoreItems') {
+    const [sectionId, metadata] = args;
+    let section = meta.sections[sectionId];
+    if (!section && typeof extension.getDiscoverSections === 'function') {
+      const sections = await extension.getDiscoverSections();
+      for (const item of sections || []) meta.sections[item.id] = item;
+      section = meta.sections[sectionId];
+    }
+    if (!section) throw new Error('Discover section not found: ' + sectionId);
+    const paged = section.selector
+      ? await Application.SelectorRegistry.selector(section.selector)(section, metadata)
+      : await extension.getDiscoverSectionItems(section, metadata);
+    return {
+      results: (paged?.items || []).map(paperback09Item),
+      metadata: paged?.metadata,
+    };
+  }
+
+  if (method === 'getSearchResults') {
+    const [rawQuery, metadata] = args;
+    const query = await paperback09SearchQuery(extension, rawQuery);
+    return extension.getSearchResults(query, metadata, undefined);
+  }
+
+  if (method === 'getSearchTags') {
+    const filters = typeof extension.getSearchFilters === 'function'
+      ? await extension.getSearchFilters()
+      : [];
+    return filters.map(filter => ({
+      id: filter.id,
+      title: filter.title || filter.name || '',
+      tags: (filter.options || filter.items || []).map(option => ({
+        id: option.id,
+        label: option.title || option.label || option.value || option.id,
+      })),
+    }));
+  }
+
+  if (method === 'getMangaDetails') {
+    return paperback09Manga(extension, meta, args[0]);
+  }
+
+  if (method === 'getMangaShareUrl') {
+    const manga = await paperback09Manga(extension, meta, args[0]);
+    return manga?.mangaInfo?.shareUrl || null;
+  }
+
+  if (method === 'getChapters') {
+    return paperback09Chapters(extension, meta, args[0]);
+  }
+
+  if (method === 'getChapterDetails') {
+    const [mangaId, chapterId] = args;
+    let chapter = meta.chapters[chapterId];
+    if (!chapter) {
+      await paperback09Chapters(extension, meta, mangaId);
+      chapter = meta.chapters[chapterId];
+    }
+    if (!chapter) throw new Error('Chapter not found: ' + chapterId);
+    const details = await extension.getChapterDetails(chapter);
+    return { ...details, pages: details?.pages || [] };
+  }
+
+  if (method === 'getCloudflareBypassRequestAsync') {
+    return extension.domain ? { url: extension.domain, method: 'GET' } : null;
+  }
+
+  if (method === 'getSourceMenu') {
+    if (typeof extension.getSettingsForm !== 'function') return null;
+    return resolvePaperback09SettingsForm(extension, meta);
+  }
+
+  if (method === 'setSettingValue' || method === 'invokeSettingAction') {
+    if (!meta.settingsActions) await resolvePaperback09SettingsForm(extension, meta);
+    const settingPath = args[0];
+    const settingId = String(settingPath).split('/').pop();
+    const selector = meta.settingsActions[settingId];
+    if (!selector) return false;
+    const callback = Application.SelectorRegistry.selector(selector);
+    await callback(method === 'setSettingValue' ? args[1] : undefined);
+    return true;
+  }
+
+  if (method === 'fetchImage') {
+    const [, data] = await Application.scheduleRequest({ url: args[0], method: 'GET' });
+    const bytes = new Uint8Array(data);
+    let binary = '';
+    for (let index = 0; index < bytes.length; index++) binary += String.fromCharCode(bytes[index]);
+    return 'data:image/jpeg;base64,' + btoa(binary);
+  }
+
+  if (typeof extension[method] !== 'function') {
+    throw new Error('Method not found: ' + method);
+  }
+  return extension[method](...args);
 }
 
 // Run a method on an extension
@@ -869,6 +1759,21 @@ async function runExtensionMethod(extensionId, method, args, requestId) {
     
     if (!extension) {
       throw new Error('Extension not loaded: ' + extensionId);
+    }
+
+    activeExtensionId = extensionId;
+    const extensionMeta = loadedExtensionMeta[extensionId];
+    if (extensionMeta?.apiVersion === '0.9') {
+      const paperback09Result = await runPaperback09Method(
+        extensionId,
+        extension,
+        extensionMeta,
+        method,
+        args
+      );
+      activeExtensionId = null;
+      sendToRN({ requestId, result: paperback09Result });
+      return;
     }
     
     // Special methods that don't need to exist on the extension object
@@ -945,6 +1850,25 @@ async function runExtensionMethod(extensionId, method, args, requestId) {
             url = p;
           }
           
+          const yuriGardenPayload = (() => {
+            if (p && typeof p === 'object' && Array.isArray(p.decoded) && p.decoded.length > 0) {
+              return encodeYuriGardenScramblePayload({
+                url,
+                decoded: p.decoded,
+              });
+            }
+
+            if (isYuriGardenChapterImageUrl(url)) {
+              return encodeYuriGardenScramblePayload({ url });
+            }
+
+            return null;
+          })();
+
+          if (yuriGardenPayload) {
+            url = 'drm://' + extensionId + '/' + yuriGardenPayload;
+          }
+
           // Mark DRM URLs with special prefix so reader knows to decrypt on-demand
           if (url && url.includes('#drm_data=')) {
             // Add sourceId so we know which extension to use for decryption
@@ -969,22 +1893,38 @@ async function runExtensionMethod(extensionId, method, args, requestId) {
       log('Decrypting DRM image on-demand');
       
       try {
-        // Fetch through the extension's request manager (which has the DRM interceptor)
+        let yuriGardenPayload = decodeYuriGardenScramblePayload(imageUrl);
+        if (yuriGardenPayload && !Array.isArray(yuriGardenPayload.decoded) && isYuriGardenChapterImageUrl(yuriGardenPayload.url)) {
+          const resolvedPayload = await fetchYuriGardenScramblePayload(extension, yuriGardenPayload.url);
+          if (resolvedPayload) {
+            yuriGardenPayload = resolvedPayload;
+          }
+        }
+
+        const requestUrl = yuriGardenPayload?.url || imageUrl;
         const response = await extension.requestManager.schedule(
-          App.createRequest({ url: imageUrl, method: 'GET' }),
+          App.createRequest({ url: requestUrl, method: 'GET' }),
           1
         );
         
         // If we got decrypted rawData, convert to base64 data URL
         if (response.rawData) {
-          let binary = '';
           const bytes = response.rawData instanceof Uint8Array ? response.rawData : new Uint8Array(response.rawData);
-          for (let j = 0; j < bytes.length; j++) {
-            binary += String.fromCharCode(bytes[j]);
+          const outputBytes = yuriGardenPayload && Array.isArray(yuriGardenPayload.decoded)
+            ? await rebuildYuriGardenImage(bytes, yuriGardenPayload)
+            : bytes;
+
+          if (!outputBytes) {
+            throw new Error('Failed to rebuild image bytes');
+          }
+
+          let binary = '';
+          for (let j = 0; j < outputBytes.length; j++) {
+            binary += String.fromCharCode(outputBytes[j]);
           }
           const base64 = btoa(binary);
           result = 'data:image/jpeg;base64,' + base64;
-          log('DRM image decrypted successfully, size:', bytes.length);
+          log('DRM image decrypted successfully, size:', outputBytes.length);
         } else {
           throw new Error('No rawData in response');
         }
@@ -1046,8 +1986,10 @@ async function runExtensionMethod(extensionId, method, args, requestId) {
     }
     
     log('Method completed:', method);
+    activeExtensionId = null;
     sendToRN({ requestId, result });
   } catch (e) {
+    activeExtensionId = null;
     log('Method failed:', e.message);
     sendToRN({ requestId, error: e.message });
   }
@@ -1511,6 +2453,9 @@ log('Extension Runner initialized');
         mixedContentMode="always"
         allowUniversalAccessFromFileURLs={true}
         allowFileAccess={true}
+        sharedCookiesEnabled={true}
+        thirdPartyCookiesEnabled={true}
+        cacheEnabled={true}
         style={styles.webview}
       />
     </View>
