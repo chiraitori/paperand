@@ -1199,14 +1199,19 @@ async function loadExtension(extensionId, sourceJs, apiVersion, initialState, re
     window.Sources = undefined;
     window.source = undefined;
     
-    // Indirect eval executes at global scope, which is required for the 0.9
-    // bundle's top-level "var source = ..." export.
-    (0, eval)(sourceJs);
+    // Keep the proven 0.8 loader path from v0.0.15. Some Browserify
+    // source.js bundles rely on direct eval's execution context. Paperback
+    // 0.9 needs global eval so its top-level `var source` becomes window.source.
+    if (apiVersion === '0.9') {
+      (0, eval)(sourceJs);
+    } else {
+      eval(sourceJs);
+    }
     
     // 0.8 exports window.Sources; 0.9 exports window.source.
     const Sources = window.Sources;
     const paperback09Exports = window.source;
-    const isPaperback09 = apiVersion === '0.9' || (!Sources && paperback09Exports);
+    const isPaperback09 = apiVersion === '0.9';
     
     if (!Sources && !paperback09Exports) {
       window.Sources = originalSources; // Restore
@@ -1237,9 +1242,11 @@ async function loadExtension(extensionId, sourceJs, apiVersion, initialState, re
     if (!ExtensionClass) {
       // Only use first key if there's exactly ONE source in the bundle
       // This prevents picking the wrong extension when multiple are cached
-      const usableKeys = availableKeys.filter(key =>
-        !/Extension$/.test(key) && exportContainer[key] && typeof exportContainer[key] === 'object'
-      );
+      const usableKeys = isPaperback09
+        ? availableKeys.filter(key =>
+          !/Extension$/.test(key) && exportContainer[key] && typeof exportContainer[key] === 'object'
+        )
+        : availableKeys;
       if (usableKeys.length === 1) {
         ExtensionClass = exportContainer[usableKeys[0]];
         log('Using single available source:', usableKeys[0]);

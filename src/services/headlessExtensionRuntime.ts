@@ -652,8 +652,10 @@ const loadExtension = async (ext: InstalledExtension): Promise<boolean> => {
         const prevSources = (globalThis as any).Sources;
         const prevSource = (globalThis as any).source;
         const prevApplication = (globalThis as any).Application;
-        const isPaperback09 = ext.apiVersion === '0.9'
-            || (sourceJs.includes('var source=') && !sourceJs.includes('Sources='));
+        // Repository metadata is authoritative. String matching bundle text
+        // misclassified valid 0.8 Browserify bundles which happened to contain
+        // an internal `var source=` declaration.
+        const isPaperback09 = ext.apiVersion === '0.9';
 
         if (isPaperback09) {
             const savedState = await AsyncStorage.getItem(`@extension_state_${ext.id}_paperback09`);
@@ -758,11 +760,13 @@ const loadExtension = async (ext: InstalledExtension): Promise<boolean> => {
         }
 
         if (!ExtensionClass) {
-            const usableKeys = availableKeys.filter(key =>
-                !/Extension$/.test(key)
-                && exportContainer[key]
-                && typeof exportContainer[key] === 'object'
-            );
+            const usableKeys = isPaperback09
+                ? availableKeys.filter(key =>
+                    !/Extension$/.test(key)
+                    && exportContainer[key]
+                    && typeof exportContainer[key] === 'object'
+                )
+                : availableKeys;
             if (usableKeys.length === 1) ExtensionClass = exportContainer[usableKeys[0]];
         }
 

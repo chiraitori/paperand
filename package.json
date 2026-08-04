@@ -1,6 +1,6 @@
 {
   "name": "paperback-android",
-  "version": "0.0.17",
+  "version": "0.0.18",
   "main": "index.ts",
   "scripts": {
     "start": "expo start",
@@ -12,6 +12,7 @@
     "prebuild:dev": "cross-env APP_VARIANT=dev expo prebuild --clean",
     "web": "expo start --web",
     "test": "jest",
+    "test:extension-loader": "node scripts/verify-extension-loader.mjs",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage"
   },
