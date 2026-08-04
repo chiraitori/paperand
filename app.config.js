@@ -11,7 +11,7 @@
  */
 
 const IS_DEV = process.env.APP_VARIANT === 'dev';
-const DEFAULT_APP_VERSION = '0.0.20';
+const DEFAULT_APP_VERSION = '0.0.21';
 
 const getVersionCode = (version) => {
     const explicitVersionCode = Number.parseInt(process.env.APP_VERSION_CODE || '', 10);

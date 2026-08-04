@@ -357,13 +357,9 @@ const preloadSinglePage = async (page: Page): Promise<PreloadedPage> => {
       return { ...page, resolvedUrl: page.imageUrl, preloaded: true };
     }
 
-    // Normal URL - just prefetch
-    try {
-      await Image.prefetch(page.imageUrl);
-      return { ...page, resolvedUrl: page.imageUrl, preloaded: true };
-    } catch (e) {
-      return { ...page, resolvedUrl: page.imageUrl, preloaded: false };
-    }
+    // Normal images do not need preprocessing. Let FlatList and expo-image load
+    // only the visible window instead of downloading the entire chapter first.
+    return { ...page, resolvedUrl: page.imageUrl, preloaded: true };
   }
 };
 
@@ -381,19 +377,16 @@ const preloadAllPagesWithProgress = async (
 
   for (let i = 0; i < pages.length; i += BATCH_SIZE) {
     const batch = pages.slice(i, Math.min(i + BATCH_SIZE, pages.length));
-    const batchResults = await Promise.all(
+    await Promise.all(
       batch.map(async (page, batchIndex) => {
         const result = await preloadSinglePage(page);
-        return { index: i + batchIndex, result };
+        const index = i + batchIndex;
+        results[index] = result;
+        loaded++;
+        onProgress(loaded, pages.length);
+        onPageLoaded(index, result);
       })
     );
-
-    for (const { index, result } of batchResults) {
-      results[index] = result;
-      loaded++;
-      onProgress(loaded, pages.length);
-      onPageLoaded(index, result);
-    }
   }
 
   return results;
