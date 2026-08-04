@@ -37,8 +37,8 @@ try {
   const quote = String.fromCharCode(96);
   const htmlStart = source.indexOf(quote, templateStart) + 1;
   const htmlEnd = source.indexOf(`${quote};`, htmlStart);
-  let html = source.slice(htmlStart, htmlEnd).replaceAll('\\\\', '\\');
-  html = html.replace(/<script src="[^"]*cheerio[^>]*><\/script>/i, '');
+  const templateBody = source.slice(htmlStart, htmlEnd);
+  let html = Function(`return ${quote}${templateBody}${quote};`)();
 
   const ehentaiBundle = await fetch(
     'https://chiraitori.github.io/paperback-extensions/main/EHentai/source.js'
@@ -86,7 +86,16 @@ try {
 
   const testBundle = `window.Sources = {
     ActualExportName: class ActualExportName {
-      async ping() { return { ok: true }; }
+      constructor(cheerio) { this.cheerio = cheerio; }
+      async ping() {
+        const $ = this.cheerio.load('<table><tr><td class="key">first</td><td class="value">wrong</td></tr><tr><td class="key">length</td><td class="value">100 pages</td></tr></table>');
+        let length = '';
+        $('tr').each((_index, row) => {
+          if ($('td.key', row).text() === 'length') length = $('td.value', row).text();
+        });
+        const cookie = App.createCookie({ name: 'nw', value: '1' });
+        return { ok: length === '100 pages' && cookie.name === 'nw' };
+      }
     }
   };`;
   const startTest = `<script>

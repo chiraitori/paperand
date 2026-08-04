@@ -121,7 +121,13 @@ export const getExtensionIconUrl = (
 
 export const fetchRepositoryVersioning = async (baseUrl: string): Promise<VersioningResponse | null> => {
   try {
-    const response = await fetch(`${cleanBaseUrl(baseUrl)}/versioning.json`);
+    const versioningUrl = `${cleanBaseUrl(baseUrl)}/versioning.json?paperand_ts=${Date.now()}`;
+    const response = await fetch(versioningUrl, {
+      headers: {
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+      },
+    });
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }

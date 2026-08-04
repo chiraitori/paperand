@@ -101,13 +101,16 @@ export const downloadExtensionBundle = async (ext: InstalledExtension): Promise<
         return null;
     }
 
+    const downloadUrl = `${bundleUrl}${bundleUrl.includes('?') ? '&' : '?'}paperand_ts=${Date.now()}`;
     console.log('Downloading extension bundle from:', bundleUrl);
 
     try {
-        const response = await fetch(bundleUrl, {
+        const response = await fetch(downloadUrl, {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36',
                 'Accept': '*/*',
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache',
             },
         });
 

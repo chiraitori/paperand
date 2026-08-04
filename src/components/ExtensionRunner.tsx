@@ -38,13 +38,18 @@ export const ExtensionRunner: React.FC = () => {
         true;
       `);
 
-      // Timeout after 30 seconds
+      // Large galleries may require resolving hundreds of image-page URLs before
+      // Paperback can return ChapterDetails. Keep the normal bridge timeout short,
+      // but allow the reader method enough time to finish.
+      const timeoutMs = type === 'runMethod' && data?.method === 'getChapterDetails'
+        ? 120000
+        : 30000;
       setTimeout(() => {
         if (pendingRequestsRef.current.has(requestId)) {
           pendingRequestsRef.current.delete(requestId);
           reject(new Error('Request timeout'));
         }
-      }, 30000);
+      }, timeoutMs);
     });
   }, []);
 
@@ -357,6 +362,9 @@ const createCheerio = () => {
             if (el.querySelectorAll) {
               return wrapElements(Array.from(el.querySelectorAll(selector)));
             }
+          } else if (context.querySelectorAll) {
+            // Cheerio callbacks receive the raw DOM node as their second argument.
+            return wrapElements(Array.from(context.querySelectorAll(selector)));
           }
         }
         
@@ -528,6 +536,7 @@ const appendRequestParams = (url, param) => {
 // Mock App object that Paperback extensions expect
 const App = {
   createRequest: (config) => config,
+  createCookie: (config) => config,
   
   createRequestManager: (config) => {
     const interceptor = config?.interceptor;
@@ -1343,11 +1352,11 @@ function decodeYuriGardenScramblePayload(value) {
 
 function isYuriGardenChapterImageUrl(url) {
   if (typeof url !== 'string') return false;
-  return /^https:\/\/(?:db\.yurigarden\.com|cdn\.yurigarden\.moe)\/.+\/chapters\/\d+\/.+/i.test(url);
+  return /^https:\\/\\/(?:db\\.yurigarden\\.com|cdn\\.yurigarden\\.moe)\\/.+\\/chapters\\/\\d+\\/.+/i.test(url);
 }
 
 function extractYuriGardenChapterId(url) {
-  const match = typeof url === 'string' ? url.match(/\/chapters\/(\d+)\//i) : null;
+  const match = typeof url === 'string' ? url.match(/\\/chapters\\/(\\d+)\\//i) : null;
   return match ? match[1] : null;
 }
 
