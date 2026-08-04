@@ -1201,7 +1201,7 @@ async function loadExtension(extensionId, sourceJs, apiVersion, initialState, re
     
     // Keep the proven 0.8 loader path from v0.0.15. Some Browserify
     // source.js bundles rely on direct eval's execution context. Paperback
-    // 0.9 needs global eval so its top-level `var source` becomes window.source.
+    // 0.9 needs global eval so its top-level var source becomes window.source.
     if (apiVersion === '0.9') {
       (0, eval)(sourceJs);
     } else {

@@ -55,5 +55,6 @@ DemoProjects/
 .idea/
 .kilocode/
 .playwright-mcp/
+.expo-ci-check/
 .temp/
 .vscode/mcp.json
