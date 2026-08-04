@@ -11,6 +11,23 @@
  */
 
 const IS_DEV = process.env.APP_VARIANT === 'dev';
+const DEFAULT_APP_VERSION = '0.0.16';
+
+const getVersionCode = (version) => {
+    const explicitVersionCode = Number.parseInt(process.env.APP_VERSION_CODE || '', 10);
+    if (Number.isInteger(explicitVersionCode) && explicitVersionCode > 0) {
+        return explicitVersionCode;
+    }
+
+    const match = /^(\d+)\.(\d+)\.(\d+)/.exec(version);
+    if (!match) return 16;
+
+    const [, major, minor, patch] = match.map(Number);
+    return Math.max(1, major * 1_000_000 + minor * 1_000 + patch);
+};
+
+const APP_VERSION = process.env.APP_VERSION?.trim() || DEFAULT_APP_VERSION;
+const APP_VERSION_CODE = getVersionCode(APP_VERSION);
 
 const getAppName = () => {
     if (IS_DEV) return 'Paperand Dev';
@@ -35,7 +52,7 @@ module.exports = {
     expo: {
         name: getAppName(),
         slug: IS_DEV ? 'paperback-android-dev' : 'paperback-android',
-        version: '0.0.16',
+        version: APP_VERSION,
         scheme: getScheme(),
         orientation: 'default',
         icon: './assets/icon.png',
@@ -57,7 +74,7 @@ module.exports = {
         ios: {
             supportsTablet: true,
             bundleIdentifier: getBundleIdentifier('ios'),
-            buildNumber: '16',
+            buildNumber: String(APP_VERSION_CODE),
             infoPlist: {
                 ITSAppUsesNonExemptEncryption: false,
                 CFBundleAllowMixedLocalizations: true,
@@ -89,7 +106,7 @@ module.exports = {
                 backgroundColor: '#ffffff'
             },
             package: getBundleIdentifier('android'),
-            versionCode: 16,
+            versionCode: APP_VERSION_CODE,
             permissions: [
                 'android.permission.REQUEST_INSTALL_PACKAGES',
                 'android.permission.FOREGROUND_SERVICE',

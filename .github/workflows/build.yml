@@ -18,6 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+      version_code: ${{ steps.version.outputs.version_code }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -33,10 +34,26 @@ jobs:
           elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
             VERSION="${{ github.ref_name }}"
           else
-            VERSION="dev"
+            VERSION=$(node -p "require('./package.json').version")
           fi
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Building version: $VERSION"
+
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid version '$VERSION'. Expected a semantic version such as 0.0.16 or 0.0.17-rc.1."
+            exit 1
+          fi
+
+          BASE_VERSION="${VERSION%%-*}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$BASE_VERSION"
+          VERSION_CODE=$((10#$MAJOR * 1000000 + 10#$MINOR * 1000 + 10#$PATCH))
+          if [ "$VERSION_CODE" -lt 1 ]; then
+            VERSION_CODE=1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "APP_VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
+          echo "Building version $VERSION (versionCode/buildNumber $VERSION_CODE)"
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v1
@@ -81,30 +98,21 @@ jobs:
           }
           EOF
 
-      - name: Update app.json version
+      - name: Verify resolved Expo version
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          # Extract version number for versionCode (e.g., 0.0.7 -> 7)
-          VERSION_CODE=$(echo "$VERSION" | grep -oE '[0-9]+' | tail -1)
-          if [ -z "$VERSION_CODE" ]; then
-            VERSION_CODE=1
-          fi
-          
-          # Update app.json with jq
-          jq --arg ver "$VERSION" --argjson code "$VERSION_CODE" '
-            .expo.version = $ver |
-            .expo.android.versionCode = $code |
-            .expo.ios.buildNumber = ($code | tostring)
-          ' app.json > app.json.tmp && mv app.json.tmp app.json
-          
-          echo "Updated app.json:"
-          cat app.json | jq '.expo | {version, android: {versionCode}, ios: {buildNumber}}'
+          npx expo config --type public --json > /tmp/expo-config.json
+          jq '{version, androidVersionCode: .android.versionCode, iosBuildNumber: .ios.buildNumber}' /tmp/expo-config.json
+          test "$(jq -r '.version' /tmp/expo-config.json)" = "$APP_VERSION"
+          test "$(jq -r '.android.versionCode' /tmp/expo-config.json)" = "$APP_VERSION_CODE"
+          test "$(jq -r '.ios.buildNumber' /tmp/expo-config.json)" = "$APP_VERSION_CODE"
 
       - name: Build Android APK
         run: eas build --platform android --profile preview --local --non-interactive --output ./build/paperand-${{ steps.version.outputs.version }}.apk
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
+          APP_VERSION: ${{ steps.version.outputs.version }}
+          APP_VERSION_CODE: ${{ steps.version.outputs.version_code }}
 
       - name: Upload Android APK Artifact
         uses: actions/upload-artifact@v4
