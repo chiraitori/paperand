@@ -6,8 +6,6 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Asset } from 'expo-asset';
-import { File } from 'expo-file-system';
 import type { PaperbackApiVersion } from './extensionService';
 
 export interface InstalledExtension {
@@ -32,45 +30,7 @@ export interface InstalledExtension {
 }
 
 const INSTALLED_EXTENSIONS_KEY = '@installed_extensions_data';
-const BUILT_IN_YURI_GARDEN_SEED_KEY = '@built_in_yurigarden_1_1_0';
-
-const compareVersions = (left: string, right: string): number => {
-    const a = left.split('.').map(value => Number(value) || 0);
-    const b = right.split('.').map(value => Number(value) || 0);
-    const length = Math.max(a.length, b.length);
-    for (let index = 0; index < length; index++) {
-        const difference = (a[index] || 0) - (b[index] || 0);
-        if (difference !== 0) return difference;
-    }
-    return 0;
-};
-
-const loadBuiltInYuriGarden = async (): Promise<InstalledExtension> => {
-    const asset = Asset.fromModule(require('../../assets/extensions/YuriGarden.pbjs'));
-    await asset.downloadAsync();
-    const uri = asset.localUri || asset.uri;
-    const sourceJs = await new File(uri).text();
-
-    return {
-        id: 'YuriGarden',
-        name: 'YuriGarden',
-        author: 'AlanNois',
-        desc: 'Đọc manga từ YuriGarden.moe với đăng nhập và giải mã ảnh.',
-        website: 'https://yurigarden.moe/',
-        websiteBaseURL: 'https://yurigarden.moe/',
-        version: '1.1.0',
-        icon: 'icon.png',
-        tags: [{ text: 'Recommended', type: 'info' }],
-        contentRating: 'MATURE',
-        repositoryUrl: 'https://github.com/chiraitori/TruyenViet-0.8',
-        repoBaseUrl: 'https://chiraitori.github.io/TruyenViet-0.8',
-        sourceJs,
-        apiVersion: '0.8',
-        bundleFilename: 'source.js',
-        assetDirectory: 'includes',
-        language: 'vi',
-    };
-};
+const BUILT_IN_YURI_GARDEN_REMOVAL_KEY = '@removed_built_in_yurigarden_1';
 
 /**
  * Get all installed extensions
@@ -80,30 +40,14 @@ export const getInstalledExtensions = async (): Promise<InstalledExtension[]> =>
     try {
         const data = await AsyncStorage.getItem(INSTALLED_EXTENSIONS_KEY);
         stored = data ? JSON.parse(data) : [];
-        const seeded = await AsyncStorage.getItem(BUILT_IN_YURI_GARDEN_SEED_KEY);
-        if (seeded === 'true') return stored;
-
-        let builtIn: InstalledExtension;
-        try {
-            builtIn = await loadBuiltInYuriGarden();
-        } catch (error) {
-            console.error('Error loading built-in YuriGarden extension:', error);
-            return stored;
+        const removalApplied = await AsyncStorage.getItem(BUILT_IN_YURI_GARDEN_REMOVAL_KEY);
+        if (removalApplied !== 'true') {
+            stored = stored.filter(extension => extension.id.toLowerCase() !== 'yurigarden');
+            await AsyncStorage.multiSet([
+                [INSTALLED_EXTENSIONS_KEY, JSON.stringify(stored)],
+                [BUILT_IN_YURI_GARDEN_REMOVAL_KEY, 'true'],
+            ]);
         }
-        const existingIndex = stored.findIndex(
-            extension => extension.id.toLowerCase() === builtIn.id.toLowerCase()
-        );
-
-        if (existingIndex < 0) {
-            stored.push(builtIn);
-        } else if (compareVersions(stored[existingIndex].version, builtIn.version) < 0) {
-            stored[existingIndex] = { ...stored[existingIndex], ...builtIn };
-        }
-
-        await AsyncStorage.multiSet([
-            [INSTALLED_EXTENSIONS_KEY, JSON.stringify(stored)],
-            [BUILT_IN_YURI_GARDEN_SEED_KEY, 'true'],
-        ]);
         return stored;
     } catch (error) {
         console.error('Error getting installed extensions:', error);

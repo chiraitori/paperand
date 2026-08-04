@@ -377,17 +377,18 @@ const createCheerio = () => {
         last: () => wrapElements(elements.slice(-1)),
         eq: (i) => wrapElements([elements[i]]),
         each: (fn) => {
-          elements.forEach((el, i) => fn(i, wrapElements([el])));
+          elements.forEach((el, i) => fn(i, el));
           return obj;
         },
         map: (fn) => {
           return {
-            get: () => elements.map((el, i) => fn(i, wrapElements([el]))),
-            toArray: () => elements.map((el, i) => fn(i, wrapElements([el]))),
+            get: () => elements.map((el, i) => fn(i, el)),
+            toArray: () => elements.map((el, i) => fn(i, el)),
           };
         },
-        toArray: () => elements.map(el => wrapElements([el])),
+        toArray: () => elements.slice(),
         find: (sel) => wrapElements(elements.flatMap(el => Array.from(el.querySelectorAll ? el.querySelectorAll(sel) : []))),
+        closest: (sel) => wrapElements(elements.map(el => el.closest?.(sel)).filter(Boolean)),
         children: (sel) => {
           const kids = elements.flatMap(el => Array.from(el.children || []));
           if (sel) return wrapElements(kids.filter(k => k.matches && k.matches(sel)));

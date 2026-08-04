@@ -1,6 +1,6 @@
 {
   "name": "paperback-android",
-  "version": "0.0.16",
+  "version": "0.0.17",
   "main": "index.ts",
   "scripts": {
     "start": "expo start",
