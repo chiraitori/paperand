@@ -432,6 +432,7 @@ const PreloadedImage: React.FC<{
   const { width: screenWidth } = useWindowDimensions();
   const [imageHeight, setImageHeight] = useState(screenWidth * 1.4);
   const [error, setError] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
   const requestHeaders = getImageRequestHeaders(page.resolvedUrl);
   const imageSource = requestHeaders
     ? { uri: page.resolvedUrl, headers: requestHeaders }
@@ -455,7 +456,7 @@ const PreloadedImage: React.FC<{
         Image.getSize(page.resolvedUrl, handleSuccess, handleFailure);
       }
     }
-  }, [page.resolvedUrl, page.loading, page.preloaded, requestHeaders, screenWidth]);
+  }, [page.resolvedUrl, page.loading, page.preloaded, requestHeaders, screenWidth, retryKey]);
 
   // Show skeleton while page is loading
   if (page.loading) {
@@ -483,6 +484,14 @@ const PreloadedImage: React.FC<{
         <View style={{ width: screenWidth, height: screenWidth * 1.4, justifyContent: 'center', alignItems: 'center' }}>
           <Ionicons name="image-outline" size={40} color="#555" />
           <Text style={styles.pageErrorText}>{t('reader.failedToLoadPage', { page: page.pageNumber })}</Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={() => { setError(false); setRetryKey(k => k + 1); }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="refresh" size={16} color="#fff" />
+            <Text style={styles.retryButtonText}>{t('common.retry')}</Text>
+          </TouchableOpacity>
         </View>
       </TouchableOpacity>
     );
@@ -518,6 +527,7 @@ const AutoSizeImage: React.FC<{
   const [error, setError] = useState(false);
   const [actualUri, setActualUri] = useState<string | null>(null);
   const [decrypting, setDecrypting] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
     let mounted = true;
@@ -558,7 +568,7 @@ const AutoSizeImage: React.FC<{
 
     loadImage();
     return () => { mounted = false; };
-  }, [uri]);
+  }, [uri, retryKey]);
 
   return (
     <TouchableOpacity activeOpacity={1} onPress={onPress}>
@@ -575,6 +585,14 @@ const AutoSizeImage: React.FC<{
           <View style={styles.pageErrorContainer}>
             <Ionicons name="image-outline" size={40} color="#555" />
             <Text style={styles.pageErrorText}>{t('reader.failedToLoadPage', { page: pageNumber })}</Text>
+            <TouchableOpacity
+              style={styles.retryButton}
+              onPress={() => { setError(false); setRetryKey(k => k + 1); }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="refresh" size={16} color="#fff" />
+              <Text style={styles.retryButtonText}>{t('common.retry')}</Text>
+            </TouchableOpacity>
           </View>
         ) : actualUri ? (
           <Image
@@ -601,6 +619,7 @@ const HorizontalPageImage: React.FC<{
   const [error, setError] = useState(false);
   const [actualUri, setActualUri] = useState<string | null>(null);
   const [decrypting, setDecrypting] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
     let mounted = true;
@@ -637,7 +656,7 @@ const HorizontalPageImage: React.FC<{
 
     loadImage();
     return () => { mounted = false; };
-  }, [uri]);
+  }, [uri, retryKey]);
 
   return (
     <TouchableOpacity
@@ -656,6 +675,14 @@ const HorizontalPageImage: React.FC<{
         <View style={styles.horizontalLoadingContainer}>
           <Ionicons name="image-outline" size={48} color="#555" />
           <Text style={styles.pageErrorText}>{t('reader.failedToLoadPage', { page: pageNumber })}</Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={() => { setError(false); setRetryKey(k => k + 1); }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="refresh" size={16} color="#fff" />
+            <Text style={styles.retryButtonText}>{t('common.retry')}</Text>
+          </TouchableOpacity>
         </View>
       ) : actualUri ? (
         <Image
@@ -1813,6 +1840,21 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 12,
     marginTop: 8,
+  },
+  retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 20,
+    backgroundColor: '#FA6432',
+    borderRadius: 20,
+    gap: 6,
+  },
+  retryButtonText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
   },
 
   // Horizontal mode indicator
