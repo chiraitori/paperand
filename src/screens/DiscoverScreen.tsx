@@ -567,6 +567,28 @@ export const DiscoverScreen: React.FC = () => {
               ? t('discover.installExtensions')
               : t('discover.noContent')}
           </Text>
+          {installedExtensions.length > 0 && activeSource ? (
+            <View style={styles.emptyActionsRow}>
+              <TouchableOpacity
+                style={[styles.emptyActionButton, { backgroundColor: theme.primary }]}
+                onPress={() => loadSourceData(activeSource)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="refresh" size={18} color="#fff" />
+                <Text style={styles.emptyActionText}>{t('common.retry')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.emptyBypassButton, { backgroundColor: theme.card, borderColor: theme.border }]}
+                onPress={handleOpenSourceWebsite}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="globe-outline" size={18} color={theme.text} />
+                <Text style={[styles.emptyActionText, { color: theme.text }]}>
+                  {t('source.verifyWebsite') || 'Verify Website'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
         </View>
       ) : (
         <ScrollView
@@ -804,6 +826,34 @@ const styles = StyleSheet.create({
   addExtensionText: {
     color: '#fff',
     fontSize: 14,
+    fontWeight: '600',
+  },
+  emptyActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 20,
+    gap: 12,
+  },
+  emptyActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 20,
+    gap: 6,
+  },
+  emptyBypassButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 20,
+    borderWidth: 1,
+    gap: 6,
+  },
+  emptyActionText: {
+    color: '#fff',
+    fontSize: 13,
     fontWeight: '600',
   },
   emptyContainer: {

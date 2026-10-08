@@ -11,12 +11,13 @@ import {
   Platform,
   ScrollView,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { fetchRepositoryVersioning, ExtensionRepository } from '../services/extensionService';
 import { t } from '../services/i18nService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { RootStackParamList } from '../types';
 
 const ADDED_REPOS_KEY = '@added_repositories';
 
@@ -47,8 +48,9 @@ const fetchRepoNameFromHtml = async (baseUrl: string): Promise<string | null> =>
 export const AddRepositoryScreen: React.FC = () => {
   const { theme } = useTheme();
   const navigation = useNavigation();
-  const [repoName, setRepoName] = useState('');
-  const [repoUrl, setRepoUrl] = useState('');
+  const route = useRoute<RouteProp<RootStackParamList, 'AddRepository'>>();
+  const [repoName, setRepoName] = useState(route.params?.name || '');
+  const [repoUrl, setRepoUrl] = useState(route.params?.url || '');
   const [loading, setLoading] = useState(false);
 
   // Disclaimer checkboxes
@@ -60,20 +62,12 @@ export const AddRepositoryScreen: React.FC = () => {
 
   const addRepository = async () => {
     if (!repoUrl.trim()) {
-      Alert.alert(t('common.error'), t('repositories.repoUrlPlaceholder')); // Reuse placeholder as error hint? Or add specific error? Let's assume placeholder context is fine or add generic 'required'
-      // Better: Alert.alert(t('common.error'), 'Please enter a repository URL'); -> t('repositories.addError') is generic. 
-      // Let's stick to English fallback if key missing or use generic addError for now to save time, or use the placeholder as "Field required"
-      // Actually let's use t('common.error') and a hardcoded string if no specific key, but we want full i18n. 
-      // Added generic addError. Let's use that or just repoUrlPlaceholder for now.
       Alert.alert(t('common.error'), t('repositories.repoUrlPlaceholder'));
       return;
     }
 
     if (!allChecked) {
-      Alert.alert(t('common.error'), 'Please accept all terms to continue'); // Need key for this. 
-      // Let's add it or rely on English for this specific edge case? 
-      // Wait, I should have added keys for errors.
-      // I added addError, invalidRepo, etc. 
+      Alert.alert(t('common.error'), 'Please accept all terms to continue');
       return;
     }
 

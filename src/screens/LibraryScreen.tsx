@@ -10,6 +10,10 @@ import {
   useWindowDimensions,
   AppState,
   AppStateStatus,
+  ScrollView,
+  TextInput,
+  Modal,
+  Platform,
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -18,7 +22,8 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import { usePreventScreenCapture } from 'expo-screen-capture'; // Keep for type, using imperative API
 import { useTheme } from '../context/ThemeContext';
 import { useLibrary } from '../context/LibraryContext';
-import { MangaCard, EmptyState, MangaPreviewModal, MangaCardWithPreview } from '../components';
+import { MangaCard, EmptyState, MangaPreviewModal, MangaCardWithPreview, LibraryUpdaterModal } from '../components';
+import { LibraryUpdateResult } from '../types';
 import { RootStackParamList, LibraryEntry, Manga } from '../types';
 import { getGeneralSettings, GeneralSettings, defaultSettings } from '../services/settingsService';
 import { t } from '../services/i18nService';
@@ -28,13 +33,34 @@ const isExpoGo = Constants.appOwnership === 'expo';
 
 type LibraryScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
-type FilterType = 'all' | 'favorites' | 'reading' | 'completed';
-
 export const LibraryScreen: React.FC = () => {
   const { theme } = useTheme();
-  const { library, favorites, addToLibrary, removeFromLibrary, toggleFavorite, isInLibrary, isFavorite } = useLibrary();
+  const {
+    library,
+    favorites,
+    addToLibrary,
+    removeFromLibrary,
+    toggleFavorite,
+    isInLibrary,
+    isFavorite,
+    categories,
+    addCategory,
+    removeCategory,
+    setMangaCategory,
+    updateLibraryChapters,
+  } = useLibrary();
   const navigation = useNavigation<LibraryScreenNavigationProp>();
-  const [activeFilter, setActiveFilter] = useState<FilterType>('all');
+  const [activeFilter, setActiveFilter] = useState<string>('all');
+
+  // Library updater state
+  const [updaterVisible, setUpdaterVisible] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [updateProgress, setUpdateProgress] = useState({ current: 0, total: 0, currentTitle: '' });
+  const [updateResult, setUpdateResult] = useState<LibraryUpdateResult | null>(null);
+
+  // Category modal state
+  const [categoryModalVisible, setCategoryModalVisible] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [settings, setSettings] = useState<GeneralSettings>(defaultSettings);
   const { width, height } = useWindowDimensions();
@@ -96,15 +122,20 @@ export const LibraryScreen: React.FC = () => {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    // Reload settings on refresh
     const loadedSettings = await getGeneralSettings();
     setSettings(loadedSettings);
-    await new Promise(resolve => setTimeout(resolve, 500));
+    try {
+      await updateLibraryChapters();
+    } catch (e) {
+      console.warn('Library pull-to-refresh update error:', e);
+    }
     setRefreshing(false);
-  }, []);
+  }, [updateLibraryChapters]);
 
   const getFilteredLibrary = (): LibraryEntry[] => {
     switch (activeFilter) {
+      case 'all':
+        return library;
       case 'favorites':
         return favorites;
       case 'reading':
@@ -112,18 +143,54 @@ export const LibraryScreen: React.FC = () => {
       case 'completed':
         return library.filter(entry => entry.manga.status === 'completed');
       default:
-        return library;
+        return library.filter(entry => entry.category === activeFilter);
     }
   };
 
   const filteredLibrary = getFilteredLibrary();
 
-  const filters: { key: FilterType; label: string }[] = [
-    { key: 'all', label: t('library.all') },
-    { key: 'favorites', label: t('library.favorites') },
-    { key: 'reading', label: t('library.reading') },
-    { key: 'completed', label: t('library.completed') },
+  const baseFilters = [
+    { key: 'all', label: t('library.all') || 'All' },
+    { key: 'favorites', label: t('library.favorites') || 'Favorites' },
+    { key: 'reading', label: t('library.reading') || 'Reading' },
+    { key: 'completed', label: t('library.completed') || 'Completed' },
   ];
+
+  const allFilters = [
+    ...baseFilters,
+    ...categories.map(cat => ({ key: cat, label: cat })),
+  ];
+
+  const handleStartUpdate = async () => {
+    setIsUpdating(true);
+    setUpdateProgress({ current: 0, total: library.length, currentTitle: '' });
+    try {
+      const result = await updateLibraryChapters((current, total, currentTitle) => {
+        setUpdateProgress({ current, total, currentTitle });
+      });
+      setUpdateResult(result);
+    } catch (e) {
+      console.error('Failed to update library:', e);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleOpenLibraryUpdater = () => {
+    setUpdaterVisible(true);
+    if (!isUpdating && !updateResult) {
+      handleStartUpdate();
+    }
+  };
+
+  const handleCreateCategory = async () => {
+    if (newCategoryName.trim()) {
+      await addCategory(newCategoryName.trim());
+      setActiveFilter(newCategoryName.trim());
+      setNewCategoryName('');
+      setCategoryModalVisible(false);
+    }
+  };
 
   const navigateToManga = (entry: LibraryEntry) => {
     navigation.navigate('MangaDetail', {
@@ -222,10 +289,25 @@ export const LibraryScreen: React.FC = () => {
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <View style={styles.header}>
         <Text style={[styles.title, { color: theme.text }]}>{t('library.title')}</Text>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={[styles.headerActionButton, { backgroundColor: theme.card }]}
+            onPress={handleOpenLibraryUpdater}
+            accessibilityRole="button"
+            accessibilityLabel="Check library updates"
+            accessibilityHint="Checks all manga in library for new chapter updates"
+          >
+            <Ionicons name="cloud-download-outline" size={22} color={theme.primary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
-      <View style={styles.filterContainer}>
-        {filters.map(filter => (
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.filterContainer}
+      >
+        {allFilters.map(filter => (
           <TouchableOpacity
             key={filter.key}
             style={[
@@ -253,7 +335,14 @@ export const LibraryScreen: React.FC = () => {
             </Text>
           </TouchableOpacity>
         ))}
-      </View>
+        <TouchableOpacity
+          style={[styles.addCategoryButton, { backgroundColor: theme.card, borderColor: theme.border }]}
+          onPress={() => setCategoryModalVisible(true)}
+          accessibilityLabel="Add custom category"
+        >
+          <Ionicons name="add" size={18} color={theme.primary} />
+        </TouchableOpacity>
+      </ScrollView>
 
       {filteredLibrary.length === 0 ? (
         <EmptyState
@@ -296,6 +385,55 @@ export const LibraryScreen: React.FC = () => {
         isInLibrary={previewManga ? isInLibrary(previewManga.id) : false}
         isFavorite={previewManga ? isFavorite(previewManga.id) : false}
       />
+
+      {/* Library Updater Modal */}
+      <LibraryUpdaterModal
+        visible={updaterVisible}
+        onClose={() => setUpdaterVisible(false)}
+        isUpdating={isUpdating}
+        currentProgress={updateProgress}
+        result={updateResult}
+        onStartUpdate={handleStartUpdate}
+      />
+
+      {/* Category Creation Modal */}
+      <Modal
+        visible={categoryModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCategoryModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>New Collection / Category</Text>
+            <Text style={[styles.modalSubtitle, { color: theme.textSecondary }]}>
+              Enter a name for this library category (e.g. Plan to Read, Top Tier)
+            </Text>
+            <TextInput
+              style={[styles.modalInput, { backgroundColor: theme.background, color: theme.text, borderColor: theme.border }]}
+              placeholder="Category Name"
+              placeholderTextColor={theme.textSecondary}
+              value={newCategoryName}
+              onChangeText={setNewCategoryName}
+              autoFocus
+            />
+            <View style={styles.modalButtonsRow}>
+              <TouchableOpacity
+                style={[styles.modalButton, { borderColor: theme.border, borderWidth: 1 }]}
+                onPress={() => { setNewCategoryName(''); setCategoryModalVisible(false); }}
+              >
+                <Text style={[styles.modalButtonText, { color: theme.text }]}>{t('common.cancel') || 'Cancel'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: theme.primary }]}
+                onPress={handleCreateCategory}
+              >
+                <Text style={[styles.modalButtonText, { color: '#fff' }]}>{t('common.save') || 'Save'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -305,9 +443,24 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: 60,
+    paddingTop: Platform.OS === 'ios' ? 60 : 48,
     paddingBottom: 16,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerActionButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   title: {
     fontSize: 28,
@@ -318,6 +471,61 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 16,
     gap: 8,
+    alignItems: 'center',
+  },
+  addCategoryButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 380,
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 20,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    marginBottom: 16,
+    lineHeight: 18,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 15,
+    marginBottom: 20,
+  },
+  modalButtonsRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+  },
+  modalButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 12,
+  },
+  modalButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   filterButton: {
     paddingHorizontal: 16,

@@ -12,6 +12,7 @@ import {
 } from '../services/notificationService';
 import {
     isBackgroundServiceRunning,
+    stopBackgroundService,
 } from '../services/backgroundTaskService';
 
 interface DownloadContextType {
@@ -70,7 +71,7 @@ export const DownloadProvider: React.FC<{ children: ReactNode }> = ({ children }
                     
                     // Stop background service when all downloads complete
                     if (Platform.OS === 'android') {
-                        stopBackgroundService().catch(err => {
+                        stopBackgroundService().catch((err: any) => {
                             console.error('[DownloadContext] Failed to stop background service:', err);
                         });
                     }

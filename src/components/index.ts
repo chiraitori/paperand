@@ -10,3 +10,5 @@ export { MangaPreviewModal } from './MangaPreviewModal';
 export { MangaCardWithPreview } from './MangaCardWithPreview';
 export { NativeDropdown } from './NativeDropdown';
 export { SpotifyMiniPlayer } from './SpotifyMiniPlayer';
+export { LibraryUpdaterModal } from './LibraryUpdaterModal';
+export { MigrationModal } from './MigrationModal';

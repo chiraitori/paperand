@@ -57,6 +57,20 @@ export interface LibraryEntry {
   progress: ReadingProgress | null;
   isFavorite: boolean;
   readChapters: string[]; // Array of chapter IDs that have been read
+  category?: string;
+}
+
+export interface LibraryUpdateDetail {
+  mangaId: string;
+  title: string;
+  newChapters: number;
+  latestChapter?: string;
+}
+
+export interface LibraryUpdateResult {
+  updatedMangaCount: number;
+  newChaptersCount: number;
+  details: LibraryUpdateDetail[];
 }
 
 export interface DownloadedChapter {
@@ -160,7 +174,7 @@ export type RootStackParamList = {
   Extensions: undefined;
   ExtensionDetail: { extension: any };
   ExtensionSettings: { extensionId: string; extensionName: string };
-  AddRepository: undefined;
+  AddRepository: { name?: string; url?: string } | undefined;
   BrowseAllRepositories: undefined;
   BrowseRepository: { repoId: string; repoName: string; repoBaseUrl: string };
   Developer: undefined;

@@ -17,6 +17,8 @@ import {
   ScrollView,
   Switch,
   useWindowDimensions,
+  AppState,
+  AppStateStatus,
 } from 'react-native';
 import { useRoute, useNavigation, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -25,7 +27,16 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 import { useTheme } from '../context/ThemeContext';
 import { useLibrary } from '../context/LibraryContext';
 import { useDownloads } from '../context/DownloadContext';
-import { getChapterPages, getMangaDetails, getChapters, decryptDrmImage } from '../services/sourceService';
+import { getCookies as getNativeCookies, launchBypassActivity } from 'cloudflare-bypass';
+import { getCookiesForUrl, getGlobalUserAgent, setCookiesForDomain } from '../services/cookieStore';
+import {
+  getChapterPages,
+  getMangaDetails,
+  getChapters,
+  decryptDrmImage,
+  getMangaShareUrl,
+  getCloudflareBypassRequest,
+} from '../services/sourceService';
 import { cacheChapterPages, getCachedChapterPages } from '../services/cacheService';
 import { Manga, Chapter, Page, RootStackParamList } from '../types';
 import { t } from '../services/i18nService';
@@ -319,19 +330,31 @@ interface PreloadedPage extends Page {
 
 const getImageRequestHeaders = (uri: string): Record<string, string> | undefined => {
   try {
-    const hostname = new URL(uri).hostname.toLowerCase();
+    const urlObj = new URL(uri);
+    const hostname = urlObj.hostname.toLowerCase();
+    const headers: Record<string, string> = {};
 
     if (hostname === 'db.yurigarden.com' || hostname === 'cdn.yurigarden.moe') {
-      return {
-        referer: 'https://yurigarden.moe/',
-        origin: 'https://yurigarden.moe',
-      };
+      headers['referer'] = 'https://yurigarden.moe/';
+      headers['origin'] = 'https://yurigarden.moe';
+    } else if (hostname.includes('mangadex')) {
+      headers['referer'] = 'https://mangadex.org/';
     }
+
+    const cookies = getCookiesForUrl(uri);
+    if (cookies) {
+      headers['Cookie'] = cookies;
+    }
+
+    const ua = getGlobalUserAgent();
+    if (ua) {
+      headers['User-Agent'] = ua;
+    }
+
+    return Object.keys(headers).length > 0 ? headers : undefined;
   } catch {
     return undefined;
   }
-
-  return undefined;
 };
 
 // Preload a single page - decrypt DRM or fetch normal URL
@@ -500,6 +523,7 @@ const PreloadedImage: React.FC<{
   return (
     <TouchableOpacity activeOpacity={1} onPress={onPress}>
       <Image
+        key={`page-img-${page.pageNumber}-${retryKey}`}
         source={imageSource}
         style={{ width: screenWidth, height: imageHeight }}
         resizeMode="contain"
@@ -587,7 +611,7 @@ const AutoSizeImage: React.FC<{
             <Text style={styles.pageErrorText}>{t('reader.failedToLoadPage', { page: pageNumber })}</Text>
             <TouchableOpacity
               style={styles.retryButton}
-              onPress={() => { setError(false); setRetryKey(k => k + 1); }}
+              onPress={() => { setError(false); setLoading(true); setRetryKey(k => k + 1); }}
               activeOpacity={0.7}
             >
               <Ionicons name="refresh" size={16} color="#fff" />
@@ -596,7 +620,8 @@ const AutoSizeImage: React.FC<{
           </View>
         ) : actualUri ? (
           <Image
-            source={{ uri: actualUri }}
+            key={`autosize-img-${pageNumber}-${retryKey}`}
+            source={getImageRequestHeaders(actualUri) ? { uri: actualUri, headers: getImageRequestHeaders(actualUri) } : { uri: actualUri }}
             style={{ width: screenWidth, height: fixedHeight }}
             resizeMode="contain"
             onLoad={() => setLoading(false)}
@@ -677,7 +702,7 @@ const HorizontalPageImage: React.FC<{
           <Text style={styles.pageErrorText}>{t('reader.failedToLoadPage', { page: pageNumber })}</Text>
           <TouchableOpacity
             style={styles.retryButton}
-            onPress={() => { setError(false); setRetryKey(k => k + 1); }}
+            onPress={() => { setError(false); setLoading(true); setRetryKey(k => k + 1); }}
             activeOpacity={0.7}
           >
             <Ionicons name="refresh" size={16} color="#fff" />
@@ -686,10 +711,12 @@ const HorizontalPageImage: React.FC<{
         </View>
       ) : actualUri ? (
         <Image
-          source={{ uri: actualUri }}
+          key={`horiz-img-${pageNumber}-${retryKey}`}
+          source={getImageRequestHeaders(actualUri) ? { uri: actualUri, headers: getImageRequestHeaders(actualUri) } : { uri: actualUri }}
           style={styles.horizontalImage}
           resizeMode="contain"
-          onError={() => setError(true)}
+          onLoad={() => setLoading(false)}
+          onError={() => { setLoading(false); setError(true); }}
         />
       ) : null}
       <View style={styles.horizontalPageIndicator}>
@@ -929,6 +956,61 @@ export const ReaderScreen: React.FC = () => {
     };
   }, [showControls]);
 
+  const handleOpenWebBypass = useCallback(async () => {
+    if (!sourceId) return;
+
+    let targetUrl = '';
+    let authCaptureJson = '';
+
+    try {
+      const [shareUrl, bypassRequest] = await Promise.all([
+        mangaId ? getMangaShareUrl(sourceId, mangaId).catch(() => null) : null,
+        getCloudflareBypassRequest(sourceId).catch(() => null),
+      ]);
+      targetUrl = shareUrl || bypassRequest?.url || '';
+
+      if (bypassRequest?.headers) {
+        const found = Object.entries(bypassRequest.headers).find(([key]) => key.toLowerCase() === 'x-paperback-auth-capture');
+        authCaptureJson = found ? String(found[1]) : '';
+      }
+    } catch (e) {
+      console.warn('[Reader] Error fetching bypass request:', e);
+    }
+
+    if (!targetUrl) {
+      console.log('[Reader] No bypass URL available for source:', sourceId);
+      return;
+    }
+
+    let leftReactActivity = false;
+    const subscription = AppState.addEventListener('change', async (state: AppStateStatus) => {
+      if (state !== 'active') {
+        leftReactActivity = true;
+        return;
+      }
+      if (!leftReactActivity) return;
+
+      subscription.remove();
+      try {
+        const cookies = await getNativeCookies(targetUrl);
+        if (cookies) {
+          setCookiesForDomain(targetUrl, cookies);
+        }
+      } catch (error) {
+        console.warn('[Reader] Failed to sync website cookies:', error);
+      }
+
+      await loadData();
+    });
+
+    await launchBypassActivity(
+      targetUrl,
+      manga?.title || 'Website Verification',
+      sourceId,
+      String(authCaptureJson)
+    );
+  }, [sourceId, mangaId, manga?.title]);
+
   const loadData = async () => {
     try {
       setLoading(true);
@@ -977,7 +1059,7 @@ export const ReaderScreen: React.FC = () => {
             isRead: false,
           })),
           lastUpdated: new Date().toISOString(),
-          source: downloadSourceId,
+          source: downloadSourceId || '',
         };
         setManga(mangaData);
 
@@ -1129,15 +1211,21 @@ export const ReaderScreen: React.FC = () => {
             chapterId,
             pageData.map(p => ({ pageNumber: p.pageNumber, imageUrl: p.imageUrl }))
           ).catch(() => { }); // Fire and forget
+        } else {
+          setChapterLoadError('No pages found for this chapter');
+          setPages([]);
         }
       } else {
         // No sourceId provided - cannot load chapter
         console.error('[Reader] No sourceId provided for chapter:', mangaId, chapterId);
+        setChapterLoadError('Source not specified');
+        setPages([]);
       }
     } catch (error) {
       console.error('Failed to load reader data:', error);
       const errorMessage = error instanceof Error ? error.message : 'No pages found';
       setChapterLoadError(errorMessage);
+      setPages([]);
     } finally {
       setLoading(false);
     }
@@ -1347,8 +1435,30 @@ export const ReaderScreen: React.FC = () => {
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         <View style={styles.errorContainer}>
-          <Ionicons name="alert-circle-outline" size={48} color="#666" />
-          <Text style={styles.errorText}>{chapterLoadError || 'No pages found'}</Text>
+          <Ionicons name="alert-circle-outline" size={56} color="#666" />
+          <Text style={styles.errorText}>{chapterLoadError || t('reader.failedToLoadPage', { page: 1 })}</Text>
+          <View style={styles.errorActionsRow}>
+            <TouchableOpacity
+              style={styles.errorActionButton}
+              onPress={loadData}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="refresh" size={18} color="#fff" />
+              <Text style={styles.errorActionButtonText}>{t('common.retry')}</Text>
+            </TouchableOpacity>
+            {sourceId ? (
+              <TouchableOpacity
+                style={styles.errorBypassButton}
+                onPress={handleOpenWebBypass}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="globe-outline" size={18} color="#fff" />
+                <Text style={styles.errorActionButtonText}>
+                  {t('source.verifyWebsite') || 'Verify Website'}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
         </View>
       </View>
     );
@@ -1444,12 +1554,34 @@ export const ReaderScreen: React.FC = () => {
                 </Text>
               </View>
 
-              <TouchableOpacity
-                style={styles.infoButton}
-                onPress={() => setShowInfoModal(true)}
-              >
-                <Ionicons name="information-circle-outline" size={26} color="#fff" />
-              </TouchableOpacity>
+              <View style={styles.topBarActions}>
+                {sourceId ? (
+                  <TouchableOpacity
+                    style={styles.headerIconButton}
+                    onPress={handleOpenWebBypass}
+                    accessibilityRole="button"
+                    accessibilityLabel="Verify or open website"
+                  >
+                    <Ionicons name="globe-outline" size={22} color="#fff" />
+                  </TouchableOpacity>
+                ) : null}
+                <TouchableOpacity
+                  style={styles.headerIconButton}
+                  onPress={loadData}
+                  accessibilityRole="button"
+                  accessibilityLabel="Reload chapter"
+                >
+                  <Ionicons name="refresh-outline" size={22} color="#fff" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.headerIconButton}
+                  onPress={() => setShowInfoModal(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Manga info"
+                >
+                  <Ionicons name="information-circle-outline" size={24} color="#fff" />
+                </TouchableOpacity>
+              </View>
             </View>
           </Animated.View>
 
@@ -1612,6 +1744,49 @@ const styles = StyleSheet.create({
     color: '#888',
     fontSize: 14,
     marginTop: 12,
+  },
+  errorActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 20,
+    gap: 12,
+  },
+  errorActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 22,
+    backgroundColor: '#FA6432',
+    gap: 8,
+  },
+  errorBypassButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
+    gap: 8,
+  },
+  errorActionButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  topBarActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  headerIconButton: {
+    width: 38,
+    height: 38,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 19,
   },
   errorContainer: {
     flex: 1,

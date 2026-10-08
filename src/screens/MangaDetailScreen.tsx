@@ -18,7 +18,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { useLibrary } from '../context/LibraryContext';
-import { ChapterListItem, LoadingIndicator, NativeDropdown } from '../components';
+import { ChapterListItem, LoadingIndicator, NativeDropdown, MigrationModal } from '../components';
 import { useDownloads } from '../context/DownloadContext';
 import { getMangaDetails, getChapters, getMangaShareUrl, getCloudflareBypassRequest } from '../services/sourceService';
 import { getGeneralSettings, updateGeneralSetting } from '../services/settingsService';
@@ -158,6 +158,7 @@ export const MangaDetailScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [showFullDescription, setShowFullDescription] = useState(false);
   const [sortDescending, setSortDescending] = useState(true);
+  const [migrationModalVisible, setMigrationModalVisible] = useState(false);
 
   const { mangaId, sourceId } = route.params;
   const inLibrary = manga ? isInLibrary(manga.id) : false;
@@ -178,6 +179,13 @@ export const MangaDetailScreen: React.FC = () => {
   }, [mangaId, sourceId]);
 
   // Save sort preference when changed
+  const handleMigrated = (newMangaId: string, newSourceId: string) => {
+    navigation.replace('MangaDetail', {
+      mangaId: newMangaId,
+      sourceId: newSourceId,
+    });
+  };
+
   const handleSortToggle = async () => {
     const newSort = !sortDescending;
     setSortDescending(newSort);
@@ -313,11 +321,11 @@ export const MangaDetailScreen: React.FC = () => {
   };
 
   const handleOpenWeb = async () => {
-    if (!manga || !sourceId) return;
+    if (!sourceId) return;
 
     const [shareUrl, bypassRequest] = await Promise.all([
-      getMangaShareUrl(sourceId, manga.id),
-      getCloudflareBypassRequest(sourceId),
+      mangaId ? getMangaShareUrl(sourceId, mangaId).catch(() => null) : null,
+      getCloudflareBypassRequest(sourceId).catch(() => null),
     ]);
     const targetUrl = shareUrl || bypassRequest?.url;
 
@@ -351,7 +359,7 @@ export const MangaDetailScreen: React.FC = () => {
       .find(([key]) => key.toLowerCase() === 'x-paperback-auth-capture')?.[1] || '';
     await launchBypassActivity(
       targetUrl,
-      manga.title || 'Website',
+      manga?.title || 'Website',
       sourceId,
       String(authCaptureJson),
     );
@@ -396,9 +404,43 @@ export const MangaDetailScreen: React.FC = () => {
   if (!manga) {
     return (
       <View style={[styles.container, { backgroundColor: theme.background }]}>
-        <Text style={[styles.errorText, { color: theme.error }]}>
-          {t('manga.notFound')}
-        </Text>
+        <TouchableOpacity
+          style={[styles.backButton, { backgroundColor: theme.card }]}
+          onPress={() => navigation.goBack()}
+        >
+          <Ionicons name={Platform.OS === 'ios' ? 'chevron-back' : 'arrow-back'} size={24} color={theme.text} />
+        </TouchableOpacity>
+        <View style={styles.errorContentContainer}>
+          <Ionicons name="alert-circle-outline" size={56} color={theme.textSecondary} />
+          <Text style={[styles.errorTitleText, { color: theme.text }]}>
+            {t('manga.notFound')}
+          </Text>
+          <Text style={[styles.errorSubtitleText, { color: theme.textSecondary }]}>
+            Unable to load manga details. If this source requires verification, tap Verify Website.
+          </Text>
+          <View style={styles.errorButtonsRow}>
+            <TouchableOpacity
+              style={[styles.retryActionButton, { backgroundColor: theme.primary }]}
+              onPress={loadManga}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="refresh" size={18} color="#fff" />
+              <Text style={styles.actionButtonTextSmall}>{t('common.retry')}</Text>
+            </TouchableOpacity>
+            {sourceId ? (
+              <TouchableOpacity
+                style={[styles.bypassActionButton, { backgroundColor: theme.card, borderColor: theme.border }]}
+                onPress={handleOpenWeb}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="globe-outline" size={18} color={theme.text} />
+                <Text style={[styles.actionButtonTextSmall, { color: theme.text }]}>
+                  {t('source.verifyWebsite') || 'Verify Website'}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        </View>
       </View>
     );
   }
@@ -547,6 +589,7 @@ export const MangaDetailScreen: React.FC = () => {
               <NativeDropdown
                 options={[
                   { label: t('chapter.refreshChapters') || 'Refresh Chapters', value: 'refresh' },
+                  { label: 'Migrate Source', value: 'migrate' },
                   { label: t('chapter.downloadAll') || 'Download All Chapters', value: 'downloadAll' },
                   { label: t('chapter.downloadUnread') || 'Download Unread Chapters', value: 'downloadUnread' },
                   { label: t('chapter.removeReadDownloads') || 'Remove Read Chapters', value: 'removeRead' },
@@ -556,6 +599,9 @@ export const MangaDetailScreen: React.FC = () => {
                   switch (value) {
                     case 'refresh':
                       loadManga();
+                      break;
+                    case 'migrate':
+                      setMigrationModalVisible(true);
                       break;
                     case 'downloadAll':
                       // Sort by chapter number so we download from chapter 1 first
@@ -591,32 +637,74 @@ export const MangaDetailScreen: React.FC = () => {
             </View>
           </View>
 
-          {sortedChapters.map((chapter, index) => {
-            const chapterIds = sortedChapters.map(c => c.id);
-            return (
-              <ChapterListItem
-                key={`${chapter.id}-${index}`}
-                chapter={chapter}
-                onPress={() => openReader(chapter.id)}
-                isRead={isChapterRead(manga.id, chapter.id)}
-                isDownloaded={isChapterDownloaded(chapter.id)}
-                isDownloading={isDownloading(chapter.id)}
-                isQueued={isQueued(chapter.id)}
-                downloadProgress={getDownloadProgress(chapter.id)}
-                onMarkAsRead={() => markChapterAsRead(manga.id, chapter.id, manga)}
-                onMarkAsUnread={() => markChapterAsUnread(manga.id, chapter.id)}
-                onMarkAllAboveAsRead={() => markAllAboveAsRead(manga.id, chapter.id, chapterIds)}
-                onMarkAllBelowAsRead={() => markAllBelowAsRead(manga.id, chapter.id, chapterIds)}
-                onDownload={() => {
-                  if (manga && !isChapterDownloaded(chapter.id) && !isDownloading(chapter.id) && !isQueued(chapter.id)) {
-                    downloadChapter(manga, chapter);
-                  }
-                }}
-              />
-            );
-          })}
+          {sortedChapters.length === 0 ? (
+            <View style={styles.emptyChaptersContainer}>
+              <Ionicons name="documents-outline" size={44} color={theme.textSecondary} />
+              <Text style={[styles.emptyChaptersText, { color: theme.textSecondary }]}>
+                No chapters found
+              </Text>
+              <View style={styles.errorButtonsRow}>
+                <TouchableOpacity
+                  style={[styles.retryActionButton, { backgroundColor: theme.primary }]}
+                  onPress={loadManga}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="refresh" size={16} color="#fff" />
+                  <Text style={styles.actionButtonTextSmall}>{t('common.retry')}</Text>
+                </TouchableOpacity>
+                {sourceId ? (
+                  <TouchableOpacity
+                    style={[styles.bypassActionButton, { backgroundColor: theme.card, borderColor: theme.border }]}
+                    onPress={handleOpenWeb}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="globe-outline" size={16} color={theme.text} />
+                    <Text style={[styles.actionButtonTextSmall, { color: theme.text }]}>
+                      {t('source.verifyWebsite') || 'Verify Website'}
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            </View>
+          ) : (
+            sortedChapters.map((chapter, index) => {
+              const chapterIds = sortedChapters.map(c => c.id);
+              return (
+                <ChapterListItem
+                  key={`${chapter.id}-${index}`}
+                  chapter={chapter}
+                  onPress={() => openReader(chapter.id)}
+                  isRead={isChapterRead(manga.id, chapter.id)}
+                  isDownloaded={isChapterDownloaded(chapter.id)}
+                  isDownloading={isDownloading(chapter.id)}
+                  isQueued={isQueued(chapter.id)}
+                  downloadProgress={getDownloadProgress(chapter.id)}
+                  onMarkAsRead={() => markChapterAsRead(manga.id, chapter.id, manga)}
+                  onMarkAsUnread={() => markChapterAsUnread(manga.id, chapter.id)}
+                  onMarkAllAboveAsRead={() => markAllAboveAsRead(manga.id, chapter.id, chapterIds)}
+                  onMarkAllBelowAsRead={() => markAllBelowAsRead(manga.id, chapter.id, chapterIds)}
+                  onDownload={() => {
+                    if (manga && !isChapterDownloaded(chapter.id) && !isDownloading(chapter.id) && !isQueued(chapter.id)) {
+                      downloadChapter(manga, chapter);
+                    }
+                  }}
+                />
+              );
+            })
+          )}
         </View>
       </ScrollView>
+
+      {/* Migration Modal */}
+      {manga && sourceId ? (
+        <MigrationModal
+          visible={migrationModalVisible}
+          onClose={() => setMigrationModalVisible(false)}
+          currentManga={manga}
+          currentSourceId={sourceId}
+          onMigrated={handleMigrated}
+        />
+      ) : null}
     </View>
   );
 };
@@ -799,6 +887,62 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     padding: 16,
     fontSize: 14,
+  },
+  errorContentContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+  },
+  errorTitleText: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  errorSubtitleText: {
+    fontSize: 14,
+    marginTop: 8,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  errorButtonsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 24,
+    gap: 12,
+  },
+  retryActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 20,
+    gap: 6,
+  },
+  bypassActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 20,
+    borderWidth: 1,
+    gap: 6,
+  },
+  actionButtonTextSmall: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  emptyChaptersContainer: {
+    paddingVertical: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyChaptersText: {
+    fontSize: 15,
+    marginTop: 10,
+    textAlign: 'center',
   },
   errorText: {
     fontSize: 16,

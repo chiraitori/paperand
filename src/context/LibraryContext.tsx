@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Manga, LibraryEntry, ReadingProgress } from '../types';
+import { Manga, LibraryEntry, ReadingProgress, Chapter, LibraryUpdateResult } from '../types';
+import { getChapters } from '../services/sourceService';
 
 interface LibraryContextType {
   library: LibraryEntry[];
@@ -20,14 +21,25 @@ interface LibraryContextType {
   markAllBelowAsRead: (mangaId: string, chapterId: string, allChapterIds: string[]) => Promise<void>;
   clearHistory: () => Promise<void>;
   clearLibrary: () => Promise<void>;
+  categories: string[];
+  addCategory: (name: string) => Promise<void>;
+  removeCategory: (name: string) => Promise<void>;
+  setMangaCategory: (mangaId: string, category: string | undefined) => Promise<void>;
+  updateLibraryChapters: (
+    onProgress?: (current: number, total: number, currentTitle: string) => void
+  ) => Promise<LibraryUpdateResult>;
+  migrateManga: (oldMangaId: string, newManga: Manga) => Promise<void>;
 }
 
 const LibraryContext = createContext<LibraryContextType | undefined>(undefined);
 
 const LIBRARY_STORAGE_KEY = '@paperback_library';
+const CATEGORIES_STORAGE_KEY = '@paperback_library_categories';
+const DEFAULT_CATEGORIES = ['Reading', 'Plan to Read', 'Completed', 'On Hold', 'Dropped'];
 
 export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [library, setLibrary] = useState<LibraryEntry[]>([]);
+  const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
 
   useEffect(() => {
     loadLibrary();
@@ -35,18 +47,28 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
 
   const loadLibrary = async () => {
     try {
-      const stored = await AsyncStorage.getItem(LIBRARY_STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        // Migrate old entries that don't have readChapters
+      const [storedLib, storedCats] = await Promise.all([
+        AsyncStorage.getItem(LIBRARY_STORAGE_KEY),
+        AsyncStorage.getItem(CATEGORIES_STORAGE_KEY),
+      ]);
+
+      if (storedLib) {
+        const parsed = JSON.parse(storedLib);
         const migrated = parsed.map((entry: any) => ({
           ...entry,
           readChapters: entry.readChapters || [],
         }));
         setLibrary(migrated);
       }
+
+      if (storedCats) {
+        const parsedCats = JSON.parse(storedCats);
+        if (Array.isArray(parsedCats) && parsedCats.length > 0) {
+          setCategories(parsedCats);
+        }
+      }
     } catch (error) {
-      console.error('Failed to load library:', error);
+      console.error('Failed to load library or categories:', error);
     }
   };
 
@@ -219,6 +241,137 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
     await saveLibrary([]);
   };
 
+  const addCategory = async (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed || categories.includes(trimmed)) return;
+    const updated = [...categories, trimmed];
+    setCategories(updated);
+    await AsyncStorage.setItem(CATEGORIES_STORAGE_KEY, JSON.stringify(updated));
+  };
+
+  const removeCategory = async (name: string) => {
+    const updated = categories.filter(c => c !== name);
+    setCategories(updated);
+    await AsyncStorage.setItem(CATEGORIES_STORAGE_KEY, JSON.stringify(updated));
+
+    // Clear category on manga that had this category
+    const updatedLib = library.map(entry =>
+      entry.category === name ? { ...entry, category: undefined } : entry
+    );
+    await saveLibrary(updatedLib);
+  };
+
+  const setMangaCategory = async (mangaId: string, category: string | undefined) => {
+    const updatedLib = library.map(entry =>
+      entry.manga.id === mangaId ? { ...entry, category } : entry
+    );
+    await saveLibrary(updatedLib);
+  };
+
+  const updateLibraryChapters = async (
+    onProgress?: (current: number, total: number, currentTitle: string) => void
+  ): Promise<LibraryUpdateResult> => {
+    let updatedMangaCount = 0;
+    let newChaptersCount = 0;
+    const details: LibraryUpdateResult['details'] = [];
+    const currentLibrary = [...library];
+    const updatedLibrary = [...library];
+
+    for (let i = 0; i < currentLibrary.length; i++) {
+      const entry = currentLibrary[i];
+      if (onProgress) {
+        onProgress(i + 1, currentLibrary.length, entry.manga.title);
+      }
+
+      const sourceId = entry.manga.source;
+      if (!sourceId) continue;
+
+      try {
+        const fetchedChapters = await getChapters(sourceId, entry.manga.id);
+        if (fetchedChapters && fetchedChapters.length > 0) {
+          const existingIds = new Set(entry.manga.chapters.map(c => c.id));
+          const newChapters = fetchedChapters.filter(c => !existingIds.has(c.id));
+
+          if (newChapters.length > 0) {
+            updatedMangaCount++;
+            newChaptersCount += newChapters.length;
+            details.push({
+              mangaId: entry.manga.id,
+              title: entry.manga.title,
+              newChapters: newChapters.length,
+              latestChapter: fetchedChapters[0]?.name || `Ch. ${fetchedChapters[0]?.chapNum}`,
+            });
+
+            const mappedChapters: Chapter[] = fetchedChapters.map(ch => ({
+              id: ch.id,
+              mangaId: entry.manga.id,
+              number: ch.chapNum,
+              title: ch.name,
+              pages: [],
+              releaseDate: ch.time || new Date().toISOString(),
+              isRead: entry.readChapters.includes(ch.id),
+            }));
+
+            updatedLibrary[i] = {
+              ...entry,
+              manga: {
+                ...entry.manga,
+                chapters: mappedChapters,
+                lastUpdated: new Date().toISOString(),
+              },
+            };
+          }
+        }
+      } catch (e) {
+        console.warn(`[LibraryUpdate] Failed to update ${entry.manga.title}:`, e);
+      }
+    }
+
+    if (updatedMangaCount > 0) {
+      await saveLibrary(updatedLibrary);
+    }
+
+    return { updatedMangaCount, newChaptersCount, details };
+  };
+
+  const migrateManga = async (oldMangaId: string, newManga: Manga) => {
+    const existingEntry = library.find(e => e.manga.id === oldMangaId);
+    if (!existingEntry) return;
+
+    // Map read chapters from old manga by chapter number
+    const oldReadNumbers = new Set<number>();
+    for (const ch of existingEntry.manga.chapters) {
+      if (existingEntry.readChapters.includes(ch.id)) {
+        oldReadNumbers.add(ch.number);
+      }
+    }
+
+    const newReadChapterIds: string[] = [];
+    for (const ch of newManga.chapters) {
+      if (oldReadNumbers.has(ch.number)) {
+        newReadChapterIds.push(ch.id);
+      }
+    }
+
+    const newEntry: LibraryEntry = {
+      manga: newManga,
+      addedAt: existingEntry.addedAt,
+      isFavorite: existingEntry.isFavorite,
+      category: existingEntry.category,
+      readChapters: newReadChapterIds,
+      progress: existingEntry.progress
+        ? {
+            ...existingEntry.progress,
+            mangaId: newManga.id,
+            chapterId: newManga.chapters.find(c => c.number === (existingEntry.manga.chapters.find(oc => oc.id === existingEntry.progress?.chapterId)?.number))?.id || newManga.chapters[0]?.id || '',
+          }
+        : null,
+    };
+
+    const newLibrary = library.map(e => (e.manga.id === oldMangaId ? newEntry : e));
+    await saveLibrary(newLibrary);
+  };
+
   const favorites = library.filter(entry => entry.isFavorite);
 
   return (
@@ -240,6 +393,12 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
       markAllBelowAsRead,
       clearHistory,
       clearLibrary,
+      categories,
+      addCategory,
+      removeCategory,
+      setMangaCategory,
+      updateLibraryChapters,
+      migrateManga,
     }}>
       {children}
     </LibraryContext.Provider>

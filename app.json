@@ -2,8 +2,11 @@
   "expo": {
     "name": "Paperand",
     "slug": "paperback-android",
-    "version": "0.0.22",
-    "scheme": "paperand",
+    "version": "0.0.23",
+    "scheme": [
+      "paperand",
+      "paperback"
+    ],
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -96,7 +99,7 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.chiraitori.paperand.android",
-      "versionCode": 22,
+      "versionCode": 23,
       "permissions": [
         "android.permission.REQUEST_INSTALL_PACKAGES",
         "android.permission.FOREGROUND_SERVICE",

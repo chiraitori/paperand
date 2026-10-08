@@ -448,5 +448,26 @@
         "cellularTitle": "Tải qua mạng di động?",
         "cellularMessage": "Bạn đang dùng dữ liệu di động. Tải xuống có thể tiêu tốn nhiều dung lượng. Tiếp tục?",
         "continue": "Tải xuống"
+    },
+    "source": {
+        "verifyWebsite": "Xác minh trang web",
+        "openWebsite": "Mở trang web",
+        "reloadChapter": "Tải lại chương"
+    },
+    "libraryUpdater": {
+        "title": "Cập nhật thư viện",
+        "checking": "Đang kiểm tra cập nhật...",
+        "checkingTitle": "Đang kiểm tra {{title}} ({{current}}/{{total}})...",
+        "upToDate": "Tất cả truyện đã cập nhật",
+        "completed": "Hoàn tất cập nhật",
+        "newChaptersFound": "{{newCount}} chương mới trên {{updatedCount}} truyện",
+        "startUpdate": "Cập nhật thư viện",
+        "done": "Xong"
+    },
+    "migration": {
+        "title": "Chuyển nguồn truyện",
+        "subtitle": "Chuyển nguồn và giữ nguyên tiến độ đọc",
+        "searchPlaceholder": "Tìm tên truyện",
+        "noMatches": "Không tìm thấy kết quả từ nguồn khác"
     }
 }

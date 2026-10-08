@@ -448,5 +448,26 @@
         "cellularTitle": "Download on Cellular?",
         "cellularMessage": "You are on cellular data. Downloading may use significant data. Continue?",
         "continue": "Download"
+    },
+    "source": {
+        "verifyWebsite": "Verify Website",
+        "openWebsite": "Open Website",
+        "reloadChapter": "Reload Chapter"
+    },
+    "libraryUpdater": {
+        "title": "Library Updater",
+        "checking": "Checking for updates...",
+        "checkingTitle": "Checking {{title}} ({{current}}/{{total}})...",
+        "upToDate": "All manga are up to date",
+        "completed": "Library Update Complete",
+        "newChaptersFound": "{{newCount}} new chapters found across {{updatedCount}} titles",
+        "startUpdate": "Update Library",
+        "done": "Done"
+    },
+    "migration": {
+        "title": "Migrate Source",
+        "subtitle": "Switch source and preserve reading progress",
+        "searchPlaceholder": "Search manga title",
+        "noMatches": "No alternative matches found in installed extensions"
     }
 }
