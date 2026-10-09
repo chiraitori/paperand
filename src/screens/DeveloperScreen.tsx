@@ -16,7 +16,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useLibrary } from '../context/LibraryContext';
 import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as FileSystem from 'expo-file-system';
+import { logger } from '../services/loggerService';
 import * as Sharing from 'expo-sharing';
 import * as Notifications from 'expo-notifications';
 import {
@@ -89,48 +89,9 @@ export const DeveloperScreen: React.FC = () => {
   // Export logs function
   const exportLogs = async () => {
     try {
-      const logs = getLogs();
-      console.log('[DeveloperScreen] Exporting logs, count:', logs.length);
-      
-      if (logs.length === 0) {
-        Alert.alert('No Logs', 'There are no logs to export.');
-        return;
-      }
-
-      // Reverse to get chronological order (oldest first)
-      const chronologicalLogs = [...logs].reverse();
-      
-      const logContent = chronologicalLogs.map(log =>
-        `[${log.timestamp}] [${log.level.toUpperCase()}] ${log.message}`
-      ).join('\n');
-
-      console.log('[DeveloperScreen] Log content size:', logContent.length, 'bytes');
-
-      const docDir = FileSystem.documentDirectory;
-      if (!docDir) {
-        Alert.alert('Export Failed', 'Could not access document directory');
-        return;
-      }
-
-      const fileName = `developer_logs_${Date.now()}.txt`;
-      const fileUri = docDir + fileName;
-      
-      // Write file with explicit encoding
-      await FileSystem.writeAsStringAsync(fileUri, logContent, {
-        encoding: FileSystem.EncodingType.UTF8,
-      });
-
-      // Verify file was written
-      const fileInfo = await FileSystem.getInfoAsync(fileUri);
-      console.log('[DeveloperScreen] File written:', fileInfo);
-
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(fileUri, {
-          mimeType: 'text/plain',
-          dialogTitle: 'Export Developer Logs',
-        });
-      } else {
-        Alert.alert('Export Complete', `Logs saved to: ${fileUri}`);
+      const result = await logger.exportLogs();
+      if (!result.success) {
+        Alert.alert('Export Failed', result.error || 'Could not export logs.');
       }
     } catch (error) {
       console.error('[DeveloperScreen] Export failed:', error);
@@ -753,6 +714,7 @@ export const DeveloperScreen: React.FC = () => {
                   isDestructive: true,
                   onPress: () => {
                     clearLogs();
+                    logger.clearLogs();
                     Alert.alert('✅ Cleared', 'All developer logs have been cleared');
                   },
                 })}

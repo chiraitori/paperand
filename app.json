@@ -2,7 +2,7 @@
   "expo": {
     "name": "Paperand",
     "slug": "paperback-android",
-    "version": "0.0.23",
+    "version": "0.0.24",
     "scheme": [
       "paperand",
       "paperback"
@@ -27,7 +27,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.chiraitori.paperand.ios",
-      "buildNumber": "19",
+      "buildNumber": "24",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "CFBundleAllowMixedLocalizations": true,
@@ -99,7 +99,7 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.chiraitori.paperand.android",
-      "versionCode": 23,
+      "versionCode": 24,
       "permissions": [
         "android.permission.REQUEST_INSTALL_PACKAGES",
         "android.permission.FOREGROUND_SERVICE",

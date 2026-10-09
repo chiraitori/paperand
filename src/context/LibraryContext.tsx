@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode, useCa
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Manga, LibraryEntry, ReadingProgress, Chapter, LibraryUpdateResult } from '../types';
 import { getChapters } from '../services/sourceService';
+import { getGeneralSettings } from '../services/settingsService';
 
 interface LibraryContextType {
   library: LibraryEntry[];
@@ -107,6 +108,12 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
   };
 
   const updateProgress = async (progress: ReadingProgress, manga?: Manga) => {
+    // Paperback Incognito Mode: Do not record reading progress or add to history
+    const settings = await getGeneralSettings();
+    if (settings.hideReadHistory) {
+      return;
+    }
+
     const existingEntry = library.find(entry => entry.manga.id === progress.mangaId);
 
     if (existingEntry) {

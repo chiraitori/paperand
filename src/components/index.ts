@@ -12,3 +12,4 @@ export { NativeDropdown } from './NativeDropdown';
 export { SpotifyMiniPlayer } from './SpotifyMiniPlayer';
 export { LibraryUpdaterModal } from './LibraryUpdaterModal';
 export { MigrationModal } from './MigrationModal';
+export { ErrorToast } from './ErrorToast';

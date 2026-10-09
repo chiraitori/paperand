@@ -55,7 +55,7 @@ describe('Cache Service - Chapter List', () => {
         },
       ];
 
-      await cacheChapterList('manga-1', 'source-1', chapters);
+      await cacheChapterList('manga-1', 'source-1', chapters as any);
 
       expect(AsyncStorage.setItem).toHaveBeenCalled();
       const callArgs = (AsyncStorage.setItem as jest.Mock).mock.calls[0];
@@ -78,7 +78,7 @@ describe('Cache Service - Chapter List', () => {
         },
       ];
 
-      await cacheChapterList('manga-1', 'source-1', chapters);
+      await cacheChapterList('manga-1', 'source-1', chapters as any);
 
       const callArgs = (AsyncStorage.setItem as jest.Mock).mock.calls[0];
       const cachedData = JSON.parse(callArgs[1]);

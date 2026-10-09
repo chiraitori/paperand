@@ -8,7 +8,8 @@ import { ThemeProvider } from './src/context/ThemeContext';
 import { LibraryProvider } from './src/context/LibraryContext';
 import { DownloadProvider } from './src/context/DownloadContext';
 import { AppNavigator, navigationRef } from './src/navigation';
-import { ExtensionRunner, UpdateModal } from './src/components';
+import { ExtensionRunner, UpdateModal, ErrorToast } from './src/components';
+import { logger } from './src/services/loggerService';
 import {
   parseDeepLink,
   addRepositoryFromDeepLink,
@@ -28,6 +29,7 @@ import { downloadService } from './src/services/downloadService';
 
 // Initialize log capture immediately so all logs are captured from startup
 initLogCapture();
+logger.initCapture();
 
 // Initialize Spotify Remote Service with credentials from app config
 const spotifyConfig = Constants.expoConfig?.plugins?.find(
@@ -213,6 +215,7 @@ export default function App() {
             <StatusBar style="auto" />
             <AppNavigator />
             <ExtensionRunner />
+            <ErrorToast />
             {latestRelease && (
               <UpdateModal
                 visible={updateModalVisible}

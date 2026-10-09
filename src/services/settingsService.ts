@@ -13,6 +13,8 @@ export interface GeneralSettings {
     hideUpdateModal: boolean;
     mangaPreviewEnabled: boolean; // Long-press preview popup
     parallelDownloads: number; // Max parallel chapter downloads (1-10)
+    errorPopups: boolean; // Paperback LoggerToastSettings.showErrorToasts
+    hideReadHistory: boolean; // Paperback incognito mode (do not save progress to history)
 }
 
 export const defaultSettings: GeneralSettings = {
@@ -25,6 +27,8 @@ export const defaultSettings: GeneralSettings = {
     hideUpdateModal: false,
     mangaPreviewEnabled: Platform.OS === 'ios', // Default: enabled on iOS, disabled (experimental) on Android
     parallelDownloads: 3, // Default 3 parallel downloads
+    errorPopups: true, // Default enabled (show error popups / toasts)
+    hideReadHistory: false, // Default false (track history normally)
 };
 
 /**

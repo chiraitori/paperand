@@ -10,6 +10,7 @@ import {
   Linking,
   ActivityIndicator,
   Platform,
+  Modal,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -23,13 +24,18 @@ import Constants from 'expo-constants';
 import * as Sharing from 'expo-sharing';
 import { Paths, File } from 'expo-file-system';
 import { t } from '../services/i18nService';
+import { logger } from '../services/loggerService';
+import { repairDatabase } from '../services/databaseRepairService';
+import { getGeneralSettings, updateGeneralSetting } from '../services/settingsService';
 
 export const SettingsScreen: React.FC = () => {
   const { theme } = useTheme();
-  const { clearHistory } = useLibrary();
+  const { clearHistory, library } = useLibrary();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [hideReadHistory, setHideReadHistory] = useState(false);
   const [errorPopups, setErrorPopups] = useState(true);
+  const [isRepairing, setIsRepairing] = useState(false);
+  const [showAccountModal, setShowAccountModal] = useState(false);
   const [cacheSize, setCacheSize] = useState<string>(t('common.loading'));
   const [isClearing, setIsClearing] = useState(false);
   const [cacheLimit, setCacheLimitState] = useState<CacheLimitOption>('500MB');
@@ -45,11 +51,18 @@ export const SettingsScreen: React.FC = () => {
     setCacheLimitState(limit);
   }, []);
 
+  const loadGeneralSettings = useCallback(async () => {
+    const settings = await getGeneralSettings();
+    setHideReadHistory(settings.hideReadHistory ?? false);
+    setErrorPopups(settings.errorPopups ?? true);
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       loadCacheSize();
       loadCacheLimit();
-    }, [loadCacheSize, loadCacheLimit])
+      loadGeneralSettings();
+    }, [loadCacheSize, loadCacheLimit, loadGeneralSettings])
   );
 
   const handleCacheLimitChange = () => {
@@ -170,13 +183,13 @@ export const SettingsScreen: React.FC = () => {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {/* Login */}
+        {/* Login / Profile */}
         {renderSection(
           null,
           renderSettingItem({
             title: t('settings.loginToPaperand'),
-            onPress: () => Alert.alert(t('settings.login'), t('settings.loginNotImplemented')),
-            showChevron: false,
+            onPress: () => setShowAccountModal(true),
+            showChevron: true,
           })
         )}
 
@@ -189,7 +202,10 @@ export const SettingsScreen: React.FC = () => {
               rightElement: (
                 <Switch
                   value={hideReadHistory}
-                  onValueChange={setHideReadHistory}
+                  onValueChange={async (val) => {
+                    setHideReadHistory(val);
+                    await updateGeneralSetting('hideReadHistory', val);
+                  }}
                   trackColor={{ false: theme.border, true: theme.success }}
                   thumbColor={'#FFFFFF'}
                 />
@@ -211,7 +227,11 @@ export const SettingsScreen: React.FC = () => {
               rightElement: (
                 <Switch
                   value={errorPopups}
-                  onValueChange={setErrorPopups}
+                  onValueChange={async (val) => {
+                    setErrorPopups(val);
+                    await updateGeneralSetting('errorPopups', val);
+                    await logger.setErrorPopupsEnabled(val);
+                  }}
                   trackColor={{ false: theme.border, true: theme.success }}
                   thumbColor={'#FFFFFF'}
                 />
@@ -259,7 +279,40 @@ export const SettingsScreen: React.FC = () => {
             {renderSettingItem({
               title: t('settings.attemptDatabaseRepair'),
               isDestructive: true,
-              onPress: () => Alert.alert(t('settings.databaseRepair'), t('settings.repairAttempted')),
+              rightElement: isRepairing ? (
+                <ActivityIndicator size="small" color={theme.primary} />
+              ) : undefined,
+              onPress: isRepairing ? undefined : () => {
+                Alert.alert(
+                  t('settings.attemptDatabaseRepair'),
+                  'Attempt database repair?\n\nThis routine checks and repairs library integrity, deduplicates records, validates chapter references, unlinks deleted categories, and cleans corrupt cache/download temporary files.',
+                  [
+                    { text: t('common.cancel'), style: 'cancel' },
+                    {
+                      text: t('settings.databaseRepair'),
+                      style: 'destructive',
+                      onPress: async () => {
+                        setIsRepairing(true);
+                        try {
+                          const report = await repairDatabase();
+                          setIsRepairing(false);
+                          if (report.success) {
+                            Alert.alert(
+                              t('common.success'),
+                              `Database repair completed successfully!\n\n• Verified: ${report.verifiedMangaCount} manga\n• Repaired: ${report.repairedRecordsCount} records\n• Cleaned: ${report.cleanedTempFilesCount} temp files\n• Removed: ${report.cleanedOrphansCount} broken items`
+                            );
+                          } else {
+                            Alert.alert(t('common.error'), report.error || 'Failed to complete database repair.');
+                          }
+                        } catch (err) {
+                          setIsRepairing(false);
+                          Alert.alert(t('common.error'), err instanceof Error ? err.message : 'Unknown repair error');
+                        }
+                      },
+                    },
+                  ]
+                );
+              },
               showChevron: false,
             })}
           </>
@@ -344,46 +397,22 @@ export const SettingsScreen: React.FC = () => {
               title: t('settings.exportAppLogs'),
               onPress: async () => {
                 try {
-                  const logData = {
-                    timestamp: new Date().toISOString(),
-                    app: {
-                      name: Constants.expoConfig?.name || 'Paperand',
-                      version: Constants.expoConfig?.version || '0.0.1',
-                      sdkVersion: Constants.expoConfig?.sdkVersion || 'unknown',
-                      platform: Platform.OS,
-                      platformVersion: Platform.Version,
-                    },
-                    device: {
-                      brand: Constants.deviceName || 'unknown',
-                    },
-                  };
-
-                  const logContent = JSON.stringify(logData, null, 2);
-                  const logFileName = `paperand-logs-${Date.now()}.json`;
-                  const logFile = new File(Paths.cache, logFileName);
-
-                  await logFile.create();
-                  await logFile.write(logContent);
-
-                  const canShare = await Sharing.isAvailableAsync();
-                  if (canShare) {
-                    await Sharing.shareAsync(logFile.uri, {
-                      mimeType: 'application/json',
-                      dialogTitle: t('settings.exportLogs'),
-                    });
-                  } else {
-                    Alert.alert(t('common.error'), t('settings.sharingNotAvailable'));
+                  const res = await logger.exportLogs();
+                  if (!res.success) {
+                    Alert.alert(t('common.error'), res.error || t('settings.exportLogsFailed'));
                   }
                 } catch (error) {
-                  console.error('Failed to export logs:', error);
                   Alert.alert(t('common.error'), t('settings.exportLogsFailed'));
                 }
               },
             })}
             {renderSettingItem({
               title: t('settings.discordServer'),
-              subtitle: t('common.comingSoon'),
-              onPress: () => Alert.alert('Discord', t('settings.discordComingSoon')),
+              onPress: () => {
+                Linking.openURL('https://discord.gg/paperback').catch(() => {
+                  Alert.alert('Discord', 'Official server: https://discord.gg/paperback');
+                });
+              },
             })}
             {renderSettingItem({
               title: t('settings.credits'),
@@ -396,6 +425,71 @@ export const SettingsScreen: React.FC = () => {
           v{Constants.expoConfig?.version || '0.0.1'}
         </Text>
       </ScrollView>
+
+      {/* Account / Profile Modal */}
+      <Modal
+        visible={showAccountModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowAccountModal(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.accountCard, { backgroundColor: theme.card }]}>
+            <View style={styles.accountHeader}>
+              <View style={[styles.avatarCircle, { backgroundColor: theme.primary }]}>
+                <Ionicons name="person" size={32} color="#FFFFFF" />
+              </View>
+              <Text style={[styles.accountName, { color: theme.text }]}>Guest Profile</Text>
+              <Text style={[styles.accountSubtitle, { color: theme.textSecondary }]}>
+                Local Library Mode
+              </Text>
+            </View>
+
+            <View style={[styles.accountStatsBox, { backgroundColor: theme.background }]}>
+              <View style={styles.statCol}>
+                <Text style={[styles.statNumber, { color: theme.primary }]}>{library.length}</Text>
+                <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Manga</Text>
+              </View>
+              <View style={[styles.statDivider, { backgroundColor: theme.border }]} />
+              <View style={styles.statCol}>
+                <Text style={[styles.statNumber, { color: theme.success }]}>Active</Text>
+                <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Local Storage</Text>
+              </View>
+            </View>
+
+            <View style={styles.accountActions}>
+              <TouchableOpacity
+                style={[styles.accountActionButton, { backgroundColor: theme.background }]}
+                onPress={() => {
+                  setShowAccountModal(false);
+                  navigation.navigate('Backups');
+                }}
+              >
+                <Ionicons name="cloud-download-outline" size={20} color={theme.primary} style={{ marginRight: 8 }} />
+                <Text style={[styles.accountActionText, { color: theme.text }]}>Manage Backups</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.accountActionButton, { backgroundColor: theme.background, marginTop: 8 }]}
+                onPress={() => {
+                  setShowAccountModal(false);
+                  Linking.openURL('https://discord.gg/paperback').catch(() => {});
+                }}
+              >
+                <Ionicons name="logo-discord" size={20} color="#5865F2" style={{ marginRight: 8 }} />
+                <Text style={[styles.accountActionText, { color: theme.text }]}>Join Paperback Discord</Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.accountCloseButton, { backgroundColor: theme.primary }]}
+              onPress={() => setShowAccountModal(false)}
+            >
+              <Text style={styles.accountCloseButtonText}>{t('common.done') || 'Done'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* Cache Size Picker Modal for Android */}
       {Platform.OS === 'android' && (
@@ -489,5 +583,93 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: 13,
     marginBottom: 20,
-  }
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  accountCard: {
+    width: '100%',
+    maxWidth: 380,
+    borderRadius: 24,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  accountHeader: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  avatarCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  accountName: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  accountSubtitle: {
+    fontSize: 14,
+  },
+  accountStatsBox: {
+    flexDirection: 'row',
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    marginBottom: 20,
+    alignItems: 'center',
+    justifyContent: 'space-around',
+  },
+  statCol: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  statNumber: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 2,
+  },
+  statLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  statDivider: {
+    width: StyleSheet.hairlineWidth,
+    height: 30,
+  },
+  accountActions: {
+    marginBottom: 20,
+  },
+  accountActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+  },
+  accountActionText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  accountCloseButton: {
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: 'center',
+  },
+  accountCloseButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
 });

@@ -6,6 +6,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
+import { logger } from './loggerService';
 
 const DEVELOPER_SETTINGS_KEY = '@developer_settings';
 
@@ -182,6 +183,7 @@ let logCaptureInitialized = false;
  * Initialize console log capture
  */
 export const initLogCapture = () => {
+  logger.initCapture();
   if (logCaptureInitialized) return;
   logCaptureInitialized = true;
 
@@ -254,13 +256,21 @@ const addLog = (level: LogEntry['level'], args: any[]) => {
 /**
  * Get all captured logs
  */
-export const getLogs = (): LogEntry[] => [...logs];
+export const getLogs = (): LogEntry[] => {
+  const structuredLogs = logger.getLogs().map(entry => ({
+    timestamp: entry.timestamp,
+    level: (entry.level === 'error' ? 'error' : entry.level === 'warn' ? 'warn' : 'log') as LogEntry['level'],
+    message: `[${entry.tag}] ${entry.message}${entry.details ? ` - ${entry.details}` : ''}`,
+  }));
+  return [...logs, ...structuredLogs];
+};
 
 /**
  * Clear all captured logs
  */
 export const clearLogs = () => {
   logs.length = 0;
+  logger.clearLogs();
 };
 
 /**
