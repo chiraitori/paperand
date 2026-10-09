@@ -22,7 +22,7 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import { usePreventScreenCapture } from 'expo-screen-capture'; // Keep for type, using imperative API
 import { useTheme } from '../context/ThemeContext';
 import { useLibrary } from '../context/LibraryContext';
-import { MangaCard, EmptyState, MangaPreviewModal, MangaCardWithPreview, LibraryUpdaterModal } from '../components';
+import { MangaCard, EmptyState, MangaPreviewModal, MangaCardWithPreview, LibraryUpdaterModal, NativeDropdown } from '../components';
 import { LibraryUpdateResult } from '../types';
 import { RootStackParamList, LibraryEntry, Manga } from '../types';
 import { getGeneralSettings, GeneralSettings, defaultSettings } from '../services/settingsService';
@@ -63,6 +63,8 @@ export const LibraryScreen: React.FC = () => {
   const [newCategoryName, setNewCategoryName] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [settings, setSettings] = useState<GeneralSettings>(defaultSettings);
+  const [sortType, setSortType] = useState<'name' | 'lastUpdated' | 'dateFollowed' | 'lastRead' | 'unreadChapters'>('lastUpdated');
+  const [sortOrder, setSortOrder] = useState<'ascending' | 'descending'>('descending');
   const { width, height } = useWindowDimensions();
 
   // Preview modal state
@@ -148,6 +150,33 @@ export const LibraryScreen: React.FC = () => {
   };
 
   const filteredLibrary = getFilteredLibrary();
+
+  // Paperback LibraryMangaSort: name | lastUpdated | dateFollowed | lastRead | unreadChapters
+  const sortedLibrary = [...filteredLibrary].sort((a, b) => {
+    let comparison = 0;
+    switch (sortType) {
+      case 'name':
+        comparison = (a.manga.title || '').localeCompare(b.manga.title || '');
+        break;
+      case 'dateFollowed':
+        comparison = new Date(a.addedAt || 0).getTime() - new Date(b.addedAt || 0).getTime();
+        break;
+      case 'lastRead':
+        comparison = new Date(a.progress?.lastRead || 0).getTime() - new Date(b.progress?.lastRead || 0).getTime();
+        break;
+      case 'unreadChapters': {
+        const unreadA = Math.max(0, (a.manga.chapters?.length || 0) - (a.readChapters?.length || 0));
+        const unreadB = Math.max(0, (b.manga.chapters?.length || 0) - (b.readChapters?.length || 0));
+        comparison = unreadA - unreadB;
+        break;
+      }
+      case 'lastUpdated':
+      default:
+        comparison = new Date(a.manga.lastUpdated || a.addedAt || 0).getTime() - new Date(b.manga.lastUpdated || b.addedAt || 0).getTime();
+        break;
+    }
+    return sortOrder === 'descending' ? -comparison : comparison;
+  });
 
   const baseFilters = [
     { key: 'all', label: t('library.all') || 'All' },
@@ -292,6 +321,34 @@ export const LibraryScreen: React.FC = () => {
         <View style={styles.headerActions}>
           <TouchableOpacity
             style={[styles.headerActionButton, { backgroundColor: theme.card }]}
+            onPress={() => setSortOrder(prev => prev === 'ascending' ? 'descending' : 'ascending')}
+            accessibilityRole="button"
+            accessibilityLabel="Toggle sort order"
+          >
+            <Ionicons
+              name={sortOrder === 'ascending' ? 'arrow-up' : 'arrow-down'}
+              size={18}
+              color={theme.primary}
+            />
+          </TouchableOpacity>
+          <NativeDropdown
+            options={[
+              { label: 'Recently Updated', value: 'lastUpdated' },
+              { label: 'Title', value: 'name' },
+              { label: 'Date Added', value: 'dateFollowed' },
+              { label: 'Recently Read', value: 'lastRead' },
+              { label: 'Unread Chapters', value: 'unreadChapters' },
+            ]}
+            selectedValue={sortType}
+            onSelect={(val) => setSortType(val as any)}
+            title="Sort Library"
+          >
+            <View style={[styles.headerActionButton, { backgroundColor: theme.card }]}>
+              <Ionicons name="swap-vertical" size={20} color={theme.primary} />
+            </View>
+          </NativeDropdown>
+          <TouchableOpacity
+            style={[styles.headerActionButton, { backgroundColor: theme.card }]}
             onPress={handleOpenLibraryUpdater}
             accessibilityRole="button"
             accessibilityLabel="Check library updates"
@@ -344,7 +401,7 @@ export const LibraryScreen: React.FC = () => {
         </TouchableOpacity>
       </ScrollView>
 
-      {filteredLibrary.length === 0 ? (
+      {sortedLibrary.length === 0 ? (
         <EmptyState
           icon="🔖"
           title={t('library.empty')}
@@ -353,7 +410,7 @@ export const LibraryScreen: React.FC = () => {
       ) : (
         <FlatList
           key={`library-${numColumns}`} // Force re-render when columns change
-          data={filteredLibrary}
+          data={sortedLibrary}
           renderItem={renderItem}
           keyExtractor={item => item.manga.id}
           numColumns={numColumns}

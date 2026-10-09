@@ -2,6 +2,20 @@ import React from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import MangaCard from '../components/MangaCard';
 
+jest.mock('../context/ThemeContext', () => ({
+  useTheme: () => ({
+    theme: {
+      background: '#000',
+      card: '#1a1a1a',
+      text: '#fff',
+      textSecondary: '#888',
+      primary: '#FA6432',
+      border: '#333',
+      accent: '#FA6432',
+    },
+  }),
+}));
+
 describe('MangaCard Component', () => {
   const mockManga = {
     id: '1',
@@ -14,6 +28,7 @@ describe('MangaCard Component', () => {
     chapters: [],
     genres: ['Action', 'Adventure'],
     rating: 8.5,
+    lastUpdated: '2023-01-01',
   };
 
   beforeEach(() => {

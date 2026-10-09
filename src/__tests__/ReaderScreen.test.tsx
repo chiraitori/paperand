@@ -16,6 +16,10 @@ jest.mock('../context/LibraryContext', () => ({
   }),
 }));
 
+jest.mock('../components/SpotifyMiniPlayer', () => ({
+  SpotifyMiniPlayer: () => null,
+}));
+
 jest.mock('../context/ThemeContext', () => ({
   useTheme: () => ({
     theme: {
@@ -82,6 +86,13 @@ jest.mock('../services/i18nService', () => ({
 }));
 
 // Import after mocks
+import { Image } from 'react-native';
+Image.getSize = jest.fn((uri: string, success: any, failure?: any) => {
+  if (typeof success === 'function') {
+    success(320, 240);
+  }
+}) as any;
+
 import { ReaderScreen } from '../screens/ReaderScreen';
 
 const Stack = createNativeStackNavigator();
@@ -140,7 +151,7 @@ describe('ReaderScreen', () => {
     expect(title).toBeTruthy();
     
     // Check chapter info
-    const chapterInfo = await findByText('Ch. 1');
+    const chapterInfo = await findByText('Ch. 1', { exact: false });
     expect(chapterInfo).toBeTruthy();
   });
 });
@@ -180,9 +191,8 @@ describe('ReaderScreen Page Count Logic', () => {
     const { findByText } = render(<TestReaderScreen />);
     
     // Should show "No pages found" error
-    await waitFor(() => {
-      expect(findByText('No pages found')).toBeTruthy();
-    }, { timeout: 3000 });
+    const errorText = await findByText('No pages found', { exact: false });
+    expect(errorText).toBeTruthy();
   });
 
   it('handles single page chapter', async () => {

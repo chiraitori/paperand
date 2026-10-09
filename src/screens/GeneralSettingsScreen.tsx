@@ -11,27 +11,18 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { useTheme } from '../context/ThemeContext';
 import { AppDialog } from '../components/AppDialog';
 import { NativeDropdown } from '../components/NativeDropdown';
 import { t, getCurrentLanguage, SUPPORTED_LANGUAGES, LanguageCode } from '../services/i18nService';
 import { RootStackParamList } from '../types';
-
-const SETTINGS_KEY = '@general_settings';
-
-interface GeneralSettings {
-    portraitColumns: number;
-    landscapeColumns: number;
-    chapterListSort: 'ascending' | 'descending';
-    interactiveUpdates: boolean;
-    libraryAuth: boolean;
-    historyAuth: boolean;
-    hideUpdateModal: boolean;
-    mangaPreviewEnabled: boolean; // Long-press preview popup
-    parallelDownloads: number; // Max parallel chapter downloads (1-10)
-}
+import {
+    GeneralSettings,
+    defaultSettings,
+    getGeneralSettings,
+    saveGeneralSettings,
+} from '../services/settingsService';
 
 interface DialogState {
     visible: boolean;
@@ -39,18 +30,6 @@ interface DialogState {
     message: string;
     buttons: { text: string; onPress?: () => void; style?: 'default' | 'cancel' | 'destructive' }[];
 }
-
-const defaultSettings: GeneralSettings = {
-    portraitColumns: 3,
-    landscapeColumns: 7,
-    chapterListSort: 'descending',
-    interactiveUpdates: false,
-    libraryAuth: false,
-    historyAuth: false,
-    hideUpdateModal: false,
-    mangaPreviewEnabled: Platform.OS === 'ios', // Default: enabled on iOS, disabled on Android
-    parallelDownloads: 3, // Default 3 parallel downloads
-};
 
 export const GeneralSettingsScreen: React.FC = () => {
     const { theme } = useTheme();
@@ -65,23 +44,13 @@ export const GeneralSettingsScreen: React.FC = () => {
     }, []);
 
     const loadSettings = async () => {
-        try {
-            const saved = await AsyncStorage.getItem(SETTINGS_KEY);
-            if (saved) {
-                setSettings({ ...defaultSettings, ...JSON.parse(saved) });
-            }
-        } catch (e) {
-            console.error('Failed to load settings:', e);
-        }
+        const loaded = await getGeneralSettings();
+        setSettings(loaded);
     };
 
     const saveSettings = async (newSettings: GeneralSettings) => {
-        try {
-            await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(newSettings));
-            setSettings(newSettings);
-        } catch (e) {
-            console.error('Failed to save settings:', e);
-        }
+        await saveGeneralSettings(newSettings);
+        setSettings(newSettings);
     };
 
     const updateSetting = <K extends keyof GeneralSettings>(key: K, value: GeneralSettings[K]) => {
@@ -307,14 +276,19 @@ export const GeneralSettingsScreen: React.FC = () => {
                                 options={[
                                     { label: t('generalSettings.ascending'), value: 'ascending' },
                                     { label: t('generalSettings.descending'), value: 'descending' },
+                                    { label: t('generalSettings.recent') || 'Recent', value: 'recent' },
                                 ]}
                                 selectedValue={settings.chapterListSort}
-                                onSelect={(value) => updateSetting('chapterListSort', value as 'ascending' | 'descending')}
+                                onSelect={(value) => updateSetting('chapterListSort', value as any)}
                                 title={t('generalSettings.chapterSort')}
                             >
                                 <View style={styles.rightContainer}>
                                     <Text style={[styles.itemValue, { color: theme.textSecondary }]}>
-                                        {settings.chapterListSort === 'ascending' ? t('generalSettings.ascending') : t('generalSettings.descending')}
+                                        {settings.chapterListSort === 'ascending'
+                                            ? t('generalSettings.ascending')
+                                            : settings.chapterListSort === 'recent'
+                                            ? (t('generalSettings.recent') || 'Recent')
+                                            : t('generalSettings.descending')}
                                     </Text>
                                     <Ionicons name="chevron-expand" size={20} color={theme.textSecondary} />
                                 </View>
@@ -323,14 +297,70 @@ export const GeneralSettingsScreen: React.FC = () => {
                     </View>
                 </View>
 
+                {/* Chapter Completion Condition */}
+                <View style={styles.section}>
+                    {renderSectionHeader(t('generalSettings.chapterCompletion') || 'CHAPTER COMPLETION CONDITION')}
+                    <View style={[styles.sectionContent, { backgroundColor: theme.card }]}>
+                        <View style={[styles.itemContainer, { borderBottomColor: theme.border }]}>
+                            <Text style={[styles.itemTitle, { color: theme.text }]}>
+                                {t('generalSettings.chapterCompletionTitle') || 'Mark Chapter as Read'}
+                            </Text>
+                            <NativeDropdown
+                                options={[
+                                    { label: t('generalSettings.onReachingEnd') || 'On Reaching End', value: 'onReachingEnd' },
+                                    { label: t('generalSettings.onChapterOpen') || 'On Chapter Open', value: 'onChapterOpen' },
+                                    { label: t('generalSettings.onReaching80Percent') || 'On Reaching 80%', value: 'onReaching80Percent' },
+                                ]}
+                                selectedValue={settings.chapterCompletionCondition || 'onReachingEnd'}
+                                onSelect={(value) => updateSetting('chapterCompletionCondition', value as any)}
+                                title={t('generalSettings.chapterCompletionTitle') || 'Mark Chapter as Read'}
+                            >
+                                <View style={styles.rightContainer}>
+                                    <Text style={[styles.itemValue, { color: theme.textSecondary }]}>
+                                        {settings.chapterCompletionCondition === 'onChapterOpen'
+                                            ? (t('generalSettings.onChapterOpen') || 'On Chapter Open')
+                                            : settings.chapterCompletionCondition === 'onReaching80Percent'
+                                            ? (t('generalSettings.onReaching80Percent') || 'On Reaching 80%')
+                                            : (t('generalSettings.onReachingEnd') || 'On Reaching End')}
+                                    </Text>
+                                    <Ionicons name="chevron-expand" size={20} color={theme.textSecondary} />
+                                </View>
+                            </NativeDropdown>
+                        </View>
+                    </View>
+                    {renderFooter(t('generalSettings.chapterCompletionHint') || 'Controls when a chapter is automatically marked as read in your library')}
+                </View>
+
                 {/* Content Filtering */}
                 <View style={styles.section}>
                     {renderSectionHeader(t('generalSettings.contentFiltering'))}
                     <View style={[styles.sectionContent, { backgroundColor: theme.card }]}>
-                        {renderItem({
-                            title: t('generalSettings.contentUnavailable'),
-                            disabled: true
-                        })}
+                        <View style={[styles.itemContainer, { borderBottomColor: theme.border }]}>
+                            <Text style={[styles.itemTitle, { color: theme.text }]}>
+                                {t('generalSettings.contentFilteringTitle') || 'Content Filter Level'}
+                            </Text>
+                            <NativeDropdown
+                                options={[
+                                    { label: t('generalSettings.contentRestricted') || 'Content Restricted (SFW)', value: 'contentRestricted' },
+                                    { label: t('generalSettings.matureAllowed') || 'Mature Allowed', value: 'matureAllowed' },
+                                    { label: t('generalSettings.adultAllowed') || 'Adult Allowed (18+)', value: 'adultAllowed' },
+                                ]}
+                                selectedValue={settings.adultContentSetting || 'matureAllowed'}
+                                onSelect={(value) => updateSetting('adultContentSetting', value as any)}
+                                title={t('generalSettings.contentFilteringTitle') || 'Content Filter Level'}
+                            >
+                                <View style={styles.rightContainer}>
+                                    <Text style={[styles.itemValue, { color: theme.textSecondary }]}>
+                                        {settings.adultContentSetting === 'contentRestricted'
+                                            ? (t('generalSettings.contentRestricted') || 'Content Restricted')
+                                            : settings.adultContentSetting === 'adultAllowed'
+                                            ? (t('generalSettings.adultAllowed') || 'Adult Allowed (18+)')
+                                            : (t('generalSettings.matureAllowed') || 'Mature Allowed')}
+                                    </Text>
+                                    <Ionicons name="chevron-expand" size={20} color={theme.textSecondary} />
+                                </View>
+                            </NativeDropdown>
+                        </View>
                     </View>
                     {renderFooter(t('generalSettings.contentFilteringHint'))}
                 </View>
@@ -380,6 +410,37 @@ export const GeneralSettingsScreen: React.FC = () => {
                                 />
                             )
                         })}
+                        {(settings.libraryAuth || settings.historyAuth) && (
+                            <View style={[styles.itemContainer, { borderBottomColor: theme.border }]}>
+                                <Text style={[styles.itemTitle, { color: theme.text }]}>
+                                    {t('generalSettings.authExpiry') || 'Authentication Expiry'}
+                                </Text>
+                                <NativeDropdown
+                                    options={[
+                                        { label: t('generalSettings.immediately') || 'Immediately', value: '0' },
+                                        { label: t('generalSettings.oneMinute') || '1 Minute', value: '60' },
+                                        { label: t('generalSettings.fiveMinutes') || '5 Minutes', value: '300' },
+                                        { label: t('generalSettings.fifteenMinutes') || '15 Minutes', value: '900' },
+                                    ]}
+                                    selectedValue={String(settings.authExpiryTime ?? 0)}
+                                    onSelect={(value) => updateSetting('authExpiryTime', parseInt(value, 10))}
+                                    title={t('generalSettings.authExpiry') || 'Authentication Expiry'}
+                                >
+                                    <View style={styles.rightContainer}>
+                                        <Text style={[styles.itemValue, { color: theme.textSecondary }]}>
+                                            {settings.authExpiryTime === 60
+                                                ? (t('generalSettings.oneMinute') || '1 Minute')
+                                                : settings.authExpiryTime === 300
+                                                ? (t('generalSettings.fiveMinutes') || '5 Minutes')
+                                                : settings.authExpiryTime === 900
+                                                ? (t('generalSettings.fifteenMinutes') || '15 Minutes')
+                                                : (t('generalSettings.immediately') || 'Immediately')}
+                                        </Text>
+                                        <Ionicons name="chevron-expand" size={20} color={theme.textSecondary} />
+                                    </View>
+                                </NativeDropdown>
+                            </View>
+                        )}
                     </View>
                     {renderFooter(t('generalSettings.securityHint'))}
                 </View>

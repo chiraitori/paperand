@@ -59,12 +59,14 @@ const GENRE_COLORS = [
 export const DiscoverScreen: React.FC = () => {
   const { theme } = useTheme();
   const navigation = useNavigation<DiscoverScreenNavigationProp>();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
 
-  // Dynamic card widths that update on orientation change
-  const CARD_WIDTH = (width - 48) / 2;
-  const GENRE_CARD_WIDTH = (width - 56) / 3;
-  const FEATURED_WIDTH = width - 32;
+  // Paperback responsive cover dimensions on rotation
+  const numDiscoverCols = isLandscape ? 6 : (width > 600 ? 5 : (width > 400 ? 3 : 2.5));
+  const CARD_WIDTH = Math.round((width - 32 - (Math.floor(numDiscoverCols) - 1) * 10) / numDiscoverCols);
+  const GENRE_CARD_WIDTH = isLandscape ? Math.round((width - 64) / 5) : Math.round((width - 56) / 3);
+  const FEATURED_WIDTH = isLandscape ? Math.min(width - 48, 680) : width - 32;
   const [installedExtensions, setInstalledExtensions] = useState<InstalledExtension[]>([]);
   const [activeSource, setActiveSource] = useState<string>('');
   const [sections, setSections] = useState<HomeSection[]>([]);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -15,15 +15,18 @@ import {
   ActivityIndicator,
   Modal,
   ScrollView,
-  Switch,
   useWindowDimensions,
   AppState,
   AppStateStatus,
+  Alert,
+  GestureResponderEvent,
 } from 'react-native';
 import { useRoute, useNavigation, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import * as ScreenOrientation from 'expo-screen-orientation';
+import * as Sharing from 'expo-sharing';
+import { Paths, File } from 'expo-file-system';
 import { useTheme } from '../context/ThemeContext';
 import { useLibrary } from '../context/LibraryContext';
 import { useDownloads } from '../context/DownloadContext';
@@ -37,282 +40,30 @@ import {
   getMangaShareUrl,
   getCloudflareBypassRequest,
 } from '../services/sourceService';
-import { cacheChapterPages, getCachedChapterPages } from '../services/cacheService';
+import { cacheChapterPages } from '../services/cacheService';
+import {
+  ReaderSettingsValues,
+  defaultReaderSettings,
+  getReaderSettings,
+  saveReaderSettings,
+  resetMangaReaderSettings,
+  applySettingsGlobally,
+  ReaderMode,
+  ReaderDirection,
+  PagedDisplayMode,
+} from '../services/readerSettingsService';
 import { Manga, Chapter, Page, RootStackParamList } from '../types';
 import { t } from '../services/i18nService';
-import { SpotifyMiniPlayer } from '../components';
+import { SpotifyMiniPlayer } from '../components/SpotifyMiniPlayer';
+import { ReaderSettingsModal } from '../components/ReaderSettingsModal';
 
 type ReaderRouteProp = RouteProp<RootStackParamList, 'Reader'>;
 type ReaderNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
-const { width, height } = Dimensions.get('window');
-
-// Info Modal Component - Paperback Style
-const InfoModal: React.FC<{
-  visible: boolean;
-  onClose: () => void;
-  manga: Manga | null;
-  chapter: Chapter | null;
-  currentPage: number;
-  totalPages: number;
-  onContinueReading: () => void;
-  onSearchTag: (tag: string) => void;
-}> = ({ visible, onClose, manga, chapter, currentPage, totalPages, onContinueReading, onSearchTag }) => {
-  const [showFullDescription, setShowFullDescription] = useState(false);
-  const { theme } = useTheme(); // Must be before any early returns
-
-  if (!manga || !chapter) return null;
-
-  const handleContinue = () => {
-    onClose();
-    onContinueReading();
-  };
-
-  const handleTagPress = (tag: string) => {
-    onClose();
-    onSearchTag(tag);
-  };
-
-  const getStatusColor = () => {
-    if (manga.status === 'completed') return theme.success;
-    return theme.primary; // Default to primary (blue) for ongoing/other
-  };
-
-  const getStatusText = () => {
-    const status = manga?.status?.toLowerCase();
-    if (status && ['ongoing', 'completed', 'hiatus', 'unknown'].includes(status)) {
-      return t(`manga.${status}`).toUpperCase();
-    }
-    return t('manga.unknown').toUpperCase();
-  };
-
-  return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
-    >
-      <View style={styles.infoModalContainer}>
-        <TouchableOpacity
-          style={styles.infoModalBackdrop}
-          activeOpacity={1}
-          onPress={onClose}
-        />
-        <View style={styles.infoModalContent}>
-          {/* Close button */}
-          <TouchableOpacity style={styles.infoModalClose} onPress={onClose}>
-            <Ionicons name="close" size={22} color="#fff" />
-          </TouchableOpacity>
-
-          <ScrollView
-            style={styles.infoModalScroll}
-            showsVerticalScrollIndicator={false}
-          >
-            {/* Header - Cover Left, Info Right */}
-            <View style={styles.infoModalHeader}>
-              <Image
-                source={{ uri: manga.coverImage }}
-                style={styles.infoModalCover}
-                resizeMode="cover"
-              />
-              <View style={styles.infoModalHeaderInfo}>
-                <Text style={styles.infoModalTitle} numberOfLines={3}>{manga.title}</Text>
-                <Text style={styles.infoModalAuthor}>{manga.author || 'Unknown'}</Text>
-                <View style={[styles.infoModalStatusBadge, { backgroundColor: getStatusColor() }]}>
-                  <Text style={styles.infoModalStatusBadgeText}>{getStatusText()}</Text>
-                </View>
-              </View>
-            </View>
-
-            {/* Action Buttons */}
-            <View style={styles.infoModalButtons}>
-              <TouchableOpacity style={styles.infoModalReadButton} onPress={handleContinue}>
-                <Ionicons name="book" size={18} color="#000" />
-                <Text style={styles.infoModalReadButtonText}>
-                  {t('reader.chapter')} {chapter.number} • {currentPage + 1}/{totalPages}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.infoModalIconButton}>
-                <Ionicons name="bookmark-outline" size={24} color="#FA6432" />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.infoModalIconButton}>
-                <Ionicons name="share-outline" size={24} color="#FA6432" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Description */}
-            {manga.description && (
-              <View style={styles.infoModalDescSection}>
-                <TouchableOpacity
-                  onPress={() => setShowFullDescription(!showFullDescription)}
-                  activeOpacity={0.7}
-                >
-                  <Text
-                    style={styles.infoModalDescription}
-                    numberOfLines={showFullDescription ? undefined : 4}
-                  >
-                    {manga.description}
-                  </Text>
-                  <Text style={styles.infoModalMoreButton}>
-                    {showFullDescription ? t('manga.showLess') : t('manga.showMore')}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {/* Tags Section */}
-            {manga.genres && manga.genres.length > 0 && (
-              <View style={styles.infoModalTagsSection}>
-                <View style={styles.infoModalTagsLabelContainer}>
-                  <Text style={styles.infoModalTagsLabel}>{t('reader.tags')}</Text>
-                </View>
-                <View style={styles.infoModalGenres}>
-                  {manga.genres.map((genre, index) => (
-                    <TouchableOpacity
-                      key={index}
-                      style={styles.infoModalGenreTag}
-                      onPress={() => handleTagPress(genre)}
-                    >
-                      <Ionicons name="search" size={12} color="#888" style={{ marginRight: 4 }} />
-                      <Text style={styles.infoModalGenreText}>{genre}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-            )}
-          </ScrollView>
-        </View>
-      </View>
-    </Modal>
-  );
-};
-
-// Reader Settings Modal Component
-const ReaderSettingsModal: React.FC<{
-  visible: boolean;
-  onClose: () => void;
-  readingMode: 'vertical' | 'horizontal';
-  setReadingMode: (mode: 'vertical' | 'horizontal') => void;
-  readingDirection: 'ltr' | 'rtl';
-  setReadingDirection: (dir: 'ltr' | 'rtl') => void;
-  pagePadding: boolean;
-  setPagePadding: (val: boolean) => void;
-}> = ({
-  visible, onClose,
-  readingMode, setReadingMode,
-  readingDirection, setReadingDirection,
-  pagePadding, setPagePadding,
-}) => {
-    return (
-      <Modal
-        visible={visible}
-        transparent
-        animationType="slide"
-        onRequestClose={onClose}
-      >
-        <View style={styles.settingsModalContainer}>
-          <TouchableOpacity
-            style={styles.settingsModalBackdrop}
-            activeOpacity={1}
-            onPress={onClose}
-          />
-          <View style={styles.settingsModalContent}>
-            <View style={styles.settingsModalHeader}>
-              <Text style={styles.settingsModalTitle}>{t('reader.settingsTitle')}</Text>
-              <TouchableOpacity onPress={onClose}>
-                <Text style={styles.settingsDoneButton}>{t('common.done')}</Text>
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={styles.settingsScrollView}>
-              {/* Reader Type */}
-              <Text style={styles.settingsSectionTitle}>{t('reader.readerType')}</Text>
-              <View style={styles.settingsSegmentContainer}>
-                <TouchableOpacity
-                  style={[
-                    styles.settingsSegment,
-                    readingMode === 'vertical' && styles.settingsSegmentActive,
-                  ]}
-                  onPress={() => setReadingMode('vertical')}
-                >
-                  <Text style={[
-                    styles.settingsSegmentText,
-                    readingMode === 'vertical' && styles.settingsSegmentTextActive,
-                  ]}>{t('reader.vertical')}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.settingsSegment,
-                    readingMode === 'horizontal' && styles.settingsSegmentActive,
-                  ]}
-                  onPress={() => setReadingMode('horizontal')}
-                >
-                  <Text style={[
-                    styles.settingsSegmentText,
-                    readingMode === 'horizontal' && styles.settingsSegmentTextActive,
-                  ]}>{t('reader.horizontal')}</Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Reading Direction (for horizontal mode) */}
-              {readingMode === 'horizontal' && (
-                <>
-                  <Text style={styles.settingsSectionTitle}>{t('reader.readingDirection')}</Text>
-                  <View style={styles.settingsSegmentContainer}>
-                    <TouchableOpacity
-                      style={[
-                        styles.settingsSegment,
-                        readingDirection === 'ltr' && styles.settingsSegmentActive,
-                      ]}
-                      onPress={() => setReadingDirection('ltr')}
-                    >
-                      <Text style={[
-                        styles.settingsSegmentText,
-                        readingDirection === 'ltr' && styles.settingsSegmentTextActive,
-                      ]}>{t('reader.ltr')}</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[
-                        styles.settingsSegment,
-                        readingDirection === 'rtl' && styles.settingsSegmentActive,
-                      ]}
-                      onPress={() => setReadingDirection('rtl')}
-                    >
-                      <Text style={[
-                        styles.settingsSegmentText,
-                        readingDirection === 'rtl' && styles.settingsSegmentTextActive,
-                      ]}>{t('reader.rtl')}</Text>
-                    </TouchableOpacity>
-                  </View>
-                </>
-              )}
-
-              {/* General Settings */}
-              <Text style={styles.settingsSectionTitle}>{t('reader.generalSettings')}</Text>
-              <View style={styles.settingsCard}>
-                <View style={styles.settingsRow}>
-                  <Text style={styles.settingsRowLabel}>{t('reader.pagePadding')}</Text>
-                  <Switch
-                    value={pagePadding}
-                    onValueChange={setPagePadding}
-                    trackColor={{ false: '#3e3e3e', true: '#FA6432' }}
-                    thumbColor="#fff"
-                  />
-                </View>
-              </View>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-    );
-  };
-
-
 // Parse DRM URL to get extensionId and actual URL
 const parseDrmUrl = (url: string): { extensionId: string; actualUrl: string } | null => {
-  if (!url.startsWith('drm://')) return null;
-  const withoutScheme = url.substring(6); // Remove 'drm://'
+  if (!url || !url.startsWith('drm://')) return null;
+  const withoutScheme = url.substring(6);
   const slashIndex = withoutScheme.indexOf('/');
   if (slashIndex === -1) return null;
   return {
@@ -321,11 +72,23 @@ const parseDrmUrl = (url: string): { extensionId: string; actualUrl: string } | 
   };
 };
 
-// Preloaded page type with resolved URL
-interface PreloadedPage extends Page {
-  resolvedUrl: string; // Decrypted or original URL
+export interface PreloadedPage extends Page {
+  resolvedUrl: string;
   preloaded: boolean;
-  loading?: boolean; // Currently loading
+  loading?: boolean;
+  error?: boolean;
+  errorMessage?: string;
+  retryKey?: number;
+}
+
+// Page group for double-page spreads
+export interface PageGroup {
+  id: string;
+  groupIndex: number;
+  pages: PreloadedPage[];
+  isDouble: boolean;
+  startPageNumber: number;
+  endPageNumber: number;
 }
 
 const getImageRequestHeaders = (uri: string): Record<string, string> | undefined => {
@@ -357,7 +120,7 @@ const getImageRequestHeaders = (uri: string): Record<string, string> | undefined
   }
 };
 
-// Preload a single page - decrypt DRM or fetch normal URL
+// Preload a single page
 const preloadSinglePage = async (page: Page): Promise<PreloadedPage> => {
   const drmInfo = parseDrmUrl(page.imageUrl);
 
@@ -365,28 +128,31 @@ const preloadSinglePage = async (page: Page): Promise<PreloadedPage> => {
     try {
       const decryptedUrl = await decryptDrmImage(drmInfo.extensionId, drmInfo.actualUrl);
       if (decryptedUrl) {
-        // Prefetch the image
         await Image.prefetch(decryptedUrl);
-        return { ...page, resolvedUrl: decryptedUrl, preloaded: true };
+        return { ...page, resolvedUrl: decryptedUrl, preloaded: true, loading: false, error: false };
       }
     } catch (e) {
       console.warn('[Reader] Failed to decrypt page', page.pageNumber, e);
+      return { ...page, resolvedUrl: page.imageUrl, preloaded: false, loading: false, error: true, errorMessage: 'DRM Decryption Failed' };
     }
-    return { ...page, resolvedUrl: page.imageUrl, preloaded: false };
+    return { ...page, resolvedUrl: page.imageUrl, preloaded: false, loading: false, error: true };
   } else {
-    const requestHeaders = getImageRequestHeaders(page.imageUrl);
-
-    if (requestHeaders) {
-      return { ...page, resolvedUrl: page.imageUrl, preloaded: true };
+    try {
+      const headers = getImageRequestHeaders(page.imageUrl);
+      if (!headers) {
+        const p = Image.prefetch(page.imageUrl);
+        if (p && typeof (p as any).catch === 'function') {
+          await p.catch(() => {});
+        }
+      }
+      return { ...page, resolvedUrl: page.imageUrl, preloaded: true, loading: false, error: false };
+    } catch {
+      return { ...page, resolvedUrl: page.imageUrl, preloaded: true, loading: false, error: false };
     }
-
-    // Normal images do not need preprocessing. Let FlatList and expo-image load
-    // only the visible window instead of downloading the entire chapter first.
-    return { ...page, resolvedUrl: page.imageUrl, preloaded: true };
   }
 };
 
-// Preload all pages with progress callback
+// Preload all pages with batch progress callback
 const preloadAllPagesWithProgress = async (
   pages: Page[],
   onProgress: (loaded: number, total: number) => void,
@@ -394,8 +160,6 @@ const preloadAllPagesWithProgress = async (
 ): Promise<PreloadedPage[]> => {
   const results: PreloadedPage[] = new Array(pages.length);
   let loaded = 0;
-
-  // Process in batches for better performance
   const BATCH_SIZE = 3;
 
   for (let i = 0; i < pages.length; i += BATCH_SIZE) {
@@ -415,325 +179,208 @@ const preloadAllPagesWithProgress = async (
   return results;
 };
 
-// Preload all pages - decrypt DRM and prefetch images in parallel (legacy)
-const preloadAllPages = async (pages: Page[]): Promise<PreloadedPage[]> => {
-  const preloadPromises = pages.map(async (page): Promise<PreloadedPage> => {
-    const drmInfo = parseDrmUrl(page.imageUrl);
-
-    if (drmInfo) {
-      try {
-        const decryptedUrl = await decryptDrmImage(drmInfo.extensionId, drmInfo.actualUrl);
-        if (decryptedUrl) {
-          // Prefetch the image
-          await Image.prefetch(decryptedUrl);
-          return { ...page, resolvedUrl: decryptedUrl, preloaded: true };
-        }
-      } catch (e) {
-        console.warn('[Reader] Failed to decrypt page', page.pageNumber, e);
-      }
-      return { ...page, resolvedUrl: page.imageUrl, preloaded: false };
-    } else {
-      // Normal URL - just prefetch
-      try {
-        await Image.prefetch(page.imageUrl);
-        return { ...page, resolvedUrl: page.imageUrl, preloaded: true };
-      } catch (e) {
-        return { ...page, resolvedUrl: page.imageUrl, preloaded: false };
-      }
-    }
-  });
-
-  return Promise.all(preloadPromises);
-};
-
-// Simple image component for preloaded pages
-const PreloadedImage: React.FC<{
-  page: PreloadedPage;
-  onPress: () => void;
+// Paperback Info Modal Component
+const InfoModal: React.FC<{
+  visible: boolean;
+  onClose: () => void;
+  manga: Manga | null;
+  chapter: Chapter | null;
+  currentPage: number;
   totalPages: number;
-}> = ({ page, onPress, totalPages }) => {
-  const { width: screenWidth } = useWindowDimensions();
-  const [imageHeight, setImageHeight] = useState(screenWidth * 1.4);
-  const [error, setError] = useState(false);
-  const [retryKey, setRetryKey] = useState(0);
-  const requestHeaders = getImageRequestHeaders(page.resolvedUrl);
-  const imageSource = requestHeaders
-    ? { uri: page.resolvedUrl, headers: requestHeaders }
-    : { uri: page.resolvedUrl };
+  onContinueReading: () => void;
+  onSearchTag: (tag: string) => void;
+}> = ({ visible, onClose, manga, chapter, currentPage, totalPages, onContinueReading, onSearchTag }) => {
+  const [showFullDescription, setShowFullDescription] = useState(false);
+  const { theme } = useTheme();
 
-  useEffect(() => {
-    setError(false);
+  if (!manga || !chapter) return null;
 
-    // Only get size if page is loaded
-    if (!page.loading && page.preloaded) {
-      const handleSuccess = (w: number, h: number) => {
-        const ratio = screenWidth / w;
-        setImageHeight(h * ratio);
-      };
-      const handleFailure = () => setImageHeight(screenWidth * 1.4);
-      const getSizeWithHeaders = (Image as any).getSizeWithHeaders;
+  const handleContinue = () => {
+    onClose();
+    onContinueReading();
+  };
 
-      if (requestHeaders && typeof getSizeWithHeaders === 'function') {
-        getSizeWithHeaders(page.resolvedUrl, requestHeaders, handleSuccess, handleFailure);
-      } else {
-        Image.getSize(page.resolvedUrl, handleSuccess, handleFailure);
-      }
+  const handleTagPress = (tag: string) => {
+    onClose();
+    onSearchTag(tag);
+  };
+
+  const getStatusColor = () => {
+    if (manga.status === 'completed') return theme.success;
+    return theme.primary;
+  };
+
+  const getStatusText = () => {
+    const status = manga?.status?.toLowerCase();
+    if (status && ['ongoing', 'completed', 'hiatus', 'unknown'].includes(status)) {
+      return t(`manga.${status}`).toUpperCase();
     }
-  }, [page.resolvedUrl, page.loading, page.preloaded, requestHeaders, screenWidth, retryKey]);
-
-  // Show skeleton while page is loading
-  if (page.loading) {
-    return (
-      <TouchableOpacity activeOpacity={1} onPress={onPress}>
-        <View style={{
-          width: screenWidth,
-          height: screenWidth * 1.4,
-          justifyContent: 'center',
-          alignItems: 'center',
-          backgroundColor: '#1a1a1a'
-        }}>
-          <ActivityIndicator size="large" color="#FA6432" />
-          <Text style={{ color: '#666', marginTop: 12, fontSize: 12 }}>
-            {t('reader.loadingPage', { page: page.pageNumber, total: totalPages })}
-          </Text>
-        </View>
-      </TouchableOpacity>
-    );
-  }
-
-  if (error) {
-    return (
-      <TouchableOpacity activeOpacity={1} onPress={onPress}>
-        <View style={{ width: screenWidth, height: screenWidth * 1.4, justifyContent: 'center', alignItems: 'center' }}>
-          <Ionicons name="image-outline" size={40} color="#555" />
-          <Text style={styles.pageErrorText}>{t('reader.failedToLoadPage', { page: page.pageNumber })}</Text>
-          <TouchableOpacity
-            style={styles.retryButton}
-            onPress={() => { setError(false); setRetryKey(k => k + 1); }}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="refresh" size={16} color="#fff" />
-            <Text style={styles.retryButtonText}>{t('common.retry')}</Text>
-          </TouchableOpacity>
-        </View>
-      </TouchableOpacity>
-    );
-  }
+    return t('manga.unknown').toUpperCase();
+  };
 
   return (
-    <TouchableOpacity activeOpacity={1} onPress={onPress}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.infoModalContainer}>
+        <TouchableOpacity style={styles.infoModalBackdrop} activeOpacity={1} onPress={onClose} />
+        <View style={styles.infoModalContent}>
+          <TouchableOpacity style={styles.infoModalClose} onPress={onClose}>
+            <Ionicons name="close" size={22} color="#fff" />
+          </TouchableOpacity>
+
+          <ScrollView style={styles.infoModalScroll} showsVerticalScrollIndicator={false}>
+            <View style={styles.infoModalHeader}>
+              <Image source={{ uri: manga.coverImage }} style={styles.infoModalCover} resizeMode="cover" />
+              <View style={styles.infoModalHeaderInfo}>
+                <Text style={styles.infoModalTitle} numberOfLines={3}>{manga.title}</Text>
+                <Text style={styles.infoModalAuthor}>{manga.author || 'Unknown'}</Text>
+                <View style={[styles.infoModalStatusBadge, { backgroundColor: getStatusColor() }]}>
+                  <Text style={styles.infoModalStatusBadgeText}>{getStatusText()}</Text>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.infoModalButtons}>
+              <TouchableOpacity style={styles.infoModalReadButton} onPress={handleContinue}>
+                <Ionicons name="book" size={18} color="#000" />
+                <Text style={styles.infoModalReadButtonText}>
+                  {t('reader.chapter')} {chapter.number} • {currentPage + 1}/{totalPages}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.infoModalIconButton}>
+                <Ionicons name="bookmark-outline" size={24} color="#FA6432" />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.infoModalIconButton}>
+                <Ionicons name="share-outline" size={24} color="#FA6432" />
+              </TouchableOpacity>
+            </View>
+
+            {manga.description ? (
+              <View style={styles.infoModalDescSection}>
+                <TouchableOpacity onPress={() => setShowFullDescription(!showFullDescription)} activeOpacity={0.7}>
+                  <Text style={styles.infoModalDescription} numberOfLines={showFullDescription ? undefined : 4}>
+                    {manga.description}
+                  </Text>
+                  <Text style={styles.infoModalMoreButton}>
+                    {showFullDescription ? t('manga.showLess') : t('manga.showMore')}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+
+            {manga.genres && manga.genres.length > 0 ? (
+              <View style={styles.infoModalTagsSection}>
+                <View style={styles.infoModalTagsLabelContainer}>
+                  <Text style={styles.infoModalTagsLabel}>{t('reader.tags')}</Text>
+                </View>
+                <View style={styles.infoModalGenres}>
+                  {manga.genres.map((genre, index) => (
+                    <TouchableOpacity key={index} style={styles.infoModalGenreTag} onPress={() => handleTagPress(genre)}>
+                      <Ionicons name="search" size={12} color="#888" style={{ marginRight: 4 }} />
+                      <Text style={styles.infoModalGenreText}>{genre}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            ) : null}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
+// Single Image Element with Loading State, Error State, and Direct Retry
+const PageImageElement: React.FC<{
+  page: PreloadedPage;
+  targetWidth: number;
+  targetHeight: number;
+  onPress: (e: GestureResponderEvent) => void;
+  onLongPress: () => void;
+  onRetry: () => void;
+  totalPages: number;
+  fitMode?: 'contain' | 'cover';
+}> = ({ page, targetWidth, targetHeight, onPress, onLongPress, onRetry, totalPages, fitMode = 'contain' }) => {
+  const [imgHeight, setImgHeight] = useState(targetHeight);
+  const [loadError, setLoadError] = useState(page.error || false);
+  const [internalLoading, setInternalLoading] = useState(page.loading ?? false);
+  const requestHeaders = getImageRequestHeaders(page.resolvedUrl);
+
+  useEffect(() => {
+    if (page.error) {
+      setLoadError(true);
+      setInternalLoading(false);
+      return;
+    }
+    setLoadError(false);
+
+    if (page.preloaded && page.resolvedUrl) {
+      Image.getSize(
+        page.resolvedUrl,
+        (w, h) => {
+          if (w > 0) {
+            const aspect = h / w;
+            setImgHeight(Math.min(targetWidth * aspect, targetHeight));
+          }
+          setInternalLoading(false);
+        },
+        () => {
+          setImgHeight(targetHeight);
+          setInternalLoading(false);
+        }
+      );
+    }
+  }, [page.resolvedUrl, page.preloaded, page.error, page.retryKey, targetWidth, targetHeight]);
+
+  if (page.loading || internalLoading) {
+    return (
+      <TouchableOpacity activeOpacity={1} onPress={onPress} style={[styles.pagePlaceholder, { width: targetWidth, height: targetHeight }]}>
+        <ActivityIndicator size="large" color="#FA6432" />
+        <Text style={styles.pagePlaceholderText}>
+          {t('reader.loadingPage', { page: page.pageNumber, total: totalPages })}
+        </Text>
+      </TouchableOpacity>
+    );
+  }
+
+  if (loadError || page.error) {
+    return (
+      <TouchableOpacity activeOpacity={1} onPress={onPress} style={[styles.pagePlaceholder, { width: targetWidth, height: targetHeight }]}>
+        <Ionicons name="image-outline" size={48} color="#555" />
+        <Text style={styles.pageErrorText}>{t('reader.failedToLoadPage', { page: page.pageNumber })}</Text>
+        <TouchableOpacity style={styles.retryButton} onPress={onRetry} activeOpacity={0.7}>
+          <Ionicons name="refresh" size={16} color="#fff" />
+          <Text style={styles.retryButtonText}>{t('common.retry')}</Text>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    );
+  }
+
+  const imageSource = requestHeaders ? { uri: page.resolvedUrl, headers: requestHeaders } : { uri: page.resolvedUrl };
+
+  return (
+    <TouchableOpacity activeOpacity={1} onPress={onPress} onLongPress={onLongPress} delayLongPress={450}>
       <Image
-        key={`page-img-${page.pageNumber}-${retryKey}`}
+        key={`page-img-${page.pageNumber}-${page.retryKey || 0}`}
         source={imageSource}
-        style={{ width: screenWidth, height: imageHeight }}
-        resizeMode="contain"
+        style={{ width: targetWidth, height: imgHeight }}
+        resizeMode={fitMode}
         onError={() => {
-          console.warn('[Reader] Failed to render page image:', page.pageNumber, page.resolvedUrl);
-          setError(true);
+          console.warn('[Reader] Error rendering page:', page.pageNumber);
+          setLoadError(true);
         }}
       />
     </TouchableOpacity>
   );
 };
 
-// Component for fixed-height images with progressive loading and DRM support
-// Uses fixed height to prevent layout shifts during scrolling
-const AutoSizeImage: React.FC<{
-  uri: string;
-  onPress: () => void;
-  pageNumber: number;
-  totalPages: number;
-}> = ({ uri, onPress, pageNumber, totalPages }) => {
-  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
-  // Use fixed height based on screen to prevent layout shifts
-  const fixedHeight = screenHeight;
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-  const [actualUri, setActualUri] = useState<string | null>(null);
-  const [decrypting, setDecrypting] = useState(false);
-  const [retryKey, setRetryKey] = useState(0);
-
-  useEffect(() => {
-    let mounted = true;
-
-    const loadImage = async () => {
-      setLoading(true);
-      setError(false);
-      setActualUri(null);
-
-      // Check if this is a DRM URL that needs decryption
-      const drmInfo = parseDrmUrl(uri);
-      if (drmInfo) {
-        setDecrypting(true);
-        try {
-          const decryptedUrl = await decryptDrmImage(drmInfo.extensionId, drmInfo.actualUrl);
-          if (!mounted) return;
-
-          if (decryptedUrl) {
-            setActualUri(decryptedUrl);
-            setLoading(false);
-          } else {
-            setError(true);
-            setLoading(false);
-          }
-        } catch (e) {
-          if (!mounted) return;
-          setError(true);
-          setLoading(false);
-        } finally {
-          if (mounted) setDecrypting(false);
-        }
-      } else {
-        // Normal URL - just set it directly, no size calculation
-        setActualUri(uri);
-        setLoading(false);
-      }
-    };
-
-    loadImage();
-    return () => { mounted = false; };
-  }, [uri, retryKey]);
-
-  return (
-    <TouchableOpacity activeOpacity={1} onPress={onPress}>
-      <View style={{ width: screenWidth, height: fixedHeight, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000' }}>
-        {(loading || decrypting) && (
-          <View style={styles.pageLoadingContainer}>
-            <ActivityIndicator size="small" color="#FA6432" />
-            <Text style={styles.pageLoadingText}>
-              {decrypting ? t('common.decryptingPage', { page: pageNumber }) : t('common.loadingPage', { current: pageNumber, total: totalPages })}
-            </Text>
-          </View>
-        )}
-        {error ? (
-          <View style={styles.pageErrorContainer}>
-            <Ionicons name="image-outline" size={40} color="#555" />
-            <Text style={styles.pageErrorText}>{t('reader.failedToLoadPage', { page: pageNumber })}</Text>
-            <TouchableOpacity
-              style={styles.retryButton}
-              onPress={() => { setError(false); setLoading(true); setRetryKey(k => k + 1); }}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="refresh" size={16} color="#fff" />
-              <Text style={styles.retryButtonText}>{t('common.retry')}</Text>
-            </TouchableOpacity>
-          </View>
-        ) : actualUri ? (
-          <Image
-            key={`autosize-img-${pageNumber}-${retryKey}`}
-            source={getImageRequestHeaders(actualUri) ? { uri: actualUri, headers: getImageRequestHeaders(actualUri) } : { uri: actualUri }}
-            style={{ width: screenWidth, height: fixedHeight }}
-            resizeMode="contain"
-            onLoad={() => setLoading(false)}
-            onError={() => { setLoading(false); setError(true); }}
-          />
-        ) : null}
-      </View>
-    </TouchableOpacity>
-  );
-};
-
-// Horizontal mode page component with DRM support
-const HorizontalPageImage: React.FC<{
-  uri: string;
-  pageNumber: number;
-  totalPages: number;
-  onPress: () => void;
-}> = ({ uri, pageNumber, totalPages, onPress }) => {
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-  const [actualUri, setActualUri] = useState<string | null>(null);
-  const [decrypting, setDecrypting] = useState(false);
-  const [retryKey, setRetryKey] = useState(0);
-
-  useEffect(() => {
-    let mounted = true;
-
-    const loadImage = async () => {
-      setLoading(true);
-      setError(false);
-
-      const drmInfo = parseDrmUrl(uri);
-      if (drmInfo) {
-        setDecrypting(true);
-        try {
-          const decryptedUrl = await decryptDrmImage(drmInfo.extensionId, drmInfo.actualUrl);
-          if (!mounted) return;
-          if (decryptedUrl) {
-            setActualUri(decryptedUrl);
-            setLoading(false);
-          } else {
-            setError(true);
-            setLoading(false);
-          }
-        } catch (e) {
-          if (!mounted) return;
-          setError(true);
-          setLoading(false);
-        } finally {
-          if (mounted) setDecrypting(false);
-        }
-      } else {
-        setActualUri(uri);
-        setLoading(false);
-      }
-    };
-
-    loadImage();
-    return () => { mounted = false; };
-  }, [uri, retryKey]);
-
-  return (
-    <TouchableOpacity
-      activeOpacity={1}
-      onPress={onPress}
-      style={styles.horizontalPage}
-    >
-      {(loading || decrypting) ? (
-        <View style={styles.horizontalLoadingContainer}>
-          <ActivityIndicator size="large" color="#FA6432" />
-          <Text style={styles.pageLoadingText}>
-            {decrypting ? t('common.decryptingPage', { page: pageNumber }) : t('common.loading')}
-          </Text>
-        </View>
-      ) : error ? (
-        <View style={styles.horizontalLoadingContainer}>
-          <Ionicons name="image-outline" size={48} color="#555" />
-          <Text style={styles.pageErrorText}>{t('reader.failedToLoadPage', { page: pageNumber })}</Text>
-          <TouchableOpacity
-            style={styles.retryButton}
-            onPress={() => { setError(false); setLoading(true); setRetryKey(k => k + 1); }}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="refresh" size={16} color="#fff" />
-            <Text style={styles.retryButtonText}>{t('common.retry')}</Text>
-          </TouchableOpacity>
-        </View>
-      ) : actualUri ? (
-        <Image
-          key={`horiz-img-${pageNumber}-${retryKey}`}
-          source={getImageRequestHeaders(actualUri) ? { uri: actualUri, headers: getImageRequestHeaders(actualUri) } : { uri: actualUri }}
-          style={styles.horizontalImage}
-          resizeMode="contain"
-          onLoad={() => setLoading(false)}
-          onError={() => { setLoading(false); setError(true); }}
-        />
-      ) : null}
-      <View style={styles.horizontalPageIndicator}>
-        <Text style={styles.horizontalPageText}>{pageNumber} / {totalPages}</Text>
-      </View>
-    </TouchableOpacity>
-  );
-};
-
-// Chapter transition component - compact version
+// Chapter Transition Component
 const ChapterTransition: React.FC<{
   type: 'previous' | 'next';
   chapter: Chapter | null;
   manga: Manga | null;
   isLoading: boolean;
   onNavigate: () => void;
-}> = ({ type, chapter, manga, isLoading, onNavigate }) => {
+}> = ({ type, chapter, isLoading, onNavigate }) => {
   const isPrevious = type === 'previous';
 
   if (!chapter) {
@@ -749,122 +396,132 @@ const ChapterTransition: React.FC<{
   }
 
   return (
-    <TouchableOpacity
-      style={styles.transitionContainer}
-      onPress={onNavigate}
-      activeOpacity={0.8}
-    >
+    <View style={styles.transitionContainer}>
       <View style={styles.transitionContent}>
-        {isLoading ? (
-          <ActivityIndicator size="small" color="#FA6432" />
-        ) : (
-          <>
-            <Text style={styles.transitionLabel}>
-              {isPrevious ? t('reader.previousChapter') : t('reader.nextChapter')}
+        <Text style={styles.transitionLabel}>
+          {isPrevious ? t('reader.previousChapter') : t('reader.nextChapter')}
+        </Text>
+        <Text style={styles.transitionChapterTitle}>
+          Ch. {chapter.number}{chapter.title ? ` - ${chapter.title}` : ''}
+        </Text>
+        <TouchableOpacity style={styles.transitionButton} onPress={onNavigate} disabled={isLoading} activeOpacity={0.8}>
+          {isLoading ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Text style={styles.transitionButtonText}>
+              {isPrevious ? t('reader.goToPrevious') : t('reader.nextChapter')}
             </Text>
-            <Text style={styles.transitionChapterTitle}>
-              {t('reader.chapter')} {chapter.number}
-            </Text>
-          </>
-        )}
+          )}
+        </TouchableOpacity>
       </View>
-    </TouchableOpacity>
+    </View>
   );
 };
 
 export const ReaderScreen: React.FC = () => {
-  const { theme } = useTheme();
   const route = useRoute<ReaderRouteProp>();
   const navigation = useNavigation<ReaderNavigationProp>();
-  const { updateProgress, addToLibrary, library } = useLibrary();
-  const { downloads, isChapterDownloaded } = useDownloads();
+  const { theme } = useTheme();
+  const { library, updateProgress } = useLibrary();
+  const { downloads } = useDownloads();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const isLandscape = screenWidth > screenHeight;
 
+  const { mangaId, chapterId, sourceId, initialPage } = route.params;
+
+  // Manga & Chapter Data
   const [manga, setManga] = useState<Manga | null>(null);
   const [chapter, setChapter] = useState<Chapter | null>(null);
+  const [pages, setPages] = useState<PreloadedPage[]>([]);
   const [currentPage, setCurrentPage] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [loadingPages, setLoadingPages] = useState(true); // Still loading individual pages
-  const [loadingProgress, setLoadingProgress] = useState(0); // Preload progress
-  const [showControls, setShowControls] = useState(false);
-  const [readingMode, setReadingMode] = useState<'vertical' | 'horizontal'>('vertical');
-  const [pages, setPages] = useState<PreloadedPage[]>([]);
   const [chapterLoadError, setChapterLoadError] = useState<string | null>(null);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [isBookmarked, setIsBookmarked] = useState(false);
 
-  // Modal states
+  // Paperback Reader Settings State
+  const [readerSettings, setReaderSettings] = useState<ReaderSettingsValues>(defaultReaderSettings);
+  const [isCustomSetting, setIsCustomSetting] = useState(false);
+
+  // HUD Controls state
+  const [showControls, setShowControls] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [spotifyPickerOpen, setSpotifyPickerOpen] = useState(false);
-
-  // Reader settings
-  const [readingDirection, setReadingDirection] = useState<'ltr' | 'rtl'>('ltr');
-  const [pagePadding, setPagePadding] = useState(false);
   const [orientationLocked, setOrientationLocked] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const flatListRef = useRef<FlatList>(null);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const hasScrolledToInitialPage = useRef(false);
 
-  const { mangaId, chapterId, sourceId, initialPage } = route.params;
+  // Load Reader Settings for Manga
+  useEffect(() => {
+    const loadSettings = async () => {
+      const { settings, isCustom } = await getReaderSettings(mangaId);
+      setReaderSettings(settings);
+      setIsCustomSetting(isCustom);
+      setOrientationLocked(settings.rotationLocked);
+    };
+    loadSettings();
+  }, [mangaId]);
 
-  // Handle orientation lock
+  // Save / Update Setting
+  const handleUpdateSetting = useCallback(
+    async <K extends keyof ReaderSettingsValues>(key: K, value: ReaderSettingsValues[K]) => {
+      const updated = { ...readerSettings, [key]: value };
+      setReaderSettings(updated);
+      setIsCustomSetting(true);
+      await saveReaderSettings(updated, mangaId);
+    },
+    [readerSettings, mangaId]
+  );
+
+  // Apply Globally
+  const handleApplyGlobally = useCallback(async () => {
+    await applySettingsGlobally(readerSettings, mangaId);
+    setIsCustomSetting(false);
+    Alert.alert(t('common.success'), 'Settings applied globally for all titles.');
+  }, [readerSettings, mangaId]);
+
+  // Reset to Global Defaults
+  const handleResetToGlobal = useCallback(async () => {
+    await resetMangaReaderSettings(mangaId);
+    const { settings } = await getReaderSettings();
+    setReaderSettings(settings);
+    setIsCustomSetting(false);
+    setOrientationLocked(settings.rotationLocked);
+  }, [mangaId]);
+
+  // Orientation Lock Toggle (HUD rotationLockButtonview)
   const toggleOrientationLock = useCallback(async () => {
     try {
-      console.log('[Reader] toggleOrientationLock called, current state:', orientationLocked);
       if (orientationLocked) {
-        // Unlock orientation
         await ScreenOrientation.unlockAsync();
         setOrientationLocked(false);
-        console.log('[Reader] Orientation unlocked');
+        handleUpdateSetting('rotationLocked', false);
       } else {
-        // Lock to current orientation
-        const currentOrientation = await ScreenOrientation.getOrientationAsync();
-        console.log('[Reader] Current orientation:', currentOrientation);
-
-        // Determine if we're in landscape or portrait
-        const isLandscape =
-          currentOrientation === ScreenOrientation.Orientation.LANDSCAPE_LEFT ||
-          currentOrientation === ScreenOrientation.Orientation.LANDSCAPE_RIGHT;
-
-        // Try different lock types - some devices don't support all lock types
-        const lockTypes = isLandscape
-          ? [
-            ScreenOrientation.OrientationLock.LANDSCAPE,
-            ScreenOrientation.OrientationLock.LANDSCAPE_LEFT,
-            ScreenOrientation.OrientationLock.LANDSCAPE_RIGHT,
-          ]
-          : [
-            ScreenOrientation.OrientationLock.PORTRAIT,
-            ScreenOrientation.OrientationLock.PORTRAIT_UP,
-          ];
-
-        let locked = false;
-        for (const lockType of lockTypes) {
-          try {
-            await ScreenOrientation.lockAsync(lockType);
-            setOrientationLocked(true);
-            console.log('[Reader] Orientation locked to:', lockType);
-            locked = true;
-            break;
-          } catch (e) {
-            console.log('[Reader] Lock type not supported:', lockType);
-          }
-        }
-
-        if (!locked) {
-          console.warn('[Reader] Could not lock orientation - device may not support it');
-        }
+        const lockType = isLandscape
+          ? ScreenOrientation.OrientationLock.LANDSCAPE
+          : ScreenOrientation.OrientationLock.PORTRAIT;
+        await ScreenOrientation.lockAsync(lockType);
+        setOrientationLocked(true);
+        handleUpdateSetting('rotationLocked', true);
       }
-    } catch (error) {
-      console.error('[Reader] Error toggling orientation lock:', error);
+    } catch (e) {
+      console.warn('[Reader] Failed to toggle orientation lock:', e);
     }
-  }, [orientationLocked]);
+  }, [orientationLocked, isLandscape, handleUpdateSetting]);
 
-  // Unlock orientation when leaving reader
+  // Quick Reader Mode Toggle (HUD quickModeSwitchButtonview)
+  const toggleQuickMode = useCallback(() => {
+    const nextMode: ReaderMode = readerSettings.readerMode === 'horizontal' ? 'longStrip' : 'horizontal';
+    handleUpdateSetting('readerMode', nextMode);
+  }, [readerSettings.readerMode, handleUpdateSetting]);
+
+  // Cleanup orientation lock when exiting reader
   useFocusEffect(
     useCallback(() => {
-      // Unlock when leaving reader
       return () => {
         ScreenOrientation.unlockAsync();
       };
@@ -874,113 +531,38 @@ export const ReaderScreen: React.FC = () => {
   // Check if manga is in library
   useEffect(() => {
     if (manga) {
-      const inLibrary = library.some(item => item.manga.id === manga.id);
+      const inLibrary = library.some((item) => item.manga.id === manga.id);
       setIsBookmarked(inLibrary);
     }
   }, [manga, library]);
 
+  // Load Chapter Data
   useEffect(() => {
     loadData();
   }, [mangaId, chapterId]);
 
-  // Scroll to saved page position when resuming reading
-  const hasScrolledToInitialPage = useRef(false);
-
-  useEffect(() => {
-    if (initialPage && initialPage > 0 && pages.length > 0 && !loading && flatListRef.current && !hasScrolledToInitialPage.current) {
-      const targetIndex = Math.min(initialPage, pages.length - 1);
-      console.log('[Reader] Scrolling to saved page:', targetIndex + 1, 'mode:', readingMode);
-      hasScrolledToInitialPage.current = true;
-
-      // Longer delay to ensure content is fully rendered
-      setTimeout(() => {
-        try {
-          if (readingMode === 'horizontal') {
-            // For horizontal mode, use scrollToOffset with screen width
-            const screenWidth = Dimensions.get('window').width;
-            flatListRef.current?.scrollToOffset({
-              offset: targetIndex * screenWidth,
-              animated: false,
-            });
-          } else {
-            // For vertical mode, estimate scroll position based on content
-            // First try scrollToIndex with failure handler
-            flatListRef.current?.scrollToIndex({
-              index: targetIndex,
-              animated: false,
-              viewPosition: 0, // Show at top
-            });
-          }
-          setCurrentPage(targetIndex);
-        } catch (e) {
-          console.log('[Reader] scrollToIndex failed, using scrollToOffset fallback');
-          // Fallback: use scrollToOffset with estimated height
-          const estimatedPageHeight = Dimensions.get('window').height;
-          flatListRef.current?.scrollToOffset({
-            offset: targetIndex * estimatedPageHeight,
-            animated: false,
-          });
-          setCurrentPage(targetIndex);
-        }
-      }, 300);
-    }
-  }, [pages.length, loading, initialPage, readingMode]);
-
-  const toggleBookmark = async () => {
-    if (!manga) return;
-
-    if (!isBookmarked) {
-      await addToLibrary(manga);
-      setIsBookmarked(true);
-    }
-    // Note: We don't remove from library here, that should be done from library screen
-  };
-
-  const startControlsTimer = () => {
-    if (controlsTimeoutRef.current) {
-      clearTimeout(controlsTimeoutRef.current);
-    }
-    controlsTimeoutRef.current = setTimeout(() => {
-      hideControls();
-    }, 3000);
-  };
-
-  useEffect(() => {
-    if (showControls) {
-      startControlsTimer();
-    }
-    return () => {
-      if (controlsTimeoutRef.current) {
-        clearTimeout(controlsTimeoutRef.current);
-      }
-    };
-  }, [showControls]);
-
+  // Open web bypass modal
   const handleOpenWebBypass = useCallback(async () => {
     if (!sourceId) return;
-
     let targetUrl = '';
     let authCaptureJson = '';
-
     try {
       const [shareUrl, bypassRequest] = await Promise.all([
         mangaId ? getMangaShareUrl(sourceId, mangaId).catch(() => null) : null,
         getCloudflareBypassRequest(sourceId).catch(() => null),
       ]);
       targetUrl = shareUrl || bypassRequest?.url || '';
-
       if (bypassRequest?.headers) {
-        const found = Object.entries(bypassRequest.headers).find(([key]) => key.toLowerCase() === 'x-paperback-auth-capture');
+        const found = Object.entries(bypassRequest.headers).find(
+          ([k]) => k.toLowerCase() === 'x-paperback-auth-capture'
+        );
         authCaptureJson = found ? String(found[1]) : '';
       }
     } catch (e) {
       console.warn('[Reader] Error fetching bypass request:', e);
     }
 
-    if (!targetUrl) {
-      console.log('[Reader] No bypass URL available for source:', sourceId);
-      return;
-    }
+    if (!targetUrl) return;
 
     let leftReactActivity = false;
     const subscription = AppState.addEventListener('change', async (state: AppStateStatus) => {
@@ -989,7 +571,6 @@ export const ReaderScreen: React.FC = () => {
         return;
       }
       if (!leftReactActivity) return;
-
       subscription.remove();
       try {
         const cookies = await getNativeCookies(targetUrl);
@@ -999,16 +580,10 @@ export const ReaderScreen: React.FC = () => {
       } catch (error) {
         console.warn('[Reader] Failed to sync website cookies:', error);
       }
-
       await loadData();
     });
 
-    await launchBypassActivity(
-      targetUrl,
-      manga?.title || 'Website Verification',
-      sourceId,
-      String(authCaptureJson)
-    );
+    await launchBypassActivity(targetUrl, manga?.title || 'Website Verification', sourceId, String(authCaptureJson));
   }, [sourceId, mangaId, manga?.title]);
 
   const loadData = async () => {
@@ -1016,121 +591,73 @@ export const ReaderScreen: React.FC = () => {
       setLoading(true);
       setChapterLoadError(null);
 
-      console.log('[Reader] loadData called with:', { mangaId, chapterId, sourceId });
-
-      // Check if chapter is downloaded - use local files instead
-      const downloadedChapter = downloads.find(d => d.chapterId === chapterId);
+      // 1. Check if chapter is downloaded locally
+      const downloadedChapter = downloads.find((d) => d.chapterId === chapterId);
       if (downloadedChapter && downloadedChapter.pages.length > 0) {
-        console.log('[Reader] Loading from downloaded files:', downloadedChapter.pages.length, 'pages');
-
-        // Try to get full manga info for chapter navigation (in background)
-        let chaptersData: any[] = [];
-        let mangaDetails: any = null;
-        const downloadSourceId = downloadedChapter.sourceId || sourceId;
-
-        if (downloadSourceId) {
-          try {
-            [mangaDetails, chaptersData] = await Promise.all([
-              getMangaDetails(downloadSourceId, downloadedChapter.mangaId).catch(() => null),
-              getChapters(downloadSourceId, downloadedChapter.mangaId).catch(() => []),
-            ]);
-            console.log('[Reader] Fetched manga info for downloaded chapter, chapters:', chaptersData.length);
-          } catch (e) {
-            console.log('[Reader] Failed to fetch manga info, using minimal data');
-          }
-        }
-
-        // Create manga object - use fetched data if available
         const mangaData: Manga = {
           id: downloadedChapter.mangaId,
-          title: mangaDetails?.titles?.[0] || downloadedChapter.mangaTitle,
-          author: mangaDetails?.author || '',
-          description: mangaDetails?.desc || '',
-          coverImage: mangaDetails?.image || downloadedChapter.mangaCover,
+          title: downloadedChapter.mangaTitle,
+          author: '',
+          description: '',
+          coverImage: downloadedChapter.mangaCover,
           genres: [],
-          status: mangaDetails?.status?.toLowerCase() || 'ongoing',
-          chapters: chaptersData.map((ch: any) => ({
-            id: ch.id,
-            mangaId: downloadedChapter.mangaId,
-            number: ch.chapNum,
-            title: ch.name || `Chapter ${ch.chapNum}`,
-            pages: [],
-            releaseDate: ch.time || new Date().toISOString(),
-            isRead: false,
-          })),
+          status: 'ongoing',
+          chapters: [],
           lastUpdated: new Date().toISOString(),
-          source: downloadSourceId || '',
+          source: downloadedChapter.sourceId || sourceId || '',
         };
         setManga(mangaData);
 
-        // Find chapter number from fetched data if not stored
-        const fetchedChapter = chaptersData.find((ch: any) => ch.id === chapterId);
-
-        // Create chapter object
         const chapterData: Chapter = {
           id: downloadedChapter.chapterId,
           mangaId: downloadedChapter.mangaId,
-          number: fetchedChapter?.chapNum || downloadedChapter.chapterNumber || 1,
-          title: fetchedChapter?.name || downloadedChapter.chapterTitle,
+          number: downloadedChapter.chapterNumber || 1,
+          title: downloadedChapter.chapterTitle,
           pages: [],
-          releaseDate: fetchedChapter?.time || downloadedChapter.downloadedAt,
+          releaseDate: downloadedChapter.downloadedAt,
           isRead: false,
         };
         setChapter(chapterData);
 
-        // Convert local file paths to PreloadedPage objects
         const preloadedPages: PreloadedPage[] = downloadedChapter.pages.map((filePath, index) => ({
           id: `${chapterId}-page-${index}`,
           chapterId: chapterId,
           pageNumber: index + 1,
-          imageUrl: filePath, // Local file URI
-          resolvedUrl: filePath, // Already a local file
-          preloaded: true, // Already on disk
+          imageUrl: filePath,
+          resolvedUrl: filePath,
+          preloaded: true,
           loading: false,
+          error: false,
         }));
 
         setPages(preloadedPages);
-        setLoadingPages(false);
         setLoading(false);
-        console.log('[Reader] Loaded downloaded chapter with', preloadedPages.length, 'pages');
         return;
       }
 
-      // If sourceId is provided, load from extension
+      // 2. Load from Extension
       if (sourceId) {
-        console.log('[Reader] Loading from extension:', sourceId, mangaId, chapterId);
-
-        // Fetch manga details and chapters from extension for proper history tracking
         const [pageUrls, mangaDetails, chaptersData] = await Promise.all([
           getChapterPages(sourceId, mangaId, chapterId),
           getMangaDetails(sourceId, mangaId),
           getChapters(sourceId, mangaId),
         ]);
 
-        console.log('[Reader] Got pages:', pageUrls.length);
-        console.log('[Reader] First 3 page URLs:', pageUrls.slice(0, 3));
-
-        if (pageUrls.length > 0) {
-          // Find the current chapter info
-          const currentChapter = chaptersData.find(ch => ch.id === chapterId);
-
-          // Parse tags - they can be nested in sections (same logic as MangaDetailScreen)
+        if (pageUrls && pageUrls.length > 0) {
+          const currentChapter = chaptersData.find((ch) => ch.id === chapterId);
           let genres: string[] = [];
           if (mangaDetails?.tags) {
             mangaDetails.tags.forEach((tagSection: any) => {
               if (tagSection.tags && Array.isArray(tagSection.tags)) {
-                // Nested tags structure
-                tagSection.tags.forEach((t: any) => {
-                  if (t.label) genres.push(t.label);
+                tagSection.tags.forEach((tg: any) => {
+                  if (tg.label) genres.push(tg.label);
                 });
               } else if (tagSection.label) {
-                // Direct tag structure
                 genres.push(tagSection.label);
               }
             });
           }
 
-          // Create a proper manga object with real data for library/history
           const mangaData: Manga = {
             id: mangaId,
             title: mangaDetails?.titles?.[0] || 'Unknown Manga',
@@ -1139,7 +666,7 @@ export const ReaderScreen: React.FC = () => {
             coverImage: mangaDetails?.image || '',
             genres: genres,
             status: mangaDetails?.status?.toLowerCase() || 'ongoing',
-            chapters: chaptersData.map(ch => ({
+            chapters: chaptersData.map((ch) => ({
               id: ch.id,
               mangaId: mangaId,
               number: ch.chapNum,
@@ -1153,7 +680,6 @@ export const ReaderScreen: React.FC = () => {
           };
           setManga(mangaData);
 
-          // Create chapter object
           const chapterData: Chapter = {
             id: chapterId,
             mangaId: mangaId,
@@ -1165,78 +691,146 @@ export const ReaderScreen: React.FC = () => {
           };
           setChapter(chapterData);
 
-          // Convert page URLs to Page objects
           const pageData: Page[] = pageUrls.map((url, index) => ({
             id: `${chapterId}-page-${index}`,
             chapterId: chapterId,
             pageNumber: index + 1,
             imageUrl: url,
           }));
-          console.log('[Reader] Created page data:', pageData.length, 'pages');
 
-          // Create skeleton pages immediately so user sees something
-          const skeletonPages: PreloadedPage[] = pageData.map(page => ({
-            ...page,
-            resolvedUrl: page.imageUrl,
+          const skeletonPages: PreloadedPage[] = pageData.map((p) => ({
+            ...p,
+            resolvedUrl: p.imageUrl,
             preloaded: false,
             loading: true,
+            error: false,
           }));
-          setPages(skeletonPages);
-          setLoadingPages(true);
-          setLoading(false); // Stop main loading, show skeleton
 
-          // Progressively load pages in background
-          console.log('[Reader] Starting progressive page loading...');
+          setPages(skeletonPages);
+          setLoading(false);
+
+          // Preload pages progressively in background
           await preloadAllPagesWithProgress(
             pageData,
-            // Progress callback
-            (loaded, total) => {
-              console.log(`[Reader] Progress: ${loaded}/${total} pages`);
-            },
-            // Page loaded callback - update individual page
+            () => {},
             (index, loadedPage) => {
-              setPages(prev => {
-                const newPages = [...prev];
-                newPages[index] = loadedPage;
-                return newPages;
+              setPages((prev) => {
+                const next = [...prev];
+                next[index] = loadedPage;
+                return next;
               });
             }
           );
-          setLoadingPages(false);
-          console.log('[Reader] All pages loaded');
 
-          // Cache page info for future reference
-          cacheChapterPages(
-            mangaId,
-            chapterId,
-            pageData.map(p => ({ pageNumber: p.pageNumber, imageUrl: p.imageUrl }))
-          ).catch(() => { }); // Fire and forget
+          try {
+            const cacheTask = cacheChapterPages(
+              mangaId,
+              chapterId,
+              pageData.map((p) => ({ pageNumber: p.pageNumber, imageUrl: p.imageUrl }))
+            );
+            if (cacheTask && typeof (cacheTask as any).catch === 'function') {
+              cacheTask.catch(() => {});
+            }
+          } catch {}
+
+          // Save initial progress
+          const initPageNum = (initialPage || 0) + 1;
+          const initPercent = pageData.length > 0 ? Math.round((initPageNum / pageData.length) * 100) : 0;
+          try {
+            updateProgress(
+              {
+                mangaId: mangaData.id,
+                chapterId: chapterData.id,
+                pageNumber: initPageNum,
+                totalPages: pageData.length,
+                percentage: initPercent,
+                lastRead: new Date().toISOString(),
+              },
+              mangaData
+            );
+          } catch {}
         } else {
-          setChapterLoadError('No pages found for this chapter');
+          setChapterLoadError('No pages found');
           setPages([]);
         }
       } else {
-        // No sourceId provided - cannot load chapter
-        console.error('[Reader] No sourceId provided for chapter:', mangaId, chapterId);
         setChapterLoadError('Source not specified');
         setPages([]);
       }
     } catch (error) {
-      console.error('Failed to load reader data:', error);
-      const errorMessage = error instanceof Error ? error.message : 'No pages found';
-      setChapterLoadError(errorMessage);
+      console.error('[Reader] Failed to load reader data:', error);
+      const msg = error instanceof Error ? error.message : 'No pages found';
+      setChapterLoadError(msg);
       setPages([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const hideControls = () => {
-    // Don't hide controls if Spotify picker is open
-    if (spotifyPickerOpen) {
-      console.log('[Reader] Not hiding controls - Spotify picker is open');
-      return;
+  // Retry individual page image
+  const retrySinglePage = useCallback(
+    async (pageIndex: number) => {
+      const pageToRetry = pages[pageIndex];
+      if (!pageToRetry) return;
+
+      setPages((prev) => {
+        const next = [...prev];
+        next[pageIndex] = { ...pageToRetry, loading: true, error: false, retryKey: (pageToRetry.retryKey || 0) + 1 };
+        return next;
+      });
+
+      const reloaded = await preloadSinglePage(pageToRetry);
+      setPages((prev) => {
+        const next = [...prev];
+        next[pageIndex] = { ...reloaded, retryKey: (pageToRetry.retryKey || 0) + 1 };
+        return next;
+      });
+    },
+    [pages]
+  );
+
+  // Long press page -> Save or Share image
+  const handlePageLongPress = useCallback(
+    async (page: PreloadedPage) => {
+      if (!readerSettings.longPressToSaveImageEnabled || !page.resolvedUrl) return;
+
+      Alert.alert(
+        `Page ${page.pageNumber}`,
+        'Save or share this page',
+        [
+          { text: t('common.cancel'), style: 'cancel' },
+          {
+            text: 'Share Page Image',
+            onPress: async () => {
+              try {
+                if (await Sharing.isAvailableAsync()) {
+                  await Sharing.shareAsync(page.resolvedUrl);
+                } else {
+                  Alert.alert('Sharing unavailable', 'Sharing is not supported on this platform.');
+                }
+              } catch (e) {
+                console.warn('[Reader] Share error:', e);
+              }
+            },
+          },
+        ]
+      );
+    },
+    [readerSettings.longPressToSaveImageEnabled]
+  );
+
+  // Controls Visibility
+  const startControlsTimer = () => {
+    if (controlsTimeoutRef.current) {
+      clearTimeout(controlsTimeoutRef.current);
     }
+    controlsTimeoutRef.current = setTimeout(() => {
+      hideControls();
+    }, 3500);
+  };
+
+  const hideControls = () => {
+    if (spotifyPickerOpen) return;
     Animated.timing(fadeAnim, {
       toValue: 0,
       duration: 200,
@@ -1262,44 +856,154 @@ export const ReaderScreen: React.FC = () => {
     }
   };
 
-  const saveProgress = useCallback(async (pageNum: number) => {
-    if (!manga || !chapter) return;
+  // Progress Saving
+  const saveProgress = useCallback(
+    async (pageNum: number) => {
+      if (!manga || !chapter) return;
+      const totalPages = pages.length;
+      const pageNumber = pageNum + 1;
+      const percentage = totalPages > 0 ? Math.round((pageNumber / totalPages) * 100) : 0;
 
-    const totalPages = pages.length;
-    // pageNum is 0-indexed from FlatList, convert to 1-indexed for storage
-    const pageNumber = pageNum + 1;
-    const percentage = totalPages > 0 ? Math.round((pageNumber / totalPages) * 100) : 0;
+      await updateProgress(
+        {
+          mangaId: manga.id,
+          chapterId: chapter.id,
+          pageNumber,
+          totalPages,
+          percentage,
+          lastRead: new Date().toISOString(),
+        },
+        manga
+      );
+    },
+    [manga, chapter, pages.length, updateProgress]
+  );
 
-    await updateProgress({
-      mangaId: manga.id,
-      chapterId: chapter.id,
-      pageNumber: pageNumber,
-      totalPages,
-      percentage,
-      lastRead: new Date().toISOString(),
-    }, manga);
-  }, [manga, chapter, pages.length, updateProgress]);
+  // Double-page spread detection
+  const isDoublePageMode = useMemo(() => {
+    if (readerSettings.readerMode !== 'horizontal') return false;
+    if (readerSettings.pagedDisplayMode === 'doublePage') return true;
+    if (readerSettings.pagedDisplayMode === 'automatic') return isLandscape;
+    return false;
+  }, [readerSettings.readerMode, readerSettings.pagedDisplayMode, isLandscape]);
 
-  // Get adjacent chapters
+  // Build PageGroups for Double-Page Spread
+  const pageGroups = useMemo<PageGroup[]>(() => {
+    if (!isDoublePageMode || pages.length === 0) {
+      return pages.map((p, idx) => ({
+        id: `single-group-${p.id}`,
+        groupIndex: idx,
+        pages: [p],
+        isDouble: false,
+        startPageNumber: p.pageNumber,
+        endPageNumber: p.pageNumber,
+      }));
+    }
+
+    const groups: PageGroup[] = [];
+    let i = 0;
+
+    // Separate first page (Cover page)
+    if (readerSettings.markFirstPageAsSingle && pages.length > 0) {
+      groups.push({
+        id: `cover-${pages[0].id}`,
+        groupIndex: 0,
+        pages: [pages[0]],
+        isDouble: false,
+        startPageNumber: pages[0].pageNumber,
+        endPageNumber: pages[0].pageNumber,
+      });
+      i = 1;
+    }
+
+    while (i < pages.length) {
+      const p1 = pages[i];
+      const p2 = i + 1 < pages.length ? pages[i + 1] : null;
+
+      if (p2) {
+        groups.push({
+          id: `double-${p1.id}-${p2.id}`,
+          groupIndex: groups.length,
+          pages: [p1, p2],
+          isDouble: true,
+          startPageNumber: p1.pageNumber,
+          endPageNumber: p2.pageNumber,
+        });
+        i += 2;
+      } else {
+        groups.push({
+          id: `single-${p1.id}`,
+          groupIndex: groups.length,
+          pages: [p1],
+          isDouble: false,
+          startPageNumber: p1.pageNumber,
+          endPageNumber: p1.pageNumber,
+        });
+        i += 1;
+      }
+    }
+
+    return groups;
+  }, [pages, isDoublePageMode, readerSettings.markFirstPageAsSingle]);
+
+  // Initial page scrolling
+  useEffect(() => {
+    if (
+      initialPage !== undefined &&
+      initialPage > 0 &&
+      pages.length > 0 &&
+      !loading &&
+      flatListRef.current &&
+      !hasScrolledToInitialPage.current
+    ) {
+      const targetPage = Math.min(initialPage, pages.length - 1);
+      hasScrolledToInitialPage.current = true;
+
+      setTimeout(() => {
+        try {
+          if (readerSettings.readerMode === 'horizontal') {
+            const targetGroupIndex = pageGroups.findIndex(
+              (g) => targetPage + 1 >= g.startPageNumber && targetPage + 1 <= g.endPageNumber
+            );
+            const scrollIndex = targetGroupIndex !== -1 ? targetGroupIndex : targetPage;
+            flatListRef.current?.scrollToOffset({
+              offset: scrollIndex * screenWidth,
+              animated: false,
+            });
+          } else {
+            flatListRef.current?.scrollToIndex({
+              index: targetPage,
+              animated: false,
+              viewPosition: 0,
+            });
+          }
+          setCurrentPage(targetPage);
+        } catch {
+          flatListRef.current?.scrollToOffset({
+            offset: targetPage * (readerSettings.readerMode === 'horizontal' ? screenWidth : screenHeight),
+            animated: false,
+          });
+          setCurrentPage(targetPage);
+        }
+      }, 300);
+    }
+  }, [pages.length, loading, initialPage, readerSettings.readerMode, pageGroups, screenWidth, screenHeight]);
+
+  // Adjacent Chapters
   const getAdjacentChapters = useCallback(() => {
     if (!manga || !chapter) return { previous: null, next: null };
-
-    const sortedChapters = [...manga.chapters].sort((a, b) => {
-      const numberDiff = (a.number || 0) - (b.number || 0);
-      if (numberDiff !== 0) return numberDiff;
-
-      const aDate = new Date(a.releaseDate || 0).getTime();
-      const bDate = new Date(b.releaseDate || 0).getTime();
-      return aDate - bDate;
+    const sorted = [...manga.chapters].sort((a, b) => {
+      const diff = (a.number || 0) - (b.number || 0);
+      if (diff !== 0) return diff;
+      return new Date(a.releaseDate || 0).getTime() - new Date(b.releaseDate || 0).getTime();
     });
 
-    const currentIndex = sortedChapters.findIndex(ch => ch.id === chapter.id);
+    const currentIndex = sorted.findIndex((ch) => ch.id === chapter.id);
     if (currentIndex === -1) return { previous: null, next: null };
-
-    const previous = currentIndex > 0 ? sortedChapters[currentIndex - 1] : null;
-    const next = currentIndex < sortedChapters.length - 1 ? sortedChapters[currentIndex + 1] : null;
-
-    return { previous, next };
+    return {
+      previous: currentIndex > 0 ? sorted[currentIndex - 1] : null,
+      next: currentIndex < sorted.length - 1 ? sorted[currentIndex + 1] : null,
+    };
   }, [manga, chapter]);
 
   const { previous: previousChapter, next: nextChapter } = getAdjacentChapters();
@@ -1316,63 +1020,115 @@ export const ReaderScreen: React.FC = () => {
     navigation.replace('Reader', { mangaId: manga.id, chapterId: nextChapter.id, sourceId });
   };
 
-  const renderPage = ({ item }: { item: PreloadedPage }) => {
-    // Use preloaded image component for fast rendering
-    return (
-      <PreloadedImage
-        key={item.id}
-        page={item}
-        onPress={toggleControls}
-        totalPages={pages.length}
-      />
-    );
+  // Page turns / groups navigation
+  const goToNextPage = () => {
+    if (readerSettings.readerMode === 'horizontal') {
+      const currentGroupIndex = pageGroups.findIndex(
+        (g) => currentPage + 1 >= g.startPageNumber && currentPage + 1 <= g.endPageNumber
+      );
+      if (currentGroupIndex !== -1 && currentGroupIndex < pageGroups.length - 1) {
+        flatListRef.current?.scrollToOffset({
+          offset: (currentGroupIndex + 1) * screenWidth,
+          animated: true,
+        });
+      } else if (nextChapter) {
+        goToNextChapter();
+      }
+    } else {
+      if (currentPage < pages.length - 1) {
+        flatListRef.current?.scrollToIndex({ index: currentPage + 1, animated: true });
+      } else if (nextChapter) {
+        goToNextChapter();
+      }
+    }
   };
 
-  // Header component for previous chapter
-  const ListHeaderComponent = () => (
-    <ChapterTransition
-      type="previous"
-      chapter={previousChapter}
-      manga={manga}
-      isLoading={isTransitioning}
-      onNavigate={goToPreviousChapter}
-    />
-  );
+  const goToPreviousPage = () => {
+    if (readerSettings.readerMode === 'horizontal') {
+      const currentGroupIndex = pageGroups.findIndex(
+        (g) => currentPage + 1 >= g.startPageNumber && currentPage + 1 <= g.endPageNumber
+      );
+      if (currentGroupIndex > 0) {
+        flatListRef.current?.scrollToOffset({
+          offset: (currentGroupIndex - 1) * screenWidth,
+          animated: true,
+        });
+      } else if (previousChapter) {
+        goToPreviousChapter();
+      }
+    } else {
+      if (currentPage > 0) {
+        flatListRef.current?.scrollToIndex({ index: currentPage - 1, animated: true });
+      } else if (previousChapter) {
+        goToPreviousChapter();
+      }
+    }
+  };
 
-  // Footer component for next chapter
-  const ListFooterComponent = () => (
-    <ChapterTransition
-      type="next"
-      chapter={nextChapter}
-      manga={manga}
-      isLoading={isTransitioning}
-      onNavigate={goToNextChapter}
-    />
-  );
+  // Tap Zone Handling (tapSidesToNavgiate)
+  const handleReaderPress = (e: GestureResponderEvent) => {
+    if (!readerSettings.tapSidesToNavgiate) {
+      toggleControls();
+      return;
+    }
 
-  // Track page changes - use scroll position for vertical mode
-  const saveProgressRef = useRef(saveProgress);
-  const lastSavedPageRef = useRef(-1);
+    const { pageX } = e.nativeEvent;
+    const leftThreshold = screenWidth * 0.33;
+    const rightThreshold = screenWidth * 0.67;
 
-  useEffect(() => {
-    saveProgressRef.current = saveProgress;
-  }, [saveProgress]);
+    if (pageX < leftThreshold) {
+      // Left Zone
+      if (readerSettings.readerMode === 'horizontal') {
+        if (readerSettings.readerDirection === 'rightToLeft') {
+          // RTL Manga: Tapping Left goes forward!
+          goToNextPage();
+        } else {
+          // LTR Comics: Tapping Left goes backward!
+          goToPreviousPage();
+        }
+      } else {
+        // Vertical mode: scroll up
+        flatListRef.current?.scrollToOffset({
+          offset: Math.max(0, currentPage * screenHeight - screenHeight * 0.75),
+          animated: true,
+        });
+      }
+    } else if (pageX > rightThreshold) {
+      // Right Zone
+      if (readerSettings.readerMode === 'horizontal') {
+        if (readerSettings.readerDirection === 'rightToLeft') {
+          // RTL Manga: Tapping Right goes backward!
+          goToPreviousPage();
+        } else {
+          // LTR Comics: Tapping Right goes forward!
+          goToNextPage();
+        }
+      } else {
+        // Vertical mode: scroll down
+        flatListRef.current?.scrollToOffset({
+          offset: (currentPage + 1) * screenHeight + screenHeight * 0.75,
+          animated: true,
+        });
+      }
+    } else {
+      // Center Zone: Toggle HUD
+      toggleControls();
+    }
+  };
 
-  // Viewability config for accurate page tracking in both modes
+  // Scroll Viewability & Progress Sync
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
     if (viewableItems && viewableItems.length > 0) {
-      // Get the first visible item (most visible)
-      const visibleItem = viewableItems[0];
-      const pageIndex = visibleItem.index;
-
-      if (pageIndex !== undefined && pageIndex !== currentPage) {
-        setCurrentPage(pageIndex);
-
-        // Save progress when page changes
-        if (pageIndex !== lastSavedPageRef.current) {
-          lastSavedPageRef.current = pageIndex;
-          saveProgressRef.current(pageIndex);
+      const item = viewableItems[0]?.item;
+      if (item) {
+        let newPage = 0;
+        if ('startPageNumber' in item) {
+          newPage = (item as PageGroup).startPageNumber - 1;
+        } else if ('pageNumber' in item) {
+          newPage = (item as PreloadedPage).pageNumber - 1;
         }
+        setCurrentPage(newPage);
+        saveProgress(newPage);
       }
     }
   }).current;
@@ -1382,80 +1138,136 @@ export const ReaderScreen: React.FC = () => {
     minimumViewTime: 0,
   }).current;
 
-  // Handle scroll for vertical mode - chapter transitions only
-  // Page tracking is now handled by onViewableItemsChanged for accuracy
-  const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-    const scrollY = contentOffset.y;
-    const maxScrollY = contentSize.height - layoutMeasurement.height;
-
-    // Check if scrolled past the end (for next chapter)
-    if (scrollY > maxScrollY + 100 && nextChapter && !isTransitioning) {
-      goToNextChapter();
+  // Background color mapping
+  const readerBgColor = useMemo(() => {
+    switch (readerSettings.chapterBackgroundColor) {
+      case 'black':
+        return '#000000';
+      case 'dark':
+        return '#1C1C1E';
+      case 'light':
+        return '#E5E5EA';
+      case 'white':
+        return '#FFFFFF';
+      case 'theme':
+        return theme.background;
+      default:
+        return '#000000';
     }
+  }, [readerSettings.chapterBackgroundColor, theme.background]);
+
+  // Render Horizontal Page Group (Single or Double Page Spread)
+  const renderHorizontalPageGroup = ({ item }: { item: PageGroup }) => {
+    const horizontalPadding = readerSettings.pagePadding ? 16 : 0;
+    const containerWidth = screenWidth - horizontalPadding;
+
+    if (item.isDouble && item.pages.length === 2) {
+      const halfWidth = containerWidth / 2;
+      const isRtl = readerSettings.readerDirection === 'rightToLeft';
+      // In RTL (Manga), the second page is on the LEFT, first page is on the RIGHT
+      const leftPage = isRtl ? item.pages[1] : item.pages[0];
+      const rightPage = isRtl ? item.pages[0] : item.pages[1];
+
+      return (
+        <View style={[styles.pageGroupContainer, { width: screenWidth, height: screenHeight, backgroundColor: readerBgColor }]}>
+          <View style={[styles.doublePageRow, { width: containerWidth, height: screenHeight }]}>
+            <View style={{ width: halfWidth, height: screenHeight, justifyContent: 'center', alignItems: 'center' }}>
+              <PageImageElement
+                page={leftPage}
+                targetWidth={halfWidth}
+                targetHeight={screenHeight}
+                onPress={handleReaderPress}
+                onLongPress={() => handlePageLongPress(leftPage)}
+                onRetry={() => retrySinglePage(leftPage.pageNumber - 1)}
+                totalPages={pages.length}
+                fitMode="contain"
+              />
+            </View>
+            <View style={{ width: halfWidth, height: screenHeight, justifyContent: 'center', alignItems: 'center' }}>
+              <PageImageElement
+                page={rightPage}
+                targetWidth={halfWidth}
+                targetHeight={screenHeight}
+                onPress={handleReaderPress}
+                onLongPress={() => handlePageLongPress(rightPage)}
+                onRetry={() => retrySinglePage(rightPage.pageNumber - 1)}
+                totalPages={pages.length}
+                fitMode="contain"
+              />
+            </View>
+          </View>
+        </View>
+      );
+    }
+
+    // Single page in group
+    const singlePage = item.pages[0];
+    return (
+      <View style={[styles.pageGroupContainer, { width: screenWidth, height: screenHeight, backgroundColor: readerBgColor }]}>
+        <PageImageElement
+          page={singlePage}
+          targetWidth={containerWidth}
+          targetHeight={screenHeight}
+          onPress={handleReaderPress}
+          onLongPress={() => handlePageLongPress(singlePage)}
+          onRetry={() => retrySinglePage(singlePage.pageNumber - 1)}
+          totalPages={pages.length}
+          fitMode="contain"
+        />
+      </View>
+    );
   };
 
-  // Handle horizontal scroll for chapter transitions only
-  // Page tracking is now handled by onViewableItemsChanged for accuracy
-  const handleHorizontalScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-    const scrollX = contentOffset.x;
-    const maxScrollX = contentSize.width - layoutMeasurement.width;
+  // Render Vertical Single Page
+  const renderVerticalPage = ({ item }: { item: PreloadedPage }) => {
+    const horizontalPadding = readerSettings.pagePadding ? 16 : 0;
+    const targetWidth = screenWidth - horizontalPadding;
 
-    // Check for chapter transitions at boundaries
-    // At first page and swiping left (RTL manga style - go to previous chapter)
-    if (scrollX < -50 && previousChapter && !isTransitioning) {
-      goToPreviousChapter();
-    }
-    // At last page and swiping right (go to next chapter)
-    if (scrollX > maxScrollX + 50 && nextChapter && !isTransitioning) {
-      goToNextChapter();
-    }
+    return (
+      <View style={{ width: screenWidth, alignItems: 'center', backgroundColor: readerBgColor }}>
+        <PageImageElement
+          page={item}
+          targetWidth={targetWidth}
+          targetHeight={screenHeight}
+          onPress={handleReaderPress}
+          onLongPress={() => handlePageLongPress(item)}
+          onRetry={() => retrySinglePage(item.pageNumber - 1)}
+          totalPages={pages.length}
+          fitMode="contain"
+        />
+      </View>
+    );
   };
 
-  // Show loading screen while fetching chapter info (not page images)
+  // Loading State
   if (loading && pages.length === 0) {
     return (
-      <View style={[styles.container, { backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }]}>
+      <View style={[styles.container, { backgroundColor: readerBgColor, justifyContent: 'center', alignItems: 'center' }]}>
         <ActivityIndicator size="large" color="#FA6432" />
-        <Text style={{ color: '#888', marginTop: 16, fontSize: 14 }}>
-          {t('common.loading')}...
-        </Text>
+        <Text style={{ color: '#888', marginTop: 16, fontSize: 14 }}>{t('common.loading')}...</Text>
       </View>
     );
   }
 
+  // Error State
   if (pages.length === 0) {
     return (
-      <View style={[styles.container, { backgroundColor: '#000' }]}>
-        <TouchableOpacity
-          style={styles.backButtonFloat}
-          onPress={() => navigation.goBack()}
-        >
+      <View style={[styles.container, { backgroundColor: readerBgColor }]}>
+        <TouchableOpacity style={styles.backButtonFloat} onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         <View style={styles.errorContainer}>
           <Ionicons name="alert-circle-outline" size={56} color="#666" />
           <Text style={styles.errorText}>{chapterLoadError || t('reader.failedToLoadPage', { page: 1 })}</Text>
           <View style={styles.errorActionsRow}>
-            <TouchableOpacity
-              style={styles.errorActionButton}
-              onPress={loadData}
-              activeOpacity={0.8}
-            >
+            <TouchableOpacity style={styles.errorActionButton} onPress={loadData} activeOpacity={0.8}>
               <Ionicons name="refresh" size={18} color="#fff" />
               <Text style={styles.errorActionButtonText}>{t('common.retry')}</Text>
             </TouchableOpacity>
             {sourceId ? (
-              <TouchableOpacity
-                style={styles.errorBypassButton}
-                onPress={handleOpenWebBypass}
-                activeOpacity={0.8}
-              >
+              <TouchableOpacity style={styles.errorBypassButton} onPress={handleOpenWebBypass} activeOpacity={0.8}>
                 <Ionicons name="globe-outline" size={18} color="#fff" />
-                <Text style={styles.errorActionButtonText}>
-                  {t('source.verifyWebsite') || 'Verify Website'}
-                </Text>
+                <Text style={styles.errorActionButtonText}>{t('source.verifyWebsite') || 'Verify Website'}</Text>
               </TouchableOpacity>
             ) : null}
           </View>
@@ -1464,66 +1276,77 @@ export const ReaderScreen: React.FC = () => {
     );
   }
 
+  const isRtl = readerSettings.readerDirection === 'rightToLeft';
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: readerBgColor }]}>
       <StatusBar hidden={!showControls} barStyle="light-content" />
 
-      <FlatList
-        ref={flatListRef}
-        data={pages}
-        renderItem={renderPage}
-        keyExtractor={item => item.id}
-        horizontal={readingMode === 'horizontal'}
-        pagingEnabled={readingMode === 'horizontal'}
-        showsVerticalScrollIndicator={false}
-        showsHorizontalScrollIndicator={false}
-        onViewableItemsChanged={onViewableItemsChanged}
-        viewabilityConfig={viewabilityConfig}
-        initialNumToRender={initialPage && initialPage > 0 ? Math.max(initialPage + 3, 10) : 3}
-        maxToRenderPerBatch={5}
-        windowSize={7}
-        removeClippedSubviews={false}
-        ListHeaderComponent={readingMode === 'vertical' ? ListHeaderComponent : undefined}
-        ListFooterComponent={readingMode === 'vertical' ? ListFooterComponent : undefined}
-        onScroll={readingMode === 'horizontal' ? handleHorizontalScroll : handleScroll}
-        scrollEventThrottle={16}
-        bounces={true}
-        onScrollToIndexFailed={(info) => {
-          console.log('[Reader] scrollToIndex failed:', info);
-          // Wait for more items to render, then retry
-          setTimeout(() => {
-            if (flatListRef.current && info.index < pages.length) {
-              flatListRef.current.scrollToIndex({
-                index: info.index,
-                animated: false,
-              });
-            }
-          }, 500);
-        }}
-      />
-
-      {/* Back button - always accessible in horizontal mode */}
-      {readingMode === 'horizontal' && !showControls && (
-        <TouchableOpacity
-          style={styles.horizontalBackButton}
-          onPress={() => navigation.goBack()}
-        >
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
+      {/* Reader FlatList */}
+      {readerSettings.readerMode === 'horizontal' ? (
+        <FlatList
+          ref={flatListRef}
+          data={pageGroups}
+          renderItem={renderHorizontalPageGroup}
+          keyExtractor={(item) => item.id}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={viewabilityConfig}
+          initialNumToRender={3}
+          maxToRenderPerBatch={4}
+          windowSize={5}
+          removeClippedSubviews={false}
+          bounces
+          scrollEventThrottle={16}
+        />
+      ) : (
+        <FlatList
+          ref={flatListRef}
+          data={pages}
+          renderItem={renderVerticalPage}
+          keyExtractor={(item) => item.id}
+          horizontal={false}
+          showsVerticalScrollIndicator={false}
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={viewabilityConfig}
+          initialNumToRender={3}
+          maxToRenderPerBatch={5}
+          windowSize={7}
+          removeClippedSubviews={false}
+          ListHeaderComponent={
+            <ChapterTransition
+              type="previous"
+              chapter={previousChapter}
+              manga={manga}
+              isLoading={isTransitioning}
+              onNavigate={goToPreviousChapter}
+            />
+          }
+          ListFooterComponent={
+            <ChapterTransition
+              type="next"
+              chapter={nextChapter}
+              manga={manga}
+              isLoading={isTransitioning}
+              onNavigate={goToNextChapter}
+            />
+          }
+          bounces
+          scrollEventThrottle={16}
+        />
       )}
 
-      {/* Floating back button for vertical mode */}
-      {readingMode === 'vertical' && !showControls && (
-        <TouchableOpacity
-          style={styles.floatingBackButton}
-          onPress={() => navigation.goBack()}
-        >
+      {/* Back button when controls are hidden */}
+      {!showControls && (
+        <TouchableOpacity style={styles.floatingBackButton} onPress={() => navigation.goBack()} activeOpacity={0.7}>
           <Ionicons name="arrow-back" size={22} color="#fff" />
         </TouchableOpacity>
       )}
 
-      {/* Floating page indicator (always visible in vertical mode) */}
-      {readingMode === 'vertical' && !showControls && (
+      {/* Floating page indicator when controls hidden (longStrip / vertical mode only) */}
+      {readerSettings.readerMode === 'longStrip' && !showControls && (
         <View style={styles.floatingPageIndicator}>
           <Text style={styles.floatingPageText}>
             {currentPage + 1} / {pages.length}
@@ -1531,136 +1354,133 @@ export const ReaderScreen: React.FC = () => {
         </View>
       )}
 
-      {showControls && (
-        <>
-          {/* Top Bar - Paperback style */}
-          <Animated.View
-            style={[styles.topBar, { opacity: fadeAnim }]}
+      {/* Paperback HUD Overlay (ChapterRendererOverlayView) */}
+      <Animated.View
+        style={[styles.topBar, { opacity: fadeAnim }]}
+        pointerEvents={showControls ? 'auto' : 'none'}
+      >
+        <View style={styles.topBarContent}>
+          <TouchableOpacity style={styles.closeButton} onPress={() => navigation.goBack()}>
+            <Ionicons name="close" size={28} color="#fff" />
+          </TouchableOpacity>
+
+          <View style={styles.titleContainer}>
+            <Text style={styles.mangaTitle} numberOfLines={1}>
+              {manga?.title}
+            </Text>
+            <Text style={styles.chapterInfo} numberOfLines={1}>
+              Ch. {chapter?.number}{chapter?.title ? ` - ${chapter.title}` : ''}
+            </Text>
+          </View>
+
+          <View style={styles.topBarActions}>
+            {/* Website verification button */}
+            {sourceId ? (
+              <TouchableOpacity style={styles.headerIconButton} onPress={handleOpenWebBypass}>
+                <Ionicons name="globe-outline" size={22} color="#fff" />
+              </TouchableOpacity>
+            ) : null}
+
+            {/* Quick Mode Switch Button (quickModeSwitchButtonview) */}
+            <TouchableOpacity style={styles.headerIconButton} onPress={toggleQuickMode}>
+              <Ionicons
+                name={readerSettings.readerMode === 'horizontal' ? 'book-outline' : 'reorder-four-outline'}
+                size={22}
+                color="#fff"
+              />
+            </TouchableOpacity>
+
+            {/* Rotation Lock Button (rotationLockButtonview) */}
+            <TouchableOpacity style={styles.headerIconButton} onPress={toggleOrientationLock}>
+              <Ionicons
+                name={orientationLocked ? 'lock-closed' : 'lock-open-outline'}
+                size={22}
+                color={orientationLocked ? '#FA6432' : '#fff'}
+              />
+            </TouchableOpacity>
+
+            {/* Info Button (infoButtonview) */}
+            <TouchableOpacity style={styles.headerIconButton} onPress={() => setShowInfoModal(true)}>
+              <Ionicons name="information-circle-outline" size={24} color="#fff" />
+            </TouchableOpacity>
+
+            {/* Settings Button (settingsButtonview) */}
+            <TouchableOpacity style={styles.headerIconButton} onPress={() => setShowSettingsModal(true)}>
+              <Ionicons name="settings-outline" size={22} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Animated.View>
+
+      {/* Bottom Bar */}
+      <Animated.View
+        style={[styles.bottomBar, { opacity: fadeAnim }]}
+        pointerEvents={showControls ? 'auto' : 'none'}
+      >
+        {/* Page Slider / Scrubber */}
+        <View style={styles.scrubberRow}>
+          <TouchableOpacity
+            style={styles.scrubberButton}
+            onPress={isRtl ? goToNextPage : goToPreviousPage}
+            activeOpacity={0.7}
           >
-            <View style={styles.topBarContent}>
-              <TouchableOpacity
-                style={styles.closeButton}
-                onPress={() => navigation.goBack()}
-              >
-                <Ionicons name="close" size={28} color="#fff" />
-              </TouchableOpacity>
+            <Ionicons name="chevron-back" size={20} color="#fff" />
+          </TouchableOpacity>
 
-              <View style={styles.titleContainer}>
-                <Text style={styles.mangaTitle} numberOfLines={1}>
-                  {manga?.title}
-                </Text>
-                <Text style={styles.chapterInfo}>
-                  Ch. {chapter?.number}{chapter?.title ? ` - ${chapter.title}` : ''}
-                </Text>
-              </View>
+          <View style={styles.scrubberTrack}>
+            <View
+              style={[
+                styles.scrubberProgress,
+                {
+                  width: `${pages.length > 0 ? ((currentPage + 1) / pages.length) * 100 : 0}%`,
+                  backgroundColor: theme.primary,
+                },
+              ]}
+            />
+          </View>
 
-              <View style={styles.topBarActions}>
-                {sourceId ? (
-                  <TouchableOpacity
-                    style={styles.headerIconButton}
-                    onPress={handleOpenWebBypass}
-                    accessibilityRole="button"
-                    accessibilityLabel="Verify or open website"
-                  >
-                    <Ionicons name="globe-outline" size={22} color="#fff" />
-                  </TouchableOpacity>
-                ) : null}
-                <TouchableOpacity
-                  style={styles.headerIconButton}
-                  onPress={loadData}
-                  accessibilityRole="button"
-                  accessibilityLabel="Reload chapter"
-                >
-                  <Ionicons name="refresh-outline" size={22} color="#fff" />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.headerIconButton}
-                  onPress={() => setShowInfoModal(true)}
-                  accessibilityRole="button"
-                  accessibilityLabel="Manga info"
-                >
-                  <Ionicons name="information-circle-outline" size={24} color="#fff" />
-                </TouchableOpacity>
-              </View>
-            </View>
-          </Animated.View>
-
-          {/* Bottom Bar - Paperback style */}
-          <Animated.View
-            style={[styles.bottomBar, { opacity: fadeAnim }]}
+          <TouchableOpacity
+            style={styles.scrubberButton}
+            onPress={isRtl ? goToPreviousPage : goToNextPage}
+            activeOpacity={0.7}
           >
-            {/* Reading mode toggle */}
-            <View style={styles.bottomBarRow}>
-              <TouchableOpacity
-                style={styles.bottomButton}
-                onPress={() => setReadingMode(readingMode === 'vertical' ? 'horizontal' : 'vertical')}
-              >
-                <Ionicons
-                  name={readingMode === 'vertical' ? 'swap-horizontal' : 'swap-vertical'}
-                  size={22}
-                  color="#fff"
-                />
-              </TouchableOpacity>
+            <Ionicons name="chevron-forward" size={20} color="#fff" />
+          </TouchableOpacity>
+        </View>
 
-              <TouchableOpacity style={styles.bottomButton} onPress={toggleBookmark}>
-                <Ionicons
-                  name={isBookmarked ? "bookmark" : "bookmark-outline"}
-                  size={22}
-                  color={isBookmarked ? "#FA6432" : "#fff"}
-                />
-              </TouchableOpacity>
+        {/* Chapter Navigation & Indicator */}
+        <View
+          style={[
+            styles.chapterNavRow,
+            readerSettings.chapterChangeArrows === 'left' && { justifyContent: 'flex-start', gap: 16 },
+            readerSettings.chapterChangeArrows === 'right' && { justifyContent: 'flex-end', gap: 16 },
+          ]}
+        >
+          <TouchableOpacity
+            style={[styles.chapterNavButton, !previousChapter && styles.disabledButton]}
+            onPress={goToPreviousChapter}
+            disabled={!previousChapter}
+          >
+            <Ionicons name="play-skip-back" size={18} color={previousChapter ? '#fff' : '#555'} />
+          </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.bottomButton}
-                onPress={() => {
-                  console.log('[Reader] Lock button pressed!');
-                  toggleOrientationLock();
-                }}
-              >
-                <Ionicons
-                  name={orientationLocked ? "lock-closed" : "lock-open-outline"}
-                  size={22}
-                  color={orientationLocked ? "#FA6432" : "#fff"}
-                />
-              </TouchableOpacity>
+          <View style={styles.pageIndicator}>
+            <Text style={styles.pageIndicatorText}>
+              {currentPage + 1} / {pages.length}
+            </Text>
+          </View>
 
-              <TouchableOpacity
-                style={styles.bottomButton}
-                onPress={() => setShowSettingsModal(true)}
-              >
-                <Ionicons name="settings-outline" size={22} color="#fff" />
-              </TouchableOpacity>
-            </View>
+          <TouchableOpacity
+            style={[styles.chapterNavButton, !nextChapter && styles.disabledButton]}
+            onPress={goToNextChapter}
+            disabled={!nextChapter}
+          >
+            <Ionicons name="play-skip-forward" size={18} color={nextChapter ? '#fff' : '#555'} />
+          </TouchableOpacity>
+        </View>
+      </Animated.View>
 
-            {/* Chapter navigation */}
-            <View style={styles.chapterNavRow}>
-              <TouchableOpacity
-                style={[styles.chapterNavButton, !previousChapter && styles.disabledButton]}
-                onPress={goToPreviousChapter}
-                disabled={!previousChapter}
-              >
-                <Ionicons name="chevron-back" size={20} color={previousChapter ? '#fff' : '#555'} />
-              </TouchableOpacity>
-
-              <View style={styles.pageIndicator}>
-                <Text style={styles.pageIndicatorText}>
-                  {currentPage + 1} of {pages.length}
-                </Text>
-              </View>
-
-              <TouchableOpacity
-                style={[styles.chapterNavButton, !nextChapter && styles.disabledButton]}
-                onPress={goToNextChapter}
-                disabled={!nextChapter}
-              >
-                <Ionicons name="chevron-forward" size={20} color={nextChapter ? '#fff' : '#555'} />
-              </TouchableOpacity>
-            </View>
-          </Animated.View>
-        </>
-      )}
-
-      {/* Spotify Mini Player - OUTSIDE showControls so it never unmounts */}
+      {/* Spotify Mini Player */}
       <Animated.View
         style={[styles.spotifyContainer, { opacity: showControls ? fadeAnim : 0 }]}
         pointerEvents={showControls ? 'auto' : 'none'}
@@ -1676,26 +1496,25 @@ export const ReaderScreen: React.FC = () => {
         chapter={chapter}
         currentPage={currentPage}
         totalPages={pages.length}
-        onContinueReading={() => { }}
+        onContinueReading={() => {}}
         onSearchTag={(tag) => {
-          // Navigate to Search tab in Main navigator with the tag
           navigation.navigate('Main', {
             screen: 'Search',
-            params: { initialQuery: tag }
+            params: { initialQuery: tag },
           } as any);
         }}
       />
 
-      {/* Settings Modal */}
+      {/* Reader Settings Modal (Original Paperback Schema) */}
       <ReaderSettingsModal
         visible={showSettingsModal}
         onClose={() => setShowSettingsModal(false)}
-        readingMode={readingMode}
-        setReadingMode={setReadingMode}
-        readingDirection={readingDirection}
-        setReadingDirection={setReadingDirection}
-        pagePadding={pagePadding}
-        setPagePadding={setPagePadding}
+        settings={readerSettings}
+        onUpdateSetting={handleUpdateSetting}
+        isCustom={isCustomSetting}
+        onApplyGlobally={handleApplyGlobally}
+        onResetToGlobal={handleResetToGlobal}
+        mangaTitle={manga?.title}
       />
     </View>
   );
@@ -1706,43 +1525,53 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000',
   },
-  progressBarContainer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
+  pageGroupContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  doublePageRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  pagePlaceholder: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#121212',
+  },
+  pagePlaceholderText: {
+    color: '#666',
+    marginTop: 12,
+    fontSize: 12,
+  },
+  pageErrorText: {
+    color: '#888',
+    fontSize: 13,
+    marginTop: 10,
+  },
+  retryButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    marginTop: 14,
     paddingVertical: 8,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-  },
-  progressBarBackground: {
-    flex: 1,
-    height: 4,
-    backgroundColor: '#333',
-    borderRadius: 2,
-    overflow: 'hidden',
-  },
-  progressBarFill: {
-    height: '100%',
+    paddingHorizontal: 18,
     backgroundColor: '#FA6432',
-    borderRadius: 2,
+    borderRadius: 20,
+    gap: 6,
   },
-  progressBarText: {
-    color: '#888',
-    fontSize: 12,
-    marginLeft: 12,
-    minWidth: 45,
+  retryButtonText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
   },
-  loadingContainer: {
+  errorContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  loadingText: {
-    color: '#888',
-    fontSize: 14,
+  errorText: {
+    fontSize: 16,
+    color: '#666',
     marginTop: 12,
   },
   errorActionsRow: {
@@ -1776,6 +1605,80 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
+  backButtonFloat: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 50 : 30,
+    left: 10,
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 22,
+    zIndex: 100,
+  },
+  floatingBackButton: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 50 : 30,
+    left: 16,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 20,
+    zIndex: 20,
+  },
+  floatingPageIndicator: {
+    position: 'absolute',
+    bottom: 24,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    zIndex: 20,
+  },
+  floatingPageText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  topBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    paddingTop: Platform.OS === 'ios' ? 50 : 30,
+    zIndex: 30,
+  },
+  topBarContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingBottom: 12,
+  },
+  closeButton: {
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  titleContainer: {
+    flex: 1,
+    marginHorizontal: 8,
+  },
+  mangaTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  chapterInfo: {
+    fontSize: 13,
+    color: '#aaa',
+    marginTop: 2,
+  },
   topBarActions: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1788,28 +1691,78 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: 19,
   },
-  errorContainer: {
+  bottomBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.88)',
+    paddingBottom: Platform.OS === 'ios' ? 34 : 16,
+    paddingTop: 12,
+    zIndex: 30,
+  },
+  scrubberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    marginBottom: 8,
+    gap: 12,
+  },
+  scrubberButton: {
+    width: 32,
+    height: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+  },
+  scrubberTrack: {
     flex: 1,
+    height: 4,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  scrubberProgress: {
+    height: '100%',
+    borderRadius: 2,
+  },
+  chapterNavRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 4,
+  },
+  chapterNavButton: {
+    width: 42,
+    height: 42,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 21,
   },
-  errorText: {
-    fontSize: 16,
-    color: '#666',
-    marginTop: 12,
+  disabledButton: {
+    opacity: 0.3,
   },
-  horizontalPage: {
-    width: width,
-    height: height,
-    justifyContent: 'center',
-    alignItems: 'center',
+  pageIndicator: {
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    paddingVertical: 6,
+    paddingHorizontal: 18,
+    borderRadius: 18,
   },
-  horizontalImage: {
-    width: width,
-    height: height,
+  pageIndicatorText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '500',
   },
-
-  // Transition styles
+  spotifyContainer: {
+    position: 'absolute',
+    bottom: Platform.OS === 'ios' ? 170 : 150,
+    left: 16,
+    right: 16,
+    zIndex: 25,
+  },
   transitionContainer: {
     height: 120,
     justifyContent: 'center',
@@ -1826,19 +1779,6 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
-  transitionTitle: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#888',
-    marginTop: 6,
-    textAlign: 'center',
-  },
-  transitionSubtitle: {
-    fontSize: 12,
-    color: '#555',
-    marginTop: 2,
-    textAlign: 'center',
-  },
   transitionChapterTitle: {
     fontSize: 14,
     fontWeight: '600',
@@ -1848,234 +1788,16 @@ const styles = StyleSheet.create({
   },
   transitionButton: {
     backgroundColor: '#FA6432',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
+    paddingVertical: 10,
+    paddingHorizontal: 22,
     borderRadius: 8,
-    marginTop: 20,
+    marginTop: 14,
   },
   transitionButtonText: {
     color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-
-  // Top bar
-  topBar: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'rgba(0,0,0,0.85)',
-    paddingTop: Platform.OS === 'ios' ? 50 : 30,
-  },
-  topBarContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingBottom: 12,
-  },
-  closeButton: {
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  backButtonFloat: {
-    position: 'absolute',
-    top: Platform.OS === 'ios' ? 50 : 30,
-    left: 10,
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    borderRadius: 22,
-    zIndex: 100,
-  },
-  titleContainer: {
-    flex: 1,
-    marginHorizontal: 8,
-  },
-  mangaTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  chapterInfo: {
-    fontSize: 13,
-    color: '#aaa',
-    marginTop: 2,
-  },
-  infoButton: {
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  // Floating page indicator
-  floatingPageIndicator: {
-    position: 'absolute',
-    bottom: 30,
-    alignSelf: 'center',
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    paddingVertical: 6,
-    paddingHorizontal: 14,
-    borderRadius: 16,
-  },
-  floatingPageText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '500',
-  },
-
-  // Spotify Mini Player
-  spotifyContainer: {
-    position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 180 : 160,
-    left: 16,
-    right: 16,
-    zIndex: 10,
-  },
-
-  // Bottom bar
-  bottomBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'rgba(0,0,0,0.85)',
-    paddingBottom: Platform.OS === 'ios' ? 34 : 16,
-    paddingTop: 12,
-  },
-  bottomBarRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 32,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.1)',
-  },
-  bottomButton: {
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  chapterNavRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 12,
-  },
-  chapterNavButton: {
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 22,
-  },
-  disabledButton: {
-    opacity: 0.3,
-  },
-  pageIndicator: {
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    paddingVertical: 8,
-    paddingHorizontal: 20,
-    borderRadius: 20,
-  },
-  pageIndicatorText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-
-  // Page loading styles
-  pageLoadingContainer: {
-    position: 'absolute',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  pageLoadingText: {
-    color: '#888',
-    fontSize: 12,
-    marginTop: 8,
-  },
-  pageErrorContainer: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 40,
-    backgroundColor: '#111',
-  },
-  pageErrorText: {
-    color: '#666',
-    fontSize: 12,
-    marginTop: 8,
-  },
-  retryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 16,
-    paddingVertical: 8,
-    paddingHorizontal: 20,
-    backgroundColor: '#FA6432',
-    borderRadius: 20,
-    gap: 6,
-  },
-  retryButtonText: {
-    color: '#fff',
     fontSize: 13,
     fontWeight: '600',
   },
-
-  // Horizontal mode indicator
-  horizontalPageIndicator: {
-    position: 'absolute',
-    bottom: 40,
-    alignSelf: 'center',
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    paddingVertical: 6,
-    paddingHorizontal: 14,
-    borderRadius: 16,
-  },
-  horizontalPageText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  horizontalLoadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  horizontalBackButton: {
-    position: 'absolute',
-    top: Platform.OS === 'ios' ? 50 : 30,
-    left: 16,
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    borderRadius: 22,
-  },
-  floatingBackButton: {
-    position: 'absolute',
-    top: Platform.OS === 'ios' ? 50 : 30,
-    left: 16,
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    borderRadius: 20,
-  },
-
-  // Info Modal Styles - Paperback Style
   infoModalContainer: {
     flex: 1,
     justifyContent: 'flex-end',
@@ -2092,7 +1814,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#1c1c1e',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    maxHeight: height * 0.85,
+    maxHeight: '85%',
     paddingBottom: Platform.OS === 'ios' ? 34 : 20,
   },
   infoModalClose: {
@@ -2226,96 +1948,6 @@ const styles = StyleSheet.create({
   },
   infoModalGenreText: {
     fontSize: 13,
-    color: '#fff',
-  },
-
-  // Settings Modal Styles
-  settingsModalContainer: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  settingsModalBackdrop: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  settingsModalContent: {
-    backgroundColor: '#1c1c1e',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: height * 0.7,
-    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
-  },
-  settingsModalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.1)',
-  },
-  settingsModalTitle: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#fff',
-  },
-  settingsDoneButton: {
-    fontSize: 17,
-    color: '#FA6432',
-    fontWeight: '600',
-  },
-  settingsScrollView: {
-    paddingHorizontal: 20,
-  },
-  settingsSectionTitle: {
-    fontSize: 13,
-    color: '#888',
-    marginTop: 24,
-    marginBottom: 12,
-    letterSpacing: 0.5,
-  },
-  settingsSegmentContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#2c2c2e',
-    borderRadius: 10,
-    padding: 3,
-  },
-  settingsSegment: {
-    flex: 1,
-    paddingVertical: 10,
-    alignItems: 'center',
-    borderRadius: 8,
-  },
-  settingsSegmentActive: {
-    backgroundColor: '#4a4a4c',
-  },
-  settingsSegmentText: {
-    fontSize: 14,
-    color: '#888',
-    fontWeight: '500',
-  },
-  settingsSegmentTextActive: {
-    color: '#fff',
-  },
-  settingsCard: {
-    backgroundColor: '#2c2c2e',
-    borderRadius: 10,
-    overflow: 'hidden',
-  },
-  settingsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.05)',
-  },
-  settingsRowLabel: {
-    fontSize: 16,
     color: '#fff',
   },
 });

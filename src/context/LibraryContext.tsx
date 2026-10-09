@@ -114,18 +114,33 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
       return;
     }
 
+    // Paperback ChapterProgressCompletionCondition: onReachingEnd | onChapterOpen | onReaching80Percent
+    const isCompleted = (() => {
+      switch (settings.chapterCompletionCondition) {
+        case 'onChapterOpen':
+          return true;
+        case 'onReaching80Percent':
+          return progress.percentage >= 80;
+        case 'onReachingEnd':
+        default:
+          return progress.pageNumber >= progress.totalPages || progress.percentage >= 100;
+      }
+    })();
+
     const existingEntry = library.find(entry => entry.manga.id === progress.mangaId);
 
     if (existingEntry) {
+      const alreadyRead = existingEntry.readChapters.includes(progress.chapterId);
+      const shouldMarkRead = isCompleted && !alreadyRead;
       const newLibrary = library.map(entry =>
         entry.manga.id === progress.mangaId
           ? {
             ...entry,
             progress,
             lastReadChapter: progress.chapterId,
-            readChapters: entry.readChapters.includes(progress.chapterId)
-              ? entry.readChapters
-              : [...entry.readChapters, progress.chapterId],
+            readChapters: shouldMarkRead
+              ? [...entry.readChapters, progress.chapterId]
+              : entry.readChapters,
           }
           : entry
       );
@@ -136,7 +151,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
         addedAt: new Date().toISOString(),
         progress,
         isFavorite: false,
-        readChapters: [progress.chapterId],
+        readChapters: isCompleted ? [progress.chapterId] : [],
       };
       await saveLibrary([...library, entry]);
     }

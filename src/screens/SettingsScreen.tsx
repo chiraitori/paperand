@@ -26,7 +26,7 @@ import { Paths, File } from 'expo-file-system';
 import { t } from '../services/i18nService';
 import { logger } from '../services/loggerService';
 import { repairDatabase } from '../services/databaseRepairService';
-import { getGeneralSettings, updateGeneralSetting } from '../services/settingsService';
+import { getGeneralSettings, updateGeneralSetting, clearAllSearchHistory } from '../services/settingsService';
 
 export const SettingsScreen: React.FC = () => {
   const { theme } = useTheme();
@@ -277,6 +277,30 @@ export const SettingsScreen: React.FC = () => {
               showChevron: false,
             })}
             {renderSettingItem({
+              title: 'Clear All Search History',
+              isDestructive: true,
+              onPress: () => {
+                Alert.alert(
+                  'Clear All Search History',
+                  'All search history for all sources will be cleared.',
+                  [
+                    { text: t('common.cancel'), style: 'cancel' },
+                    {
+                      text: t('common.delete'),
+                      style: 'destructive',
+                      onPress: async () => {
+                        const success = await clearAllSearchHistory();
+                        if (success) {
+                          Alert.alert(t('common.success'), 'Search history cleared successfully.');
+                        }
+                      },
+                    },
+                  ]
+                );
+              },
+              showChevron: false,
+            })}
+            {renderSettingItem({
               title: t('settings.attemptDatabaseRepair'),
               isDestructive: true,
               rightElement: isRepairing ? (
@@ -409,8 +433,10 @@ export const SettingsScreen: React.FC = () => {
             {renderSettingItem({
               title: t('settings.discordServer'),
               onPress: () => {
-                Linking.openURL('https://discord.gg/paperback').catch(() => {
-                  Alert.alert('Discord', 'Official server: https://discord.gg/paperback');
+                Linking.openURL('https://discord.paperback.moe/').catch(() => {
+                  Linking.openURL('https://discord.gg/paperback').catch(() => {
+                    Alert.alert('Discord', 'Official server: https://discord.paperback.moe/');
+                  });
                 });
               },
             })}
