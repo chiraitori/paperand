@@ -431,16 +431,6 @@ export const SettingsScreen: React.FC = () => {
               },
             })}
             {renderSettingItem({
-              title: t('settings.discordServer'),
-              onPress: () => {
-                Linking.openURL('https://discord.paperback.moe/').catch(() => {
-                  Linking.openURL('https://discord.gg/paperback').catch(() => {
-                    Alert.alert('Discord', 'Official server: https://discord.paperback.moe/');
-                  });
-                });
-              },
-            })}
-            {renderSettingItem({
               title: t('settings.credits'),
               onPress: () => navigation.navigate('Credits'),
             })}
@@ -493,17 +483,6 @@ export const SettingsScreen: React.FC = () => {
               >
                 <Ionicons name="cloud-download-outline" size={20} color={theme.primary} style={{ marginRight: 8 }} />
                 <Text style={[styles.accountActionText, { color: theme.text }]}>Manage Backups</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.accountActionButton, { backgroundColor: theme.background, marginTop: 8 }]}
-                onPress={() => {
-                  setShowAccountModal(false);
-                  Linking.openURL('https://discord.gg/paperback').catch(() => {});
-                }}
-              >
-                <Ionicons name="logo-discord" size={20} color="#5865F2" style={{ marginRight: 8 }} />
-                <Text style={[styles.accountActionText, { color: theme.text }]}>Join Paperback Discord</Text>
               </TouchableOpacity>
             </View>
 
