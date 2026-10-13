@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   Switch,
   Alert,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
@@ -106,6 +107,8 @@ export const ReaderSettingsModal: React.FC<ReaderSettingsModalProps> = ({
                 isSelected ? styles.segmentTextActive : { color: '#8E8E93' },
               ]}
               numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.75}
             >
               {opt.label}
             </Text>
@@ -140,7 +143,11 @@ export const ReaderSettingsModal: React.FC<ReaderSettingsModalProps> = ({
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+          <ScrollView
+            style={styles.scrollView}
+            contentContainerStyle={styles.scrollViewContent}
+            showsVerticalScrollIndicator={false}
+          >
             {/* Custom Settings Indicator / Controls */}
             {isCustom && (
               <View style={[styles.scopeBanner, { backgroundColor: '#2C2C2E', borderColor: theme.primary }]}>
@@ -426,7 +433,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     maxHeight: '85%',
-    paddingBottom: 24,
+    paddingBottom: Platform.OS === 'android' ? 36 : 24,
   },
   header: {
     flexDirection: 'row',
@@ -454,6 +461,9 @@ const styles = StyleSheet.create({
   scrollView: {
     paddingHorizontal: 16,
     paddingTop: 12,
+  },
+  scrollViewContent: {
+    paddingBottom: Platform.OS === 'android' ? 30 : 16,
   },
   scopeBanner: {
     flexDirection: 'row',

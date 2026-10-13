@@ -49,13 +49,22 @@ export const defaultReaderSettings: ReaderSettingsValues = {
 const GLOBAL_SETTINGS_KEY = '@paperback_reader_settings_global';
 const MANGA_SETTINGS_PREFIX = '@paperback_reader_settings_manga_';
 
+const normalizeMangaId = (id?: string | number): string | undefined => {
+  if (id === undefined || id === null) return undefined;
+  const str = String(id).trim();
+  return str.length > 0 ? str : undefined;
+};
+
 /**
  * Get reader settings for a specific manga or fallback to global settings
  */
-export const getReaderSettings = async (mangaId?: string): Promise<{ settings: ReaderSettingsValues; isCustom: boolean }> => {
+export const getReaderSettings = async (
+  mangaId?: string | number
+): Promise<{ settings: ReaderSettingsValues; isCustom: boolean }> => {
+  const normId = normalizeMangaId(mangaId);
   try {
-    if (mangaId) {
-      const mangaSaved = await AsyncStorage.getItem(`${MANGA_SETTINGS_PREFIX}${mangaId}`);
+    if (normId) {
+      const mangaSaved = await AsyncStorage.getItem(`${MANGA_SETTINGS_PREFIX}${normId}`);
       if (mangaSaved) {
         return {
           settings: { ...defaultReaderSettings, ...JSON.parse(mangaSaved) },
@@ -83,10 +92,11 @@ export const getReaderSettings = async (mangaId?: string): Promise<{ settings: R
  */
 export const saveReaderSettings = async (
   settings: ReaderSettingsValues,
-  mangaId?: string
+  mangaId?: string | number
 ): Promise<void> => {
+  const normId = normalizeMangaId(mangaId);
   try {
-    const key = mangaId ? `${MANGA_SETTINGS_PREFIX}${mangaId}` : GLOBAL_SETTINGS_KEY;
+    const key = normId ? `${MANGA_SETTINGS_PREFIX}${normId}` : GLOBAL_SETTINGS_KEY;
     await AsyncStorage.setItem(key, JSON.stringify(settings));
   } catch (error) {
     console.error('Failed to save reader settings:', error);
@@ -96,9 +106,11 @@ export const saveReaderSettings = async (
 /**
  * Reset manga-specific reader settings back to global defaults
  */
-export const resetMangaReaderSettings = async (mangaId: string): Promise<void> => {
+export const resetMangaReaderSettings = async (mangaId: string | number): Promise<void> => {
+  const normId = normalizeMangaId(mangaId);
+  if (!normId) return;
   try {
-    await AsyncStorage.removeItem(`${MANGA_SETTINGS_PREFIX}${mangaId}`);
+    await AsyncStorage.removeItem(`${MANGA_SETTINGS_PREFIX}${normId}`);
   } catch (error) {
     console.error('Failed to reset manga reader settings:', error);
   }
@@ -109,12 +121,13 @@ export const resetMangaReaderSettings = async (mangaId: string): Promise<void> =
  */
 export const applySettingsGlobally = async (
   settings: ReaderSettingsValues,
-  currentMangaId?: string
+  currentMangaId?: string | number
 ): Promise<void> => {
+  const normId = normalizeMangaId(currentMangaId);
   try {
     await AsyncStorage.setItem(GLOBAL_SETTINGS_KEY, JSON.stringify(settings));
-    if (currentMangaId) {
-      await AsyncStorage.removeItem(`${MANGA_SETTINGS_PREFIX}${currentMangaId}`);
+    if (normId) {
+      await AsyncStorage.removeItem(`${MANGA_SETTINGS_PREFIX}${normId}`);
     }
   } catch (error) {
     console.error('Failed to apply reader settings globally:', error);

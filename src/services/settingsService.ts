@@ -25,7 +25,7 @@ export interface GeneralSettings {
 }
 
 export const defaultSettings: GeneralSettings = {
-    portraitColumns: 3,
+    portraitColumns: 2,
     landscapeColumns: 7,
     chapterListSort: 'descending',
     chapterCompletionCondition: 'onReachingEnd',

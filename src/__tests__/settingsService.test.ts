@@ -28,7 +28,7 @@ describe('Settings Service', () => {
 
     describe('defaultSettings', () => {
         it('should have correct default values', () => {
-            expect(defaultSettings.portraitColumns).toBe(3);
+            expect(defaultSettings.portraitColumns).toBe(2);
             expect(defaultSettings.landscapeColumns).toBe(7);
             expect(defaultSettings.chapterListSort).toBe('descending');
             expect(defaultSettings.interactiveUpdates).toBe(false);

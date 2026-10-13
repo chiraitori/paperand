@@ -600,7 +600,7 @@ const styles = StyleSheet.create({
   row: {
     justifyContent: 'flex-start',
     gap: 8,
-    marginBottom: 4,
+    marginBottom: 8,
   },
   lockedContainer: {
     flex: 1,

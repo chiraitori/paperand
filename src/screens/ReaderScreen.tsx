@@ -399,21 +399,31 @@ const ChapterTransition: React.FC<{
   onNavigate: () => void;
 }> = ({ type, chapter, isLoading, onNavigate }) => {
   const isPrevious = type === 'previous';
+  const topPadding = isPrevious ? (Platform.OS === 'ios' ? 70 : (StatusBar.currentHeight || 36) + 30) : 20;
+  const bottomPadding = !isPrevious ? (Platform.OS === 'ios' ? 100 : 90) : 20;
 
   if (!chapter) {
     return (
-      <View style={styles.transitionContainer}>
+      <View style={[styles.transitionContainer, { paddingTop: topPadding, paddingBottom: bottomPadding }]}>
         <View style={styles.transitionContent}>
-          <Text style={styles.transitionLabel}>
-            {isPrevious ? t('reader.noPreviousChapter') : t('reader.noNextChapter')}
-          </Text>
+          <View style={styles.transitionBadge}>
+            <Ionicons
+              name={isPrevious ? 'flag-outline' : 'checkmark-done-circle-outline'}
+              size={16}
+              color="#888"
+              style={{ marginRight: 6 }}
+            />
+            <Text style={styles.transitionLabel}>
+              {isPrevious ? t('reader.noPreviousChapter') : t('reader.noNextChapter')}
+            </Text>
+          </View>
         </View>
       </View>
     );
   }
 
   return (
-    <View style={styles.transitionContainer}>
+    <View style={[styles.transitionContainer, { paddingTop: topPadding, paddingBottom: bottomPadding }]}>
       <View style={styles.transitionContent}>
         <Text style={styles.transitionLabel}>
           {isPrevious ? t('reader.previousChapter') : t('reader.nextChapter')}
@@ -459,6 +469,8 @@ export const ReaderScreen: React.FC = () => {
   // Paperback Reader Settings State
   const [readerSettings, setReaderSettings] = useState<ReaderSettingsValues>(defaultReaderSettings);
   const [isCustomSetting, setIsCustomSetting] = useState(false);
+  const isModeSwitchingRef = useRef(false);
+  const prevReaderModeRef = useRef<ReaderMode>(defaultReaderSettings.readerMode);
 
   // HUD Controls state
   const [showControls, setShowControls] = useState(false);
@@ -474,18 +486,28 @@ export const ReaderScreen: React.FC = () => {
 
   // Load Reader Settings for Manga
   useEffect(() => {
+    let isMounted = true;
     const loadSettings = async () => {
       const { settings, isCustom } = await getReaderSettings(mangaId);
-      setReaderSettings(settings);
-      setIsCustomSetting(isCustom);
-      setOrientationLocked(settings.rotationLocked);
+      if (isMounted) {
+        setReaderSettings(settings);
+        setIsCustomSetting(isCustom);
+        setOrientationLocked(settings.rotationLocked);
+        prevReaderModeRef.current = settings.readerMode;
+      }
     };
     loadSettings();
+    return () => {
+      isMounted = false;
+    };
   }, [mangaId]);
 
   // Save / Update Setting
   const handleUpdateSetting = useCallback(
     async <K extends keyof ReaderSettingsValues>(key: K, value: ReaderSettingsValues[K]) => {
+      if (key === 'readerMode') {
+        isModeSwitchingRef.current = true;
+      }
       const updated = { ...readerSettings, [key]: value };
       setReaderSettings(updated);
       setIsCustomSetting(true);
@@ -508,6 +530,7 @@ export const ReaderScreen: React.FC = () => {
     setReaderSettings(settings);
     setIsCustomSetting(false);
     setOrientationLocked(settings.rotationLocked);
+    prevReaderModeRef.current = settings.readerMode;
   }, [mangaId]);
 
   // Orientation Lock Toggle (HUD rotationLockButtonview)
@@ -533,6 +556,7 @@ export const ReaderScreen: React.FC = () => {
   // Quick Reader Mode Toggle (HUD quickModeSwitchButtonview)
   const toggleQuickMode = useCallback(() => {
     const nextMode: ReaderMode = readerSettings.readerMode === 'horizontal' ? 'longStrip' : 'horizontal';
+    isModeSwitchingRef.current = true;
     handleUpdateSetting('readerMode', nextMode);
   }, [readerSettings.readerMode, handleUpdateSetting]);
 
@@ -846,23 +870,32 @@ export const ReaderScreen: React.FC = () => {
   );
 
   // Controls Visibility
-  const startControlsTimer = () => {
+  const startControlsTimer = useCallback(() => {
     if (controlsTimeoutRef.current) {
       clearTimeout(controlsTimeoutRef.current);
     }
+    if (spotifyPickerOpen || showSettingsModal || showInfoModal) return;
     controlsTimeoutRef.current = setTimeout(() => {
       hideControls();
-    }, 3500);
-  };
+    }, 5000);
+  }, [spotifyPickerOpen, showSettingsModal, showInfoModal]);
 
-  const hideControls = () => {
-    if (spotifyPickerOpen) return;
+  const hideControls = useCallback(() => {
+    if (spotifyPickerOpen || showSettingsModal || showInfoModal) return;
     Animated.timing(fadeAnim, {
       toValue: 0,
       duration: 200,
       useNativeDriver: true,
     }).start(() => setShowControls(false));
-  };
+  }, [spotifyPickerOpen, showSettingsModal, showInfoModal, fadeAnim]);
+
+  useEffect(() => {
+    if (showSettingsModal || showInfoModal || spotifyPickerOpen) {
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+      }
+    }
+  }, [showSettingsModal, showInfoModal, spotifyPickerOpen]);
 
   const showControlsWithTimer = () => {
     setShowControls(true);
@@ -1114,20 +1147,52 @@ export const ReaderScreen: React.FC = () => {
     [pages.length, scrubberTrackWidth, readerSettings.readerDirection, goToPage]
   );
 
-  // Auto re-align scroll position when screen rotates or dimensions change
+  // Auto re-align scroll position when screen rotates, dimensions change, or reader mode switches
   useEffect(() => {
     if (pages.length === 0 || !flatListRef.current) return;
-    if (readerSettings.readerMode === 'horizontal') {
-      const targetGroupIndex = pageGroups.findIndex(
-        (g) => currentPage + 1 >= g.startPageNumber && currentPage + 1 <= g.endPageNumber
-      );
-      const scrollIndex = targetGroupIndex !== -1 ? targetGroupIndex : 0;
-      flatListRef.current.scrollToOffset({
-        offset: scrollIndex * screenWidth,
-        animated: false,
-      });
+    const isModeChanged = prevReaderModeRef.current !== readerSettings.readerMode;
+    if (isModeChanged) {
+      prevReaderModeRef.current = readerSettings.readerMode;
+      isModeSwitchingRef.current = true;
     }
-  }, [screenWidth, screenHeight, isLandscape, pageGroups]);
+
+    const timer = setTimeout(() => {
+      if (!flatListRef.current || pages.length === 0) {
+        isModeSwitchingRef.current = false;
+        return;
+      }
+      try {
+        const target = Math.max(0, Math.min(currentPage, pages.length - 1));
+        if (readerSettings.readerMode === 'horizontal') {
+          const targetGroupIndex = pageGroups.findIndex(
+            (g) => target + 1 >= g.startPageNumber && target + 1 <= g.endPageNumber
+          );
+          const scrollIndex = targetGroupIndex !== -1 ? targetGroupIndex : target;
+          flatListRef.current.scrollToOffset({
+            offset: scrollIndex * screenWidth,
+            animated: false,
+          });
+        } else {
+          flatListRef.current.scrollToIndex({
+            index: target,
+            animated: false,
+            viewPosition: 0,
+          });
+        }
+      } catch {
+        flatListRef.current?.scrollToOffset({
+          offset: currentPage * (readerSettings.readerMode === 'horizontal' ? screenWidth : screenHeight),
+          animated: false,
+        });
+      } finally {
+        setTimeout(() => {
+          isModeSwitchingRef.current = false;
+        }, 300);
+      }
+    }, isModeChanged ? 100 : 0);
+
+    return () => clearTimeout(timer);
+  }, [screenWidth, screenHeight, isLandscape, pageGroups, readerSettings.readerMode, currentPage, pages.length]);
 
   // Page turns / groups navigation
   const goToNextPage = useCallback(() => {
@@ -1244,6 +1309,7 @@ export const ReaderScreen: React.FC = () => {
 
   // Scroll Viewability & Progress Sync
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
+    if (isModeSwitchingRef.current) return;
     if (viewableItems && viewableItems.length > 0) {
       const item = viewableItems[0]?.item;
       if (item) {
@@ -1516,9 +1582,24 @@ export const ReaderScreen: React.FC = () => {
         pointerEvents={showControls ? 'auto' : 'none'}
       >
         <View style={styles.topBarContent}>
-          <TouchableOpacity style={styles.closeButton} onPress={() => navigation.goBack()}>
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={() => navigation.goBack()}
+            hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
+          >
             <Ionicons name="close" size={28} color="#fff" />
           </TouchableOpacity>
+
+          {/* Settings Button on Left if settingButtonLocation === 'left' */}
+          {readerSettings.settingButtonLocation === 'left' && (
+            <TouchableOpacity
+              style={styles.headerIconButton}
+              onPress={() => setShowSettingsModal(true)}
+              hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
+            >
+              <Ionicons name="settings-outline" size={22} color="#fff" />
+            </TouchableOpacity>
+          )}
 
           <View style={styles.titleContainer}>
             <Text style={styles.mangaTitle} numberOfLines={1}>
@@ -1532,13 +1613,21 @@ export const ReaderScreen: React.FC = () => {
           <View style={styles.topBarActions}>
             {/* Website verification button */}
             {sourceId ? (
-              <TouchableOpacity style={styles.headerIconButton} onPress={handleOpenWebBypass}>
+              <TouchableOpacity
+                style={styles.headerIconButton}
+                onPress={handleOpenWebBypass}
+                hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
+              >
                 <Ionicons name="globe-outline" size={22} color="#fff" />
               </TouchableOpacity>
             ) : null}
 
             {/* Quick Mode Switch Button (quickModeSwitchButtonview) */}
-            <TouchableOpacity style={styles.headerIconButton} onPress={toggleQuickMode}>
+            <TouchableOpacity
+              style={styles.headerIconButton}
+              onPress={toggleQuickMode}
+              hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
+            >
               <Ionicons
                 name={readerSettings.readerMode === 'horizontal' ? 'book-outline' : 'reorder-four-outline'}
                 size={22}
@@ -1547,7 +1636,11 @@ export const ReaderScreen: React.FC = () => {
             </TouchableOpacity>
 
             {/* Rotation Lock Button (rotationLockButtonview) */}
-            <TouchableOpacity style={styles.headerIconButton} onPress={toggleOrientationLock}>
+            <TouchableOpacity
+              style={styles.headerIconButton}
+              onPress={toggleOrientationLock}
+              hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
+            >
               <Ionicons
                 name={orientationLocked ? 'lock-closed' : 'lock-open-outline'}
                 size={22}
@@ -1556,14 +1649,24 @@ export const ReaderScreen: React.FC = () => {
             </TouchableOpacity>
 
             {/* Info Button (infoButtonview) */}
-            <TouchableOpacity style={styles.headerIconButton} onPress={() => setShowInfoModal(true)}>
+            <TouchableOpacity
+              style={styles.headerIconButton}
+              onPress={() => setShowInfoModal(true)}
+              hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
+            >
               <Ionicons name="information-circle-outline" size={24} color="#fff" />
             </TouchableOpacity>
 
-            {/* Settings Button (settingsButtonview) */}
-            <TouchableOpacity style={styles.headerIconButton} onPress={() => setShowSettingsModal(true)}>
-              <Ionicons name="settings-outline" size={22} color="#fff" />
-            </TouchableOpacity>
+            {/* Settings Button on Right if settingButtonLocation !== 'left' */}
+            {readerSettings.settingButtonLocation !== 'left' && (
+              <TouchableOpacity
+                style={styles.headerIconButton}
+                onPress={() => setShowSettingsModal(true)}
+                hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
+              >
+                <Ionicons name="settings-outline" size={22} color="#fff" />
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </Animated.View>
@@ -1579,6 +1682,7 @@ export const ReaderScreen: React.FC = () => {
             style={styles.scrubberButton}
             onPress={isRtl ? goToNextPage : goToPreviousPage}
             activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             <Ionicons name="chevron-back" size={20} color="#fff" />
           </TouchableOpacity>
@@ -1609,40 +1713,95 @@ export const ReaderScreen: React.FC = () => {
             style={styles.scrubberButton}
             onPress={isRtl ? goToPreviousPage : goToNextPage}
             activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             <Ionicons name="chevron-forward" size={20} color="#fff" />
           </TouchableOpacity>
         </View>
 
         {/* Chapter Navigation & Indicator */}
-        <View
-          style={[
-            styles.chapterNavRow,
-            readerSettings.chapterChangeArrows === 'left' && { justifyContent: 'flex-start', gap: 16 },
-            readerSettings.chapterChangeArrows === 'right' && { justifyContent: 'flex-end', gap: 16 },
-          ]}
-        >
-          <TouchableOpacity
-            style={[styles.chapterNavButton, !previousChapter && styles.disabledButton]}
-            onPress={goToPreviousChapter}
-            disabled={!previousChapter}
-          >
-            <Ionicons name="play-skip-back" size={18} color={previousChapter ? '#fff' : '#555'} />
-          </TouchableOpacity>
+        <View style={styles.chapterNavRow}>
+          {readerSettings.chapterChangeArrows === 'left' ? (
+            <>
+              <View style={styles.navButtonsGroup}>
+                <TouchableOpacity
+                  style={[styles.chapterNavButton, !previousChapter && styles.disabledButton]}
+                  onPress={goToPreviousChapter}
+                  disabled={!previousChapter}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Ionicons name="play-skip-back" size={18} color={previousChapter ? '#fff' : '#555'} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.chapterNavButton, !nextChapter && styles.disabledButton]}
+                  onPress={goToNextChapter}
+                  disabled={!nextChapter}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Ionicons name="play-skip-forward" size={18} color={nextChapter ? '#fff' : '#555'} />
+                </TouchableOpacity>
+              </View>
 
-          <View style={styles.pageIndicator}>
-            <Text style={styles.pageIndicatorText}>
-              {getPageIndicatorText()}
-            </Text>
-          </View>
+              <View style={styles.pageIndicator}>
+                <Text style={styles.pageIndicatorText}>
+                  {getPageIndicatorText()}
+                </Text>
+              </View>
+            </>
+          ) : readerSettings.chapterChangeArrows === 'right' ? (
+            <>
+              <View style={styles.pageIndicator}>
+                <Text style={styles.pageIndicatorText}>
+                  {getPageIndicatorText()}
+                </Text>
+              </View>
 
-          <TouchableOpacity
-            style={[styles.chapterNavButton, !nextChapter && styles.disabledButton]}
-            onPress={goToNextChapter}
-            disabled={!nextChapter}
-          >
-            <Ionicons name="play-skip-forward" size={18} color={nextChapter ? '#fff' : '#555'} />
-          </TouchableOpacity>
+              <View style={styles.navButtonsGroup}>
+                <TouchableOpacity
+                  style={[styles.chapterNavButton, !previousChapter && styles.disabledButton]}
+                  onPress={goToPreviousChapter}
+                  disabled={!previousChapter}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Ionicons name="play-skip-back" size={18} color={previousChapter ? '#fff' : '#555'} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.chapterNavButton, !nextChapter && styles.disabledButton]}
+                  onPress={goToNextChapter}
+                  disabled={!nextChapter}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Ionicons name="play-skip-forward" size={18} color={nextChapter ? '#fff' : '#555'} />
+                </TouchableOpacity>
+              </View>
+            </>
+          ) : (
+            <>
+              <TouchableOpacity
+                style={[styles.chapterNavButton, !previousChapter && styles.disabledButton]}
+                onPress={goToPreviousChapter}
+                disabled={!previousChapter}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="play-skip-back" size={18} color={previousChapter ? '#fff' : '#555'} />
+              </TouchableOpacity>
+
+              <View style={styles.pageIndicator}>
+                <Text style={styles.pageIndicatorText}>
+                  {getPageIndicatorText()}
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={[styles.chapterNavButton, !nextChapter && styles.disabledButton]}
+                onPress={goToNextChapter}
+                disabled={!nextChapter}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="play-skip-forward" size={18} color={nextChapter ? '#fff' : '#555'} />
+              </TouchableOpacity>
+            </>
+          )}
         </View>
       </Animated.View>
 
@@ -1773,7 +1932,7 @@ const styles = StyleSheet.create({
   },
   backButtonFloat: {
     position: 'absolute',
-    top: Platform.OS === 'ios' ? 50 : 30,
+    top: Platform.OS === 'ios' ? 50 : (StatusBar.currentHeight || 36) + 8,
     left: 10,
     width: 44,
     height: 44,
@@ -1785,7 +1944,7 @@ const styles = StyleSheet.create({
   },
   floatingBackButton: {
     position: 'absolute',
-    top: Platform.OS === 'ios' ? 50 : 30,
+    top: Platform.OS === 'ios' ? 50 : (StatusBar.currentHeight || 36) + 8,
     left: 16,
     width: 40,
     height: 40,
@@ -1816,7 +1975,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     backgroundColor: 'rgba(0,0,0,0.85)',
-    paddingTop: Platform.OS === 'ios' ? 50 : 30,
+    paddingTop: Platform.OS === 'ios' ? 50 : (StatusBar.currentHeight || 36) + 8,
     zIndex: 30,
   },
   topBarContent: {
@@ -1904,6 +2063,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 4,
   },
+  navButtonsGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
   chapterNavButton: {
     width: 42,
     height: 42,
@@ -1934,7 +2098,7 @@ const styles = StyleSheet.create({
     zIndex: 25,
   },
   transitionContainer: {
-    height: 120,
+    minHeight: 120,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#000',
@@ -1942,6 +2106,14 @@ const styles = StyleSheet.create({
   transitionContent: {
     alignItems: 'center',
     paddingHorizontal: 40,
+  },
+  transitionBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.08)',
   },
   transitionLabel: {
     fontSize: 11,

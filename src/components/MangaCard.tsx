@@ -94,7 +94,7 @@ const styles = StyleSheet.create({
   container: {
     borderRadius: 8,
     overflow: 'hidden',
-    marginBottom: 12,
+    marginBottom: 8,
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
