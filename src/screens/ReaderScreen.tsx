@@ -299,7 +299,8 @@ const PageImageElement: React.FC<{
   onRetry: () => void;
   totalPages: number;
   fitMode?: 'contain' | 'cover';
-}> = ({ page, targetWidth, targetHeight, onPress, onLongPress, onRetry, totalPages, fitMode = 'contain' }) => {
+  isVertical?: boolean;
+}> = ({ page, targetWidth, targetHeight, onPress, onLongPress, onRetry, totalPages, fitMode = 'contain', isVertical = false }) => {
   const [imgHeight, setImgHeight] = useState(targetHeight);
   const [loadError, setLoadError] = useState(page.error || false);
   const [internalLoading, setInternalLoading] = useState(page.loading ?? false);
@@ -314,26 +315,31 @@ const PageImageElement: React.FC<{
     setLoadError(false);
 
     if (page.preloaded && page.resolvedUrl) {
-      Image.getSize(
-        page.resolvedUrl,
-        (w, h) => {
-          if (w > 0) {
-            const aspect = h / w;
-            setImgHeight(Math.min(targetWidth * aspect, targetHeight));
+      if (!isVertical) {
+        setImgHeight(targetHeight);
+        setInternalLoading(false);
+      } else {
+        Image.getSize(
+          page.resolvedUrl,
+          (w, h) => {
+            if (w > 0) {
+              const aspect = h / w;
+              setImgHeight(targetWidth * aspect);
+            }
+            setInternalLoading(false);
+          },
+          () => {
+            setImgHeight(targetHeight);
+            setInternalLoading(false);
           }
-          setInternalLoading(false);
-        },
-        () => {
-          setImgHeight(targetHeight);
-          setInternalLoading(false);
-        }
-      );
+        );
+      }
     }
-  }, [page.resolvedUrl, page.preloaded, page.error, page.retryKey, targetWidth, targetHeight]);
+  }, [page.resolvedUrl, page.preloaded, page.error, page.retryKey, targetWidth, targetHeight, isVertical]);
 
   if (page.loading || internalLoading) {
     return (
-      <TouchableOpacity activeOpacity={1} onPress={onPress} style={[styles.pagePlaceholder, { width: targetWidth, height: targetHeight }]}>
+      <TouchableOpacity activeOpacity={1} onPress={onPress} style={[styles.pagePlaceholder, { width: targetWidth, height: isVertical ? targetHeight * 0.75 : targetHeight }]}>
         <ActivityIndicator size="large" color="#FA6432" />
         <Text style={styles.pagePlaceholderText}>
           {t('reader.loadingPage', { page: page.pageNumber, total: totalPages })}
@@ -344,7 +350,7 @@ const PageImageElement: React.FC<{
 
   if (loadError || page.error) {
     return (
-      <TouchableOpacity activeOpacity={1} onPress={onPress} style={[styles.pagePlaceholder, { width: targetWidth, height: targetHeight }]}>
+      <TouchableOpacity activeOpacity={1} onPress={onPress} style={[styles.pagePlaceholder, { width: targetWidth, height: isVertical ? targetHeight * 0.75 : targetHeight }]}>
         <Ionicons name="image-outline" size={48} color="#555" />
         <Text style={styles.pageErrorText}>{t('reader.failedToLoadPage', { page: page.pageNumber })}</Text>
         <TouchableOpacity style={styles.retryButton} onPress={onRetry} activeOpacity={0.7}>
@@ -362,7 +368,7 @@ const PageImageElement: React.FC<{
       <Image
         key={`page-img-${page.pageNumber}-${page.retryKey || 0}`}
         source={imageSource}
-        style={{ width: targetWidth, height: imgHeight }}
+        style={{ width: targetWidth, height: isVertical ? imgHeight : targetHeight }}
         resizeMode={fitMode}
         onError={() => {
           console.warn('[Reader] Error rendering page:', page.pageNumber);
@@ -1020,13 +1026,86 @@ export const ReaderScreen: React.FC = () => {
     navigation.replace('Reader', { mangaId: manga.id, chapterId: nextChapter.id, sourceId });
   };
 
+  const [scrubberTrackWidth, setScrubberTrackWidth] = useState(0);
+
+  const getPageIndicatorText = useCallback(() => {
+    if (isDoublePageMode) {
+      const currentGroup = pageGroups.find(
+        (g) => currentPage + 1 >= g.startPageNumber && currentPage + 1 <= g.endPageNumber
+      );
+      if (currentGroup && currentGroup.isDouble && currentGroup.pages.length === 2) {
+        return `${currentGroup.startPageNumber} - ${currentGroup.endPageNumber} / ${pages.length}`;
+      }
+    }
+    return `${currentPage + 1} / ${pages.length}`;
+  }, [isDoublePageMode, pageGroups, currentPage, pages.length]);
+
+  // Navigate to specific page with synchronized scrolling
+  const goToPage = useCallback(
+    (pageIndex: number, animated = true) => {
+      const target = Math.max(0, Math.min(pageIndex, pages.length - 1));
+      setCurrentPage(target);
+      saveProgress(target);
+
+      if (readerSettings.readerMode === 'horizontal') {
+        const targetGroupIndex = pageGroups.findIndex(
+          (g) => target + 1 >= g.startPageNumber && target + 1 <= g.endPageNumber
+        );
+        const scrollIndex = targetGroupIndex !== -1 ? targetGroupIndex : target;
+        flatListRef.current?.scrollToOffset({
+          offset: scrollIndex * screenWidth,
+          animated,
+        });
+      } else {
+        flatListRef.current?.scrollToIndex({
+          index: target,
+          animated,
+          viewPosition: 0,
+        });
+      }
+    },
+    [pages.length, readerSettings.readerMode, pageGroups, screenWidth, saveProgress]
+  );
+
+  const handleScrubberTouch = useCallback(
+    (e: GestureResponderEvent) => {
+      if (pages.length <= 1 || scrubberTrackWidth <= 0) return;
+      const { locationX } = e.nativeEvent;
+      const isRtl = readerSettings.readerDirection === 'rightToLeft';
+      let ratio = Math.max(0, Math.min(1, locationX / scrubberTrackWidth));
+      if (isRtl) ratio = 1 - ratio;
+      const targetPage = Math.round(ratio * (pages.length - 1));
+      goToPage(targetPage, true);
+    },
+    [pages.length, scrubberTrackWidth, readerSettings.readerDirection, goToPage]
+  );
+
+  // Auto re-align scroll position when screen rotates or dimensions change
+  useEffect(() => {
+    if (pages.length === 0 || !flatListRef.current) return;
+    if (readerSettings.readerMode === 'horizontal') {
+      const targetGroupIndex = pageGroups.findIndex(
+        (g) => currentPage + 1 >= g.startPageNumber && currentPage + 1 <= g.endPageNumber
+      );
+      const scrollIndex = targetGroupIndex !== -1 ? targetGroupIndex : 0;
+      flatListRef.current.scrollToOffset({
+        offset: scrollIndex * screenWidth,
+        animated: false,
+      });
+    }
+  }, [screenWidth, screenHeight, isLandscape, pageGroups]);
+
   // Page turns / groups navigation
-  const goToNextPage = () => {
+  const goToNextPage = useCallback(() => {
     if (readerSettings.readerMode === 'horizontal') {
       const currentGroupIndex = pageGroups.findIndex(
         (g) => currentPage + 1 >= g.startPageNumber && currentPage + 1 <= g.endPageNumber
       );
       if (currentGroupIndex !== -1 && currentGroupIndex < pageGroups.length - 1) {
+        const nextGroup = pageGroups[currentGroupIndex + 1];
+        const nextTargetPage = nextGroup ? nextGroup.startPageNumber - 1 : currentPage + 1;
+        setCurrentPage(nextTargetPage);
+        saveProgress(nextTargetPage);
         flatListRef.current?.scrollToOffset({
           offset: (currentGroupIndex + 1) * screenWidth,
           animated: true,
@@ -1036,19 +1115,23 @@ export const ReaderScreen: React.FC = () => {
       }
     } else {
       if (currentPage < pages.length - 1) {
-        flatListRef.current?.scrollToIndex({ index: currentPage + 1, animated: true });
+        goToPage(currentPage + 1, true);
       } else if (nextChapter) {
         goToNextChapter();
       }
     }
-  };
+  }, [readerSettings.readerMode, pageGroups, currentPage, screenWidth, nextChapter, saveProgress, goToPage]);
 
-  const goToPreviousPage = () => {
+  const goToPreviousPage = useCallback(() => {
     if (readerSettings.readerMode === 'horizontal') {
       const currentGroupIndex = pageGroups.findIndex(
         (g) => currentPage + 1 >= g.startPageNumber && currentPage + 1 <= g.endPageNumber
       );
       if (currentGroupIndex > 0) {
+        const prevGroup = pageGroups[currentGroupIndex - 1];
+        const prevTargetPage = prevGroup ? prevGroup.startPageNumber - 1 : currentPage - 1;
+        setCurrentPage(prevTargetPage);
+        saveProgress(prevTargetPage);
         flatListRef.current?.scrollToOffset({
           offset: (currentGroupIndex - 1) * screenWidth,
           animated: true,
@@ -1058,63 +1141,72 @@ export const ReaderScreen: React.FC = () => {
       }
     } else {
       if (currentPage > 0) {
-        flatListRef.current?.scrollToIndex({ index: currentPage - 1, animated: true });
+        goToPage(currentPage - 1, true);
       } else if (previousChapter) {
         goToPreviousChapter();
       }
     }
-  };
+  }, [readerSettings.readerMode, pageGroups, currentPage, screenWidth, previousChapter, saveProgress, goToPage]);
 
-  // Tap Zone Handling (tapSidesToNavgiate)
-  const handleReaderPress = (e: GestureResponderEvent) => {
-    if (!readerSettings.tapSidesToNavgiate) {
-      toggleControls();
-      return;
-    }
+  const lastTapTimeRef = useRef<number>(0);
 
-    const { pageX } = e.nativeEvent;
-    const leftThreshold = screenWidth * 0.33;
-    const rightThreshold = screenWidth * 0.67;
+  // Tap Zone Handling (Paperback tap zones: outer 25% navigate, center 50% toggle HUD)
+  const handleReaderPress = useCallback(
+    (e: GestureResponderEvent) => {
+      const now = Date.now();
+      if (now - lastTapTimeRef.current < 250) {
+        return;
+      }
+      lastTapTimeRef.current = now;
 
-    if (pageX < leftThreshold) {
-      // Left Zone
-      if (readerSettings.readerMode === 'horizontal') {
-        if (readerSettings.readerDirection === 'rightToLeft') {
-          // RTL Manga: Tapping Left goes forward!
-          goToNextPage();
+      if (!readerSettings.tapSidesToNavgiate) {
+        toggleControls();
+        return;
+      }
+
+      const { pageX } = e.nativeEvent;
+      const leftThreshold = screenWidth * 0.25;
+      const rightThreshold = screenWidth * 0.75;
+
+      if (pageX < leftThreshold) {
+        // Left Zone
+        if (readerSettings.readerMode === 'horizontal') {
+          if (readerSettings.readerDirection === 'rightToLeft') {
+            // RTL Manga: Tapping Left goes forward!
+            goToNextPage();
+          } else {
+            // LTR Comics: Tapping Left goes backward!
+            goToPreviousPage();
+          }
         } else {
-          // LTR Comics: Tapping Left goes backward!
-          goToPreviousPage();
+          // Vertical mode: scroll to previous page
+          if (currentPage > 0) {
+            goToPage(currentPage - 1, true);
+          }
+        }
+      } else if (pageX > rightThreshold) {
+        // Right Zone
+        if (readerSettings.readerMode === 'horizontal') {
+          if (readerSettings.readerDirection === 'rightToLeft') {
+            // RTL Manga: Tapping Right goes backward!
+            goToPreviousPage();
+          } else {
+            // LTR Comics: Tapping Right goes forward!
+            goToNextPage();
+          }
+        } else {
+          // Vertical mode: scroll to next page
+          if (currentPage < pages.length - 1) {
+            goToPage(currentPage + 1, true);
+          }
         }
       } else {
-        // Vertical mode: scroll up
-        flatListRef.current?.scrollToOffset({
-          offset: Math.max(0, currentPage * screenHeight - screenHeight * 0.75),
-          animated: true,
-        });
+        // Center Zone: Toggle HUD
+        toggleControls();
       }
-    } else if (pageX > rightThreshold) {
-      // Right Zone
-      if (readerSettings.readerMode === 'horizontal') {
-        if (readerSettings.readerDirection === 'rightToLeft') {
-          // RTL Manga: Tapping Right goes backward!
-          goToPreviousPage();
-        } else {
-          // LTR Comics: Tapping Right goes forward!
-          goToNextPage();
-        }
-      } else {
-        // Vertical mode: scroll down
-        flatListRef.current?.scrollToOffset({
-          offset: (currentPage + 1) * screenHeight + screenHeight * 0.75,
-          animated: true,
-        });
-      }
-    } else {
-      // Center Zone: Toggle HUD
-      toggleControls();
-    }
-  };
+    },
+    [readerSettings.tapSidesToNavgiate, readerSettings.readerMode, readerSettings.readerDirection, screenWidth, currentPage, pages.length, goToNextPage, goToPreviousPage, goToPage]
+  );
 
   // Scroll Viewability & Progress Sync
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
@@ -1156,6 +1248,16 @@ export const ReaderScreen: React.FC = () => {
     }
   }, [readerSettings.chapterBackgroundColor, theme.background]);
 
+  // Item layout for horizontal FlatList to guarantee exact paging geometry on rotation
+  const getHorizontalItemLayout = useCallback(
+    (_: any, index: number) => ({
+      length: screenWidth,
+      offset: screenWidth * index,
+      index,
+    }),
+    [screenWidth]
+  );
+
   // Render Horizontal Page Group (Single or Double Page Spread)
   const renderHorizontalPageGroup = ({ item }: { item: PageGroup }) => {
     const horizontalPadding = readerSettings.pagePadding ? 16 : 0;
@@ -1181,6 +1283,7 @@ export const ReaderScreen: React.FC = () => {
                 onRetry={() => retrySinglePage(leftPage.pageNumber - 1)}
                 totalPages={pages.length}
                 fitMode="contain"
+                isVertical={false}
               />
             </View>
             <View style={{ width: halfWidth, height: screenHeight, justifyContent: 'center', alignItems: 'center' }}>
@@ -1193,6 +1296,7 @@ export const ReaderScreen: React.FC = () => {
                 onRetry={() => retrySinglePage(rightPage.pageNumber - 1)}
                 totalPages={pages.length}
                 fitMode="contain"
+                isVertical={false}
               />
             </View>
           </View>
@@ -1213,6 +1317,7 @@ export const ReaderScreen: React.FC = () => {
           onRetry={() => retrySinglePage(singlePage.pageNumber - 1)}
           totalPages={pages.length}
           fitMode="contain"
+          isVertical={false}
         />
       </View>
     );
@@ -1234,6 +1339,7 @@ export const ReaderScreen: React.FC = () => {
           onRetry={() => retrySinglePage(item.pageNumber - 1)}
           totalPages={pages.length}
           fitMode="contain"
+          isVertical={true}
         />
       </View>
     );
@@ -1294,6 +1400,7 @@ export const ReaderScreen: React.FC = () => {
           showsHorizontalScrollIndicator={false}
           onViewableItemsChanged={onViewableItemsChanged}
           viewabilityConfig={viewabilityConfig}
+          getItemLayout={getHorizontalItemLayout}
           initialNumToRender={3}
           maxToRenderPerBatch={4}
           windowSize={5}
@@ -1349,7 +1456,7 @@ export const ReaderScreen: React.FC = () => {
       {readerSettings.readerMode === 'longStrip' && !showControls && (
         <View style={styles.floatingPageIndicator}>
           <Text style={styles.floatingPageText}>
-            {currentPage + 1} / {pages.length}
+            {getPageIndicatorText()}
           </Text>
         </View>
       )}
@@ -1427,16 +1534,26 @@ export const ReaderScreen: React.FC = () => {
             <Ionicons name="chevron-back" size={20} color="#fff" />
           </TouchableOpacity>
 
-          <View style={styles.scrubberTrack}>
-            <View
-              style={[
-                styles.scrubberProgress,
-                {
-                  width: `${pages.length > 0 ? ((currentPage + 1) / pages.length) * 100 : 0}%`,
-                  backgroundColor: theme.primary,
-                },
-              ]}
-            />
+          <View
+            style={styles.scrubberTouchArea}
+            onLayout={(e) => setScrubberTrackWidth(e.nativeEvent.layout.width)}
+            onStartShouldSetResponder={() => true}
+            onMoveShouldSetResponder={() => true}
+            onResponderGrant={handleScrubberTouch}
+            onResponderMove={handleScrubberTouch}
+          >
+            <View style={styles.scrubberTrack}>
+              <View
+                style={[
+                  styles.scrubberProgress,
+                  {
+                    width: `${pages.length > 0 ? ((currentPage + 1) / pages.length) * 100 : 0}%`,
+                    backgroundColor: theme.primary,
+                    alignSelf: isRtl ? 'flex-end' : 'flex-start',
+                  },
+                ]}
+              />
+            </View>
           </View>
 
           <TouchableOpacity
@@ -1466,7 +1583,7 @@ export const ReaderScreen: React.FC = () => {
 
           <View style={styles.pageIndicator}>
             <Text style={styles.pageIndicatorText}>
-              {currentPage + 1} / {pages.length}
+              {getPageIndicatorText()}
             </Text>
           </View>
 
@@ -1716,8 +1833,12 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: 'rgba(255,255,255,0.1)',
   },
-  scrubberTrack: {
+  scrubberTouchArea: {
     flex: 1,
+    height: 36,
+    justifyContent: 'center',
+  },
+  scrubberTrack: {
     height: 4,
     backgroundColor: 'rgba(255,255,255,0.2)',
     borderRadius: 2,

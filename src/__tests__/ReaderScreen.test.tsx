@@ -248,4 +248,17 @@ describe('ReaderScreen Progress Saving', () => {
       });
     }
   });
+
+  it('renders interactive scrubber track elements', async () => {
+    const { getChapterPages } = require('../services/sourceService');
+    getChapterPages.mockResolvedValueOnce([
+      'https://image.chiraitori.io.vn/image/1',
+      'https://image.chiraitori.io.vn/image/2',
+    ]);
+
+    const { findByText } = render(<TestReaderScreen />);
+    const indicator = await findByText('1 / 2');
+    expect(indicator).toBeTruthy();
+  });
 });
+
