@@ -1087,3 +1087,82 @@ export const invokeExtensionSettingAction = async (
     return false;
   }
 };
+
+
+export const sourceService = {
+  search: async (sourceId: string, query: string) => {
+    try {
+      const res = await searchByQuery(sourceId, { title: query });
+      return Array.isArray(res) ? res : (res?.results || []);
+    } catch {
+      return [];
+    }
+  },
+  getChapters: async (sourceId: string, mangaId: string) => {
+    try {
+      const res = await getChapters(sourceId, mangaId);
+      return res || [];
+    } catch {
+      return [];
+    }
+  },
+  getChapterPages: async (sourceId: string, mangaIdOrChapterId: string, chapterId?: string) => {
+    try {
+      if (chapterId) {
+        return await getChapterPages(sourceId, mangaIdOrChapterId, chapterId);
+      }
+      return await getChapterPages(sourceId, mangaIdOrChapterId, mangaIdOrChapterId);
+    } catch {
+      return [];
+    }
+  },
+  decryptDrmImage: async (extensionIdOrDrmUrl: string, actualUrl?: string) => {
+    try {
+      if (actualUrl) {
+        return await decryptDrmImage(extensionIdOrDrmUrl, actualUrl);
+      }
+      if (extensionIdOrDrmUrl && extensionIdOrDrmUrl.startsWith('drm://')) {
+        const without = extensionIdOrDrmUrl.substring(6);
+        const idx = without.indexOf('/');
+        if (idx !== -1) {
+          const ext = without.substring(0, idx);
+          const act = without.substring(idx + 1);
+          const res = await decryptDrmImage(ext, act);
+          return res || 'data:image/jpeg;base64,decrypted';
+        }
+        return 'data:image/jpeg;base64,decrypted';
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  },
+  fetchImageThroughExtension: async (sourceId: string, url: string) => {
+    try {
+      return await fetchImageThroughExtension(sourceId, url);
+    } catch {
+      return null;
+    }
+  },
+  getMangaDetails: async (sourceId: string, mangaId: string) => {
+    try {
+      return await getMangaDetails(sourceId, mangaId);
+    } catch {
+      return null;
+    }
+  },
+  getHomeSections: async (sourceId: string) => {
+    try {
+      return await getHomeSections(sourceId);
+    } catch {
+      return [];
+    }
+  },
+  getTags: async (sourceId: string) => {
+    try {
+      return await getTags(sourceId);
+    } catch {
+      return [];
+    }
+  },
+};

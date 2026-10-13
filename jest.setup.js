@@ -129,6 +129,11 @@ jest.mock('expo-constants', () => ({
   },
 }));
 
+jest.mock('expo-intent-launcher', () => ({
+  startActivityAsync: jest.fn().mockResolvedValue({}),
+  ActivityAction: {},
+}));
+
 // Silence console warnings during tests
 const originalWarn = console.warn;
 console.warn = (...args) => {

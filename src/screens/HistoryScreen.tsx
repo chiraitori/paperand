@@ -89,14 +89,25 @@ export const HistoryScreen: React.FC = () => {
     // NOTE: No cleanup - requires app restart to disable (to avoid async race conditions)
   }, [settings.historyAuth]);
 
-  // Filter and sort by last read
-  const readingHistory = library
-    .filter(entry => entry.progress !== null)
-    .sort((a, b) => {
-      const dateA = new Date(a.progress?.lastRead || 0);
-      const dateB = new Date(b.progress?.lastRead || 0);
-      return dateB.getTime() - dateA.getTime();
-    });
+  // Reload settings on screen focus (e.g. after toggling incognito mode in Settings)
+  useFocusEffect(
+    useCallback(() => {
+      getGeneralSettings().then((loaded) => {
+        setSettings(loaded);
+      });
+    }, [])
+  );
+
+  // Filter and sort by last read (Paperback Incognito mode: hidden from history when hideReadHistory is enabled)
+  const readingHistory = settings.hideReadHistory
+    ? []
+    : library
+        .filter(entry => entry.progress !== null)
+        .sort((a, b) => {
+          const dateA = new Date(a.progress?.lastRead || 0);
+          const dateB = new Date(b.progress?.lastRead || 0);
+          return dateB.getTime() - dateA.getTime();
+        });
 
   const handleClearHistory = () => {
     showDialog(

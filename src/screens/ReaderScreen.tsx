@@ -39,6 +39,7 @@ import {
   decryptDrmImage,
   getMangaShareUrl,
   getCloudflareBypassRequest,
+  fetchImageThroughExtension,
 } from '../services/sourceService';
 import { cacheChapterPages } from '../services/cacheService';
 import {
@@ -120,8 +121,8 @@ const getImageRequestHeaders = (uri: string): Record<string, string> | undefined
   }
 };
 
-// Preload a single page
-const preloadSinglePage = async (page: Page): Promise<PreloadedPage> => {
+// Preload a single page with optional source extension fallback
+const preloadSinglePage = async (page: Page, sourceId?: string): Promise<PreloadedPage> => {
   const drmInfo = parseDrmUrl(page.imageUrl);
 
   if (drmInfo) {
@@ -147,6 +148,14 @@ const preloadSinglePage = async (page: Page): Promise<PreloadedPage> => {
       }
       return { ...page, resolvedUrl: page.imageUrl, preloaded: true, loading: false, error: false };
     } catch {
+      if (sourceId) {
+        try {
+          const extImage = await fetchImageThroughExtension(sourceId, page.imageUrl);
+          if (extImage) {
+            return { ...page, resolvedUrl: extImage, preloaded: true, loading: false, error: false };
+          }
+        } catch {}
+      }
       return { ...page, resolvedUrl: page.imageUrl, preloaded: true, loading: false, error: false };
     }
   }
@@ -300,7 +309,8 @@ const PageImageElement: React.FC<{
   totalPages: number;
   fitMode?: 'contain' | 'cover';
   isVertical?: boolean;
-}> = ({ page, targetWidth, targetHeight, onPress, onLongPress, onRetry, totalPages, fitMode = 'contain', isVertical = false }) => {
+  downsamplePages?: boolean;
+}> = ({ page, targetWidth, targetHeight, onPress, onLongPress, onRetry, totalPages, fitMode = 'contain', isVertical = false, downsamplePages = true }) => {
   const [imgHeight, setImgHeight] = useState(targetHeight);
   const [loadError, setLoadError] = useState(page.error || false);
   const [internalLoading, setInternalLoading] = useState(page.loading ?? false);
@@ -370,6 +380,7 @@ const PageImageElement: React.FC<{
         source={imageSource}
         style={{ width: targetWidth, height: isVertical ? imgHeight : targetHeight }}
         resizeMode={fitMode}
+        resizeMethod={downsamplePages ? 'resize' : 'scale'}
         onError={() => {
           console.warn('[Reader] Error rendering page:', page.pageNumber);
           setLoadError(true);
@@ -785,14 +796,23 @@ export const ReaderScreen: React.FC = () => {
         return next;
       });
 
-      const reloaded = await preloadSinglePage(pageToRetry);
+      let reloaded = await preloadSinglePage(pageToRetry, sourceId);
+      if (reloaded.error && sourceId) {
+        try {
+          const extFetched = await fetchImageThroughExtension(sourceId, pageToRetry.imageUrl);
+          if (extFetched) {
+            reloaded = { ...pageToRetry, resolvedUrl: extFetched, preloaded: true, loading: false, error: false };
+          }
+        } catch {}
+      }
+
       setPages((prev) => {
         const next = [...prev];
         next[pageIndex] = { ...reloaded, retryKey: (pageToRetry.retryKey || 0) + 1 };
         return next;
       });
     },
-    [pages]
+    [pages, sourceId]
   );
 
   // Long press page -> Save or Share image
@@ -892,6 +912,20 @@ export const ReaderScreen: React.FC = () => {
     if (readerSettings.pagedDisplayMode === 'automatic') return isLandscape;
     return false;
   }, [readerSettings.readerMode, readerSettings.pagedDisplayMode, isLandscape]);
+
+  // Pillarbox calculation based on Paperback orientation setting
+  const isPillarboxed = useMemo(() => {
+    if (!readerSettings.pillarbox) return false;
+    if (readerSettings.pillarboxOrientation === 'both') return true;
+    if (readerSettings.pillarboxOrientation === 'landscape') return isLandscape;
+    if (readerSettings.pillarboxOrientation === 'portrait') return !isLandscape;
+    return false;
+  }, [readerSettings.pillarbox, readerSettings.pillarboxOrientation, isLandscape]);
+
+  const pillarboxMargin = useMemo(() => {
+    if (!isPillarboxed) return 0;
+    return isLandscape ? Math.max(36, Math.round(screenWidth * 0.12)) : 16;
+  }, [isPillarboxed, isLandscape, screenWidth]);
 
   // Build PageGroups for Double-Page Spread
   const pageGroups = useMemo<PageGroup[]>(() => {
@@ -1261,7 +1295,7 @@ export const ReaderScreen: React.FC = () => {
   // Render Horizontal Page Group (Single or Double Page Spread)
   const renderHorizontalPageGroup = ({ item }: { item: PageGroup }) => {
     const horizontalPadding = readerSettings.pagePadding ? 16 : 0;
-    const containerWidth = screenWidth - horizontalPadding;
+    const containerWidth = screenWidth - (pillarboxMargin * 2) - horizontalPadding;
 
     if (item.isDouble && item.pages.length === 2) {
       const halfWidth = containerWidth / 2;
@@ -1284,6 +1318,7 @@ export const ReaderScreen: React.FC = () => {
                 totalPages={pages.length}
                 fitMode="contain"
                 isVertical={false}
+                downsamplePages={readerSettings.downsamplePages}
               />
             </View>
             <View style={{ width: halfWidth, height: screenHeight, justifyContent: 'center', alignItems: 'center' }}>
@@ -1297,6 +1332,7 @@ export const ReaderScreen: React.FC = () => {
                 totalPages={pages.length}
                 fitMode="contain"
                 isVertical={false}
+                downsamplePages={readerSettings.downsamplePages}
               />
             </View>
           </View>
@@ -1318,6 +1354,7 @@ export const ReaderScreen: React.FC = () => {
           totalPages={pages.length}
           fitMode="contain"
           isVertical={false}
+          downsamplePages={readerSettings.downsamplePages}
         />
       </View>
     );
@@ -1326,10 +1363,17 @@ export const ReaderScreen: React.FC = () => {
   // Render Vertical Single Page
   const renderVerticalPage = ({ item }: { item: PreloadedPage }) => {
     const horizontalPadding = readerSettings.pagePadding ? 16 : 0;
-    const targetWidth = screenWidth - horizontalPadding;
+    const targetWidth = screenWidth - (pillarboxMargin * 2) - horizontalPadding;
 
     return (
-      <View style={{ width: screenWidth, alignItems: 'center', backgroundColor: readerBgColor }}>
+      <View
+        style={{
+          width: screenWidth,
+          alignItems: 'center',
+          backgroundColor: readerBgColor,
+          marginBottom: readerSettings.pagePadding ? 12 : 0,
+        }}
+      >
         <PageImageElement
           page={item}
           targetWidth={targetWidth}
@@ -1340,6 +1384,7 @@ export const ReaderScreen: React.FC = () => {
           totalPages={pages.length}
           fitMode="contain"
           isVertical={true}
+          downsamplePages={readerSettings.downsamplePages}
         />
       </View>
     );
@@ -1392,6 +1437,7 @@ export const ReaderScreen: React.FC = () => {
       {readerSettings.readerMode === 'horizontal' ? (
         <FlatList
           ref={flatListRef}
+          key={`reader-h-${isLandscape ? 'land' : 'port'}-${isDoublePageMode ? 'double' : 'single'}`}
           data={pageGroups}
           renderItem={renderHorizontalPageGroup}
           keyExtractor={(item) => item.id}
@@ -1407,10 +1453,12 @@ export const ReaderScreen: React.FC = () => {
           removeClippedSubviews={false}
           bounces
           scrollEventThrottle={16}
+          extraData={{ screenWidth, screenHeight, isLandscape, isDoublePageMode, isPillarboxed }}
         />
       ) : (
         <FlatList
           ref={flatListRef}
+          key={`reader-v-${isLandscape ? 'land' : 'port'}`}
           data={pages}
           renderItem={renderVerticalPage}
           keyExtractor={(item) => item.id}
@@ -1422,6 +1470,7 @@ export const ReaderScreen: React.FC = () => {
           maxToRenderPerBatch={5}
           windowSize={7}
           removeClippedSubviews={false}
+          extraData={{ screenWidth, screenHeight, isLandscape, isPillarboxed }}
           ListHeaderComponent={
             <ChapterTransition
               type="previous"

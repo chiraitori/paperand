@@ -17,6 +17,7 @@ interface MangaCardProps {
   onLongPress?: () => void; // For preview popup
   compact?: boolean;
   columns?: number; // Dynamic column count from settings
+  width?: number; // Optional explicit width
 }
 
 const PADDING = 32; // Total horizontal padding
@@ -28,17 +29,21 @@ export const MangaCard: React.FC<MangaCardProps> = ({
   onLongPress,
   compact = false,
   columns,
+  width: customWidth,
 }) => {
   const { theme } = useTheme();
-  const { width } = useWindowDimensions();
+  const { width: windowWidth } = useWindowDimensions();
 
-  // Calculate card width based on columns prop or default
+  // Calculate card width based on customWidth, columns prop, or default
   const getCardWidth = () => {
+    if (customWidth !== undefined && customWidth > 0) {
+      return customWidth;
+    }
     if (columns && columns > 0) {
-      return (width - PADDING - GAP * (columns - 1)) / columns;
+      return (windowWidth - PADDING - GAP * (columns - 1)) / columns;
     }
     // Fallback to old behavior
-    return compact ? (width - 48) / 2 : (width - 48) / 3;
+    return compact ? (windowWidth - 48) / 2 : (windowWidth - 48) / 3;
   };
 
   const cardWidth = getCardWidth();

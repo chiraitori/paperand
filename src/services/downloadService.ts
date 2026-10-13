@@ -64,20 +64,69 @@ class DownloadService {
         }
     }
 
-    private ensureDirectoryExists() {
-        if (!this.downloadsDir.exists) {
-            this.downloadsDir.create();
+    public async ensureDirectoryExists(): Promise<void> {
+        try {
+            if (!this.downloadsDir.exists) {
+                this.downloadsDir.create();
+            }
+        } catch (e) {
+            console.error('Failed to ensure downloads directory:', e);
         }
     }
 
-    async getDownloadedChapters(): Promise<DownloadedChapter[]> {
+    async getDownloadedChapters(mangaId?: string): Promise<DownloadedChapter[]> {
         try {
             const stored = await AsyncStorage.getItem(METADATA_KEY);
-            return stored ? JSON.parse(stored) : [];
+            const chapters: DownloadedChapter[] = stored ? JSON.parse(stored) : [];
+            if (mangaId) {
+                return chapters.filter(c => c.mangaId === mangaId);
+            }
+            return chapters;
         } catch (error) {
             console.error('Failed to load downloaded chapters:', error);
             return [];
         }
+    }
+
+    async isDownloaded(mangaId: string, chapterId: string): Promise<boolean> {
+        const chapters = await this.getDownloadedChapters(mangaId);
+        return chapters.some(c => c.chapterId === chapterId);
+    }
+
+    async clearQueue(): Promise<void> {
+        this.pendingQueue = [];
+        this.downloadQueue = [];
+        this.notifyListeners();
+    }
+
+    async removeDownload(chapterId: string): Promise<void> {
+        await this.deleteChapter(chapterId);
+    }
+
+    getDownloadProgress(chapterId: string): number {
+        const job = this.downloadQueue.find(j => j.chapterId === chapterId);
+        if (!job || !job.total) return 0;
+        return (job.progress / job.total) * 100;
+    }
+
+    onQueueChanged(listener: (queue: DownloadJob[]) => void) {
+        return this.subscribe(listener);
+    }
+
+    async pauseDownloads(): Promise<void> {
+        this.isPaused = true;
+    }
+
+    async resumeDownloads(): Promise<void> {
+        this.isPaused = false;
+    }
+
+    async addToQueue(
+        manga: { id: string; title: string; coverImage: string; source?: string },
+        chapter: any,
+        onProgress?: (progress: number) => void
+    ): Promise<void> {
+        return this.downloadChapter(manga, chapter, onProgress);
     }
 
     private async saveDownloadedChapters(chapters: DownloadedChapter[]) {
@@ -126,9 +175,10 @@ class DownloadService {
     }
 
     // Cancel a specific download
-    cancelDownload(chapterId: string) {
+    async cancelDownload(chapterId: string): Promise<void> {
         // Mark as cancelled
         this.cancelledDownloads.add(chapterId);
+        delete this.activeDownloads[chapterId];
         
         // Remove from pending queue
         this.pendingQueue = this.pendingQueue.filter(p => p.chapter.id !== chapterId);
@@ -139,6 +189,10 @@ class DownloadService {
             this.downloadQueue.splice(index, 1);
             this.notifyListeners();
         }
+    }
+
+    getDownloadQueue(): DownloadJob[] {
+        return this.downloadQueue;
     }
 
     // Pause all downloads

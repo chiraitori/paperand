@@ -89,7 +89,7 @@ describe('Source Service', () => {
   describe('Image Operations', () => {
     it('should decrypt DRM images', async () => {
       const image = await sourceService.decryptDrmImage('drm://encrypted-image-data');
-      expect(typeof image === 'string' || image instanceof Uint8Array).toBe(true);
+      expect(typeof image === 'string' || (image as any) instanceof Uint8Array).toBe(true);
     });
 
     it('should handle invalid DRM data', async () => {
@@ -117,7 +117,7 @@ describe('Source Service', () => {
     it('should include manga metadata', async () => {
       const details = await sourceService.getMangaDetails('source-id', 'manga-id');
       if (details) {
-        expect(details.id !== undefined || details.title !== undefined).toBe(true);
+        expect(details.id !== undefined || (details as any).title !== undefined || details.titles !== undefined).toBe(true);
       }
     });
 

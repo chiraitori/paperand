@@ -108,11 +108,8 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
   };
 
   const updateProgress = async (progress: ReadingProgress, manga?: Manga) => {
-    // Paperback Incognito Mode: Do not record reading progress or add to history
+    // Paperback Incognito Mode: Chapter progress is still tracked even when hideReadHistory is enabled
     const settings = await getGeneralSettings();
-    if (settings.hideReadHistory) {
-      return;
-    }
 
     // Paperback ChapterProgressCompletionCondition: onReachingEnd | onChapterOpen | onReaching80Percent
     const isCompleted = (() => {

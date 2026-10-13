@@ -141,14 +141,6 @@ export const CreditsScreen: React.FC = () => {
               <Text style={[styles.linkText, { color: theme.text }]}>{t('more.github')}</Text>
               <Ionicons name="open-outline" size={20} color={theme.textSecondary} />
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.linkItem, { borderBottomColor: theme.border }]}
-              onPress={() => showDialog(t('credits.discordAlert'), t('credits.discordMessage'))}
-            >
-              <Ionicons name="logo-discord" size={24} color={theme.text} />
-              <Text style={[styles.linkText, { color: theme.text }]}>{t('credits.discord')}</Text>
-              <Ionicons name="open-outline" size={20} color={theme.textSecondary} />
-            </TouchableOpacity>
           </>
         )}
 

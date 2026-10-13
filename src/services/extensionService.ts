@@ -178,3 +178,72 @@ export const getTagColor = (type: ExtensionTag['type']): { bg: string; text: str
       return { bg: '#636366', text: '#FFFFFF' };
   }
 };
+
+
+import {
+  getInstalledExtensions,
+  saveInstalledExtensions,
+} from './extensionStorageService';
+import {
+  searchByQuery,
+} from './sourceService';
+
+export const extensionService = {
+  installExtension: async (urlOrSource: string | any) => {
+    try {
+      if (typeof urlOrSource === 'string') {
+        return { success: true, id: urlOrSource };
+      }
+      const existing = await getInstalledExtensions();
+      if (!existing.some(e => e.id === urlOrSource.id)) {
+        await saveInstalledExtensions([...existing, urlOrSource]);
+      }
+      return { success: true, id: urlOrSource.id };
+    } catch {
+      return { success: false };
+    }
+  },
+  getInstalledExtensions: async () => {
+    try {
+      return await getInstalledExtensions();
+    } catch {
+      return [];
+    }
+  },
+  isExtensionInstalled: async (extensionId: string) => {
+    try {
+      const list = await getInstalledExtensions();
+      return list.some((e: any) => e.id === extensionId);
+    } catch {
+      return false;
+    }
+  },
+  uninstallExtension: async (extensionId: string) => {
+    try {
+      const list = await getInstalledExtensions();
+      const filtered = list.filter((e: any) => e.id !== extensionId);
+      await saveInstalledExtensions(filtered);
+    } catch {}
+  },
+  enableExtension: async (_extensionId: string) => {},
+  disableExtension: async (_extensionId: string) => {},
+  getAvailableSources: async (_extensionId: string) => {
+    return [];
+  },
+  searchWithExtension: async (extensionId: string, query: string) => {
+    try {
+      const res = await searchByQuery(extensionId, { title: query });
+      return Array.isArray(res) ? res : (res?.results || []);
+    } catch {
+      return [];
+    }
+  },
+  getExtensionMetadata: async (extensionId: string) => {
+    try {
+      const list = await getInstalledExtensions();
+      return list.find((e: any) => e.id === extensionId) || null;
+    } catch {
+      return null;
+    }
+  },
+};

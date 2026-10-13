@@ -456,3 +456,61 @@ export const formatBytes = (bytes: number): string => {
 export const canAutoInstall = (): boolean => {
   return Platform.OS === 'android';
 };
+
+export const updateService = {
+  checkForUpdates: async (force: boolean = true) => checkForUpdate(force),
+  getCurrentVersion: async () => getCurrentVersion(),
+  getLatestVersion: async () => {
+    const res = await checkForUpdate(true);
+    return res.latestRelease?.version || null;
+  },
+  hasUpdateAvailable: async () => {
+    const res = await checkForUpdate(true);
+    return res.hasUpdate;
+  },
+  isNewerVersion: (v1: string, v2: string) => {
+    try {
+      return compareVersions(v1, v2) > 0;
+    } catch {
+      return false;
+    }
+  },
+  saveLastCheckedTime: async () => markUpdateChecked(),
+  getLastCheckedTime: async () => {
+    try {
+      const val = await AsyncStorage.getItem(STORAGE_KEYS.LAST_CHECK_TIME);
+      return val ? parseInt(val, 10) : null;
+    } catch {
+      return null;
+    }
+  },
+  dismissUpdateModal: async () => {
+    try {
+      await AsyncStorage.setItem('@update_modal_dismissed', 'true');
+    } catch {}
+  },
+  isUpdateModalDismissed: async (): Promise<boolean> => {
+    try {
+      const val = await AsyncStorage.getItem('@update_modal_dismissed');
+      return val === 'true';
+    } catch {
+      return false;
+    }
+  },
+  parseVersion: (version: string) => {
+    const clean = (version || '').replace(/^v/, '');
+    const [core, ...meta] = clean.split(/[-+]/);
+    const parts = (core || '').split('.').map((n) => parseInt(n, 10) || 0);
+    return {
+      major: parts[0] || 0,
+      minor: parts[1] || 0,
+      patch: parts[2] || 0,
+      tag: meta.join('-'),
+    };
+  },
+  skipVersion: async (version: string) => skipVersion(version),
+  isVersionSkipped: async (version: string) => isVersionSkipped(version),
+  resetSkippedVersion: async () => clearSkippedVersion(),
+};
+
+
