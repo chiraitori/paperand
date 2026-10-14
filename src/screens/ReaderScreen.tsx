@@ -73,6 +73,9 @@ const parseDrmUrl = (url: string): { extensionId: string; actualUrl: string } | 
   };
 };
 
+// Shared aspect ratio cache across pages & mounts (URL -> height/width aspect ratio)
+const pageDimensionsCache = new Map<string, number>();
+
 export interface PreloadedPage extends Page {
   resolvedUrl: string;
   preloaded: boolean;
@@ -80,6 +83,7 @@ export interface PreloadedPage extends Page {
   error?: boolean;
   errorMessage?: string;
   retryKey?: number;
+  aspectRatio?: number;
 }
 
 // Page group for double-page spreads
@@ -299,7 +303,7 @@ const InfoModal: React.FC<{
 };
 
 // Single Image Element with Loading State, Error State, and Direct Retry
-const PageImageElement: React.FC<{
+const PageImageElementComponent: React.FC<{
   page: PreloadedPage;
   targetWidth: number;
   targetHeight: number;
@@ -310,11 +314,37 @@ const PageImageElement: React.FC<{
   fitMode?: 'contain' | 'cover';
   isVertical?: boolean;
   downsamplePages?: boolean;
-}> = ({ page, targetWidth, targetHeight, onPress, onLongPress, onRetry, totalPages, fitMode = 'contain', isVertical = false, downsamplePages = true }) => {
-  const [imgHeight, setImgHeight] = useState(targetHeight);
+}> = ({
+  page,
+  targetWidth,
+  targetHeight,
+  onPress,
+  onLongPress,
+  onRetry,
+  totalPages,
+  fitMode = 'contain',
+  isVertical = false,
+  downsamplePages = true,
+}) => {
+  const url = page.resolvedUrl || page.imageUrl;
+  const cachedAspect = page.aspectRatio || (url ? pageDimensionsCache.get(url) : undefined);
+  // Default aspect ratio for standard manga is ~1.42 (B6 tankobon)
+  const initialHeight = isVertical
+    ? (cachedAspect ? Math.round(targetWidth * cachedAspect) : Math.round(targetWidth * 1.42))
+    : targetHeight;
+
+  const [imgHeight, setImgHeight] = useState(initialHeight);
   const [loadError, setLoadError] = useState(page.error || false);
   const [internalLoading, setInternalLoading] = useState(page.loading ?? false);
-  const requestHeaders = getImageRequestHeaders(page.resolvedUrl);
+  const requestHeaders = useMemo(() => getImageRequestHeaders(page.resolvedUrl), [page.resolvedUrl]);
+
+  // Use refs for stable event handlers to avoid re-renders when parent recreation happens
+  const onPressRef = useRef(onPress);
+  onPressRef.current = onPress;
+  const onLongPressRef = useRef(onLongPress);
+  onLongPressRef.current = onLongPress;
+  const onRetryRef = useRef(onRetry);
+  onRetryRef.current = onRetry;
 
   useEffect(() => {
     if (page.error) {
@@ -329,17 +359,24 @@ const PageImageElement: React.FC<{
         setImgHeight(targetHeight);
         setInternalLoading(false);
       } else {
+        const existing = pageDimensionsCache.get(page.resolvedUrl) || page.aspectRatio;
+        if (existing) {
+          setImgHeight(Math.round(targetWidth * existing));
+          setInternalLoading(false);
+          return;
+        }
         Image.getSize(
           page.resolvedUrl,
           (w, h) => {
-            if (w > 0) {
+            if (w > 0 && h > 0) {
               const aspect = h / w;
-              setImgHeight(targetWidth * aspect);
+              pageDimensionsCache.set(page.resolvedUrl, aspect);
+              page.aspectRatio = aspect;
+              setImgHeight(Math.round(targetWidth * aspect));
             }
             setInternalLoading(false);
           },
           () => {
-            setImgHeight(targetHeight);
             setInternalLoading(false);
           }
         );
@@ -349,7 +386,11 @@ const PageImageElement: React.FC<{
 
   if (page.loading || internalLoading) {
     return (
-      <TouchableOpacity activeOpacity={1} onPress={onPress} style={[styles.pagePlaceholder, { width: targetWidth, height: isVertical ? targetHeight * 0.75 : targetHeight }]}>
+      <TouchableOpacity
+        activeOpacity={1}
+        onPress={(e) => onPressRef.current(e)}
+        style={[styles.pagePlaceholder, { width: targetWidth, height: isVertical ? imgHeight : targetHeight }]}
+      >
         <ActivityIndicator size="large" color="#FA6432" />
         <Text style={styles.pagePlaceholderText}>
           {t('reader.loadingPage', { page: page.pageNumber, total: totalPages })}
@@ -360,10 +401,14 @@ const PageImageElement: React.FC<{
 
   if (loadError || page.error) {
     return (
-      <TouchableOpacity activeOpacity={1} onPress={onPress} style={[styles.pagePlaceholder, { width: targetWidth, height: isVertical ? targetHeight * 0.75 : targetHeight }]}>
+      <TouchableOpacity
+        activeOpacity={1}
+        onPress={(e) => onPressRef.current(e)}
+        style={[styles.pagePlaceholder, { width: targetWidth, height: isVertical ? imgHeight : targetHeight }]}
+      >
         <Ionicons name="image-outline" size={48} color="#555" />
         <Text style={styles.pageErrorText}>{t('reader.failedToLoadPage', { page: page.pageNumber })}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={onRetry} activeOpacity={0.7}>
+        <TouchableOpacity style={styles.retryButton} onPress={() => onRetryRef.current()} activeOpacity={0.7}>
           <Ionicons name="refresh" size={16} color="#fff" />
           <Text style={styles.retryButtonText}>{t('common.retry')}</Text>
         </TouchableOpacity>
@@ -374,7 +419,12 @@ const PageImageElement: React.FC<{
   const imageSource = requestHeaders ? { uri: page.resolvedUrl, headers: requestHeaders } : { uri: page.resolvedUrl };
 
   return (
-    <TouchableOpacity activeOpacity={1} onPress={onPress} onLongPress={onLongPress} delayLongPress={450}>
+    <TouchableOpacity
+      activeOpacity={1}
+      onPress={(e) => onPressRef.current(e)}
+      onLongPress={() => onLongPressRef.current()}
+      delayLongPress={450}
+    >
       <Image
         key={`page-img-${page.pageNumber}-${page.retryKey || 0}`}
         source={imageSource}
@@ -389,6 +439,23 @@ const PageImageElement: React.FC<{
     </TouchableOpacity>
   );
 };
+
+const PageImageElement = React.memo(PageImageElementComponent, (prev, next) => {
+  return (
+    prev.page.id === next.page.id &&
+    prev.page.resolvedUrl === next.page.resolvedUrl &&
+    prev.page.preloaded === next.page.preloaded &&
+    prev.page.loading === next.page.loading &&
+    prev.page.error === next.page.error &&
+    prev.page.retryKey === next.page.retryKey &&
+    prev.targetWidth === next.targetWidth &&
+    prev.targetHeight === next.targetHeight &&
+    prev.isVertical === next.isVertical &&
+    prev.fitMode === next.fitMode &&
+    prev.downsamplePages === next.downsamplePages &&
+    prev.totalPages === next.totalPages
+  );
+});
 
 // Chapter Transition Component
 const ChapterTransition: React.FC<{
@@ -699,23 +766,26 @@ export const ReaderScreen: React.FC = () => {
             });
           }
 
+          const existingManga = library.find((e) => e.manga.id === mangaId)?.manga;
           const mangaData: Manga = {
             id: mangaId,
-            title: mangaDetails?.titles?.[0] || 'Unknown Manga',
-            author: mangaDetails?.author || '',
-            description: mangaDetails?.desc || '',
-            coverImage: mangaDetails?.image || '',
-            genres: genres,
-            status: mangaDetails?.status?.toLowerCase() || 'ongoing',
-            chapters: chaptersData.map((ch) => ({
-              id: ch.id,
-              mangaId: mangaId,
-              number: ch.chapNum,
-              title: ch.name || `Chapter ${ch.chapNum}`,
-              pages: [],
-              releaseDate: ch.time || new Date().toISOString(),
-              isRead: false,
-            })),
+            title: mangaDetails?.titles?.[0] || existingManga?.title || (mangaId ? `Manga ${mangaId}` : ''),
+            author: mangaDetails?.author || existingManga?.author || '',
+            description: mangaDetails?.desc || existingManga?.description || '',
+            coverImage: mangaDetails?.image || existingManga?.coverImage || '',
+            genres: genres.length > 0 ? genres : (existingManga?.genres || []),
+            status: mangaDetails?.status?.toLowerCase() || existingManga?.status || 'ongoing',
+            chapters: chaptersData.length > 0
+              ? chaptersData.map((ch) => ({
+                  id: ch.id,
+                  mangaId: mangaId,
+                  number: ch.chapNum,
+                  title: ch.name || `Chapter ${ch.chapNum}`,
+                  pages: [],
+                  releaseDate: ch.time || new Date().toISOString(),
+                  isRead: false,
+                }))
+              : (existingManga?.chapters || []),
             lastUpdated: new Date().toISOString(),
             source: sourceId,
           };
@@ -1308,6 +1378,23 @@ export const ReaderScreen: React.FC = () => {
   );
 
   // Scroll Viewability & Progress Sync
+  const saveProgressTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const pendingPageRef = useRef<number | null>(null);
+  const saveProgressRef = useRef(saveProgress);
+  saveProgressRef.current = saveProgress;
+
+  // Flush pending progress on unmount or before navigating
+  useEffect(() => {
+    return () => {
+      if (saveProgressTimeoutRef.current) {
+        clearTimeout(saveProgressTimeoutRef.current);
+      }
+      if (pendingPageRef.current !== null) {
+        saveProgressRef.current(pendingPageRef.current);
+      }
+    };
+  }, []);
+
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
     if (isModeSwitchingRef.current) return;
     if (viewableItems && viewableItems.length > 0) {
@@ -1320,7 +1407,17 @@ export const ReaderScreen: React.FC = () => {
           newPage = (item as PreloadedPage).pageNumber - 1;
         }
         setCurrentPage(newPage);
-        saveProgress(newPage);
+        pendingPageRef.current = newPage;
+
+        if (saveProgressTimeoutRef.current) {
+          clearTimeout(saveProgressTimeoutRef.current);
+        }
+        saveProgressTimeoutRef.current = setTimeout(() => {
+          if (pendingPageRef.current !== null) {
+            saveProgressRef.current(pendingPageRef.current);
+            pendingPageRef.current = null;
+          }
+        }, 400);
       }
     }
   }).current;
@@ -1359,102 +1456,131 @@ export const ReaderScreen: React.FC = () => {
   );
 
   // Render Horizontal Page Group (Single or Double Page Spread)
-  const renderHorizontalPageGroup = ({ item }: { item: PageGroup }) => {
-    const horizontalPadding = readerSettings.pagePadding ? 16 : 0;
-    const containerWidth = screenWidth - (pillarboxMargin * 2) - horizontalPadding;
+  const renderHorizontalPageGroup = useCallback(
+    ({ item }: { item: PageGroup }) => {
+      const horizontalPadding = readerSettings.pagePadding ? 16 : 0;
+      const containerWidth = screenWidth - (pillarboxMargin * 2) - horizontalPadding;
 
-    if (item.isDouble && item.pages.length === 2) {
-      const halfWidth = containerWidth / 2;
-      const isRtl = readerSettings.readerDirection === 'rightToLeft';
-      // In RTL (Manga), the second page is on the LEFT, first page is on the RIGHT
-      const leftPage = isRtl ? item.pages[1] : item.pages[0];
-      const rightPage = isRtl ? item.pages[0] : item.pages[1];
+      if (item.isDouble && item.pages.length === 2) {
+        const halfWidth = containerWidth / 2;
+        const isRtl = readerSettings.readerDirection === 'rightToLeft';
+        // In RTL (Manga), the second page is on the LEFT, first page is on the RIGHT
+        const leftPage = isRtl ? item.pages[1] : item.pages[0];
+        const rightPage = isRtl ? item.pages[0] : item.pages[1];
 
-      return (
-        <View style={[styles.pageGroupContainer, { width: screenWidth, height: screenHeight, backgroundColor: readerBgColor }]}>
-          <View style={[styles.doublePageRow, { width: containerWidth, height: screenHeight }]}>
-            <View style={{ width: halfWidth, height: screenHeight, justifyContent: 'center', alignItems: 'center' }}>
-              <PageImageElement
-                page={leftPage}
-                targetWidth={halfWidth}
-                targetHeight={screenHeight}
-                onPress={handleReaderPress}
-                onLongPress={() => handlePageLongPress(leftPage)}
-                onRetry={() => retrySinglePage(leftPage.pageNumber - 1)}
-                totalPages={pages.length}
-                fitMode="contain"
-                isVertical={false}
-                downsamplePages={readerSettings.downsamplePages}
-              />
-            </View>
-            <View style={{ width: halfWidth, height: screenHeight, justifyContent: 'center', alignItems: 'center' }}>
-              <PageImageElement
-                page={rightPage}
-                targetWidth={halfWidth}
-                targetHeight={screenHeight}
-                onPress={handleReaderPress}
-                onLongPress={() => handlePageLongPress(rightPage)}
-                onRetry={() => retrySinglePage(rightPage.pageNumber - 1)}
-                totalPages={pages.length}
-                fitMode="contain"
-                isVertical={false}
-                downsamplePages={readerSettings.downsamplePages}
-              />
+        return (
+          <View style={[styles.pageGroupContainer, { width: screenWidth, height: screenHeight, backgroundColor: readerBgColor }]}>
+            <View style={[styles.doublePageRow, { width: containerWidth, height: screenHeight }]}>
+              <View style={{ width: halfWidth, height: screenHeight, justifyContent: 'center', alignItems: 'center' }}>
+                <PageImageElement
+                  page={leftPage}
+                  targetWidth={halfWidth}
+                  targetHeight={screenHeight}
+                  onPress={handleReaderPress}
+                  onLongPress={() => handlePageLongPress(leftPage)}
+                  onRetry={() => retrySinglePage(leftPage.pageNumber - 1)}
+                  totalPages={pages.length}
+                  fitMode="contain"
+                  isVertical={false}
+                  downsamplePages={readerSettings.downsamplePages}
+                />
+              </View>
+              <View style={{ width: halfWidth, height: screenHeight, justifyContent: 'center', alignItems: 'center' }}>
+                <PageImageElement
+                  page={rightPage}
+                  targetWidth={halfWidth}
+                  targetHeight={screenHeight}
+                  onPress={handleReaderPress}
+                  onLongPress={() => handlePageLongPress(rightPage)}
+                  onRetry={() => retrySinglePage(rightPage.pageNumber - 1)}
+                  totalPages={pages.length}
+                  fitMode="contain"
+                  isVertical={false}
+                  downsamplePages={readerSettings.downsamplePages}
+                />
+              </View>
             </View>
           </View>
+        );
+      }
+
+      // Single page in group
+      const singlePage = item.pages[0];
+      return (
+        <View style={[styles.pageGroupContainer, { width: screenWidth, height: screenHeight, backgroundColor: readerBgColor }]}>
+          <PageImageElement
+            page={singlePage}
+            targetWidth={containerWidth}
+            targetHeight={screenHeight}
+            onPress={handleReaderPress}
+            onLongPress={() => handlePageLongPress(singlePage)}
+            onRetry={() => retrySinglePage(singlePage.pageNumber - 1)}
+            totalPages={pages.length}
+            fitMode="contain"
+            isVertical={false}
+            downsamplePages={readerSettings.downsamplePages}
+          />
         </View>
       );
-    }
-
-    // Single page in group
-    const singlePage = item.pages[0];
-    return (
-      <View style={[styles.pageGroupContainer, { width: screenWidth, height: screenHeight, backgroundColor: readerBgColor }]}>
-        <PageImageElement
-          page={singlePage}
-          targetWidth={containerWidth}
-          targetHeight={screenHeight}
-          onPress={handleReaderPress}
-          onLongPress={() => handlePageLongPress(singlePage)}
-          onRetry={() => retrySinglePage(singlePage.pageNumber - 1)}
-          totalPages={pages.length}
-          fitMode="contain"
-          isVertical={false}
-          downsamplePages={readerSettings.downsamplePages}
-        />
-      </View>
-    );
-  };
+    },
+    [
+      screenWidth,
+      screenHeight,
+      pillarboxMargin,
+      readerSettings.pagePadding,
+      readerSettings.readerDirection,
+      readerSettings.downsamplePages,
+      readerBgColor,
+      pages.length,
+      handleReaderPress,
+      handlePageLongPress,
+      retrySinglePage,
+    ]
+  );
 
   // Render Vertical Single Page
-  const renderVerticalPage = ({ item }: { item: PreloadedPage }) => {
-    const horizontalPadding = readerSettings.pagePadding ? 16 : 0;
-    const targetWidth = screenWidth - (pillarboxMargin * 2) - horizontalPadding;
+  const renderVerticalPage = useCallback(
+    ({ item }: { item: PreloadedPage }) => {
+      const horizontalPadding = readerSettings.pagePadding ? 16 : 0;
+      const targetWidth = screenWidth - (pillarboxMargin * 2) - horizontalPadding;
 
-    return (
-      <View
-        style={{
-          width: screenWidth,
-          alignItems: 'center',
-          backgroundColor: readerBgColor,
-          marginBottom: readerSettings.pagePadding ? 12 : 0,
-        }}
-      >
-        <PageImageElement
-          page={item}
-          targetWidth={targetWidth}
-          targetHeight={screenHeight}
-          onPress={handleReaderPress}
-          onLongPress={() => handlePageLongPress(item)}
-          onRetry={() => retrySinglePage(item.pageNumber - 1)}
-          totalPages={pages.length}
-          fitMode="contain"
-          isVertical={true}
-          downsamplePages={readerSettings.downsamplePages}
-        />
-      </View>
-    );
-  };
+      return (
+        <View
+          style={{
+            width: screenWidth,
+            alignItems: 'center',
+            backgroundColor: readerBgColor,
+            marginBottom: readerSettings.pagePadding ? 12 : 0,
+          }}
+        >
+          <PageImageElement
+            page={item}
+            targetWidth={targetWidth}
+            targetHeight={screenHeight}
+            onPress={handleReaderPress}
+            onLongPress={() => handlePageLongPress(item)}
+            onRetry={() => retrySinglePage(item.pageNumber - 1)}
+            totalPages={pages.length}
+            fitMode="contain"
+            isVertical={true}
+            downsamplePages={readerSettings.downsamplePages}
+          />
+        </View>
+      );
+    },
+    [
+      screenWidth,
+      screenHeight,
+      pillarboxMargin,
+      readerSettings.pagePadding,
+      readerSettings.downsamplePages,
+      readerBgColor,
+      pages.length,
+      handleReaderPress,
+      handlePageLongPress,
+      retrySinglePage,
+    ]
+  );
 
   // Loading State
   if (loading && pages.length === 0) {
@@ -1513,10 +1639,11 @@ export const ReaderScreen: React.FC = () => {
           onViewableItemsChanged={onViewableItemsChanged}
           viewabilityConfig={viewabilityConfig}
           getItemLayout={getHorizontalItemLayout}
-          initialNumToRender={3}
-          maxToRenderPerBatch={4}
+          initialNumToRender={2}
+          maxToRenderPerBatch={3}
           windowSize={5}
-          removeClippedSubviews={false}
+          removeClippedSubviews={Platform.OS === 'android'}
+          updateCellsBatchingPeriod={50}
           bounces
           scrollEventThrottle={16}
           extraData={{ screenWidth, screenHeight, isLandscape, isDoublePageMode, isPillarboxed }}
@@ -1533,9 +1660,10 @@ export const ReaderScreen: React.FC = () => {
           onViewableItemsChanged={onViewableItemsChanged}
           viewabilityConfig={viewabilityConfig}
           initialNumToRender={3}
-          maxToRenderPerBatch={5}
-          windowSize={7}
-          removeClippedSubviews={false}
+          maxToRenderPerBatch={3}
+          windowSize={5}
+          removeClippedSubviews={Platform.OS === 'android'}
+          updateCellsBatchingPeriod={50}
           extraData={{ screenWidth, screenHeight, isLandscape, isPillarboxed }}
           ListHeaderComponent={
             <ChapterTransition

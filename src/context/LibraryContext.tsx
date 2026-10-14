@@ -7,6 +7,7 @@ import { getGeneralSettings } from '../services/settingsService';
 interface LibraryContextType {
   library: LibraryEntry[];
   favorites: LibraryEntry[];
+  history: LibraryEntry[];
   addToLibrary: (manga: Manga) => Promise<void>;
   removeFromLibrary: (mangaId: string) => Promise<void>;
   toggleFavorite: (mangaId: string) => Promise<void>;
@@ -36,30 +37,67 @@ const LibraryContext = createContext<LibraryContextType | undefined>(undefined);
 
 const LIBRARY_STORAGE_KEY = '@paperback_library';
 const CATEGORIES_STORAGE_KEY = '@paperback_library_categories';
+const HISTORY_STORAGE_KEY = '@reading_history';
 const DEFAULT_CATEGORIES = ['Reading', 'Plan to Read', 'Completed', 'On Hold', 'Dropped'];
 
 export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [library, setLibrary] = useState<LibraryEntry[]>([]);
+  const [history, setHistory] = useState<LibraryEntry[]>([]);
   const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
 
   useEffect(() => {
     loadLibrary();
   }, []);
 
+  const isValidEntry = (entry: any): boolean => {
+    if (!entry || !entry.manga || !entry.manga.id) return false;
+    const title = entry.manga.title?.trim();
+    if (!title || title.toLowerCase() === 'unknown manga') return false;
+    return true;
+  };
+
   const loadLibrary = async () => {
     try {
-      const [storedLib, storedCats] = await Promise.all([
+      const [storedLib, storedCats, storedHistory] = await Promise.all([
         AsyncStorage.getItem(LIBRARY_STORAGE_KEY),
         AsyncStorage.getItem(CATEGORIES_STORAGE_KEY),
+        AsyncStorage.getItem(HISTORY_STORAGE_KEY),
       ]);
 
+      let validEntries: LibraryEntry[] = [];
       if (storedLib) {
         const parsed = JSON.parse(storedLib);
-        const migrated = parsed.map((entry: any) => ({
-          ...entry,
-          readChapters: entry.readChapters || [],
-        }));
-        setLibrary(migrated);
+        if (Array.isArray(parsed)) {
+          validEntries = parsed.filter(isValidEntry).map((entry: any) => ({
+            ...entry,
+            readChapters: entry.readChapters || [],
+          }));
+          setLibrary(validEntries);
+          if (validEntries.length !== parsed.length) {
+            await AsyncStorage.setItem(LIBRARY_STORAGE_KEY, JSON.stringify(validEntries));
+          }
+        }
+      }
+
+      if (storedHistory) {
+        const parsedHist = JSON.parse(storedHistory);
+        if (Array.isArray(parsedHist)) {
+          const validHist = parsedHist.filter(isValidEntry).map((entry: any) => ({
+            ...entry,
+            readChapters: entry.readChapters || [],
+          }));
+          setHistory(validHist);
+          if (validHist.length !== parsedHist.length) {
+            await AsyncStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(validHist));
+          }
+        }
+      } else if (validEntries.length > 0) {
+        // Fallback: seed history from existing library entries that have reading progress
+        const initialHistory = validEntries.filter(e => e.progress !== null);
+        if (initialHistory.length > 0) {
+          setHistory(initialHistory);
+          await AsyncStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(initialHistory));
+        }
       }
 
       if (storedCats) {
@@ -82,7 +120,20 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
     }
   };
 
+  const saveHistory = async (newHistory: LibraryEntry[]) => {
+    try {
+      await AsyncStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(newHistory));
+      setHistory(newHistory);
+    } catch (error) {
+      console.error('Failed to save history:', error);
+    }
+  };
+
   const addToLibrary = async (manga: Manga) => {
+    if (!manga?.id || !manga.title || manga.title.toLowerCase() === 'unknown manga') return;
+    const existingEntry = library.find(e => e.manga.id === manga.id);
+    if (existingEntry) return;
+
     const entry: LibraryEntry = {
       manga,
       addedAt: new Date().toISOString(),
@@ -126,6 +177,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
 
     const existingEntry = library.find(entry => entry.manga.id === progress.mangaId);
 
+    // Only update library entry if this manga is already in the user's library
     if (existingEntry) {
       const alreadyRead = existingEntry.readChapters.includes(progress.chapterId);
       const shouldMarkRead = isCompleted && !alreadyRead;
@@ -142,15 +194,37 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
           : entry
       );
       await saveLibrary(newLibrary);
-    } else if (manga) {
-      const entry: LibraryEntry = {
-        manga,
-        addedAt: new Date().toISOString(),
-        progress,
-        isFavorite: false,
-        readChapters: isCompleted ? [progress.chapterId] : [],
-      };
-      await saveLibrary([...library, entry]);
+    }
+
+    // Update reading history (separate from library entries)
+    const targetManga = existingEntry?.manga || manga;
+    if (targetManga && targetManga.id && targetManga.title && targetManga.title.toLowerCase() !== 'unknown manga') {
+      const existingHistoryEntry = history.find(e => e.manga.id === progress.mangaId);
+      let updatedHistory: LibraryEntry[];
+      if (existingHistoryEntry) {
+        const alreadyRead = existingHistoryEntry.readChapters.includes(progress.chapterId);
+        const shouldMarkRead = isCompleted && !alreadyRead;
+        const updatedEntry: LibraryEntry = {
+          ...existingHistoryEntry,
+          manga: targetManga,
+          progress,
+          lastReadChapter: progress.chapterId,
+          readChapters: shouldMarkRead
+            ? [...existingHistoryEntry.readChapters, progress.chapterId]
+            : existingHistoryEntry.readChapters,
+        };
+        updatedHistory = [updatedEntry, ...history.filter(e => e.manga.id !== progress.mangaId)].slice(0, 100);
+      } else {
+        const newHistoryEntry: LibraryEntry = {
+          manga: targetManga,
+          addedAt: new Date().toISOString(),
+          progress,
+          isFavorite: false,
+          readChapters: isCompleted ? [progress.chapterId] : [],
+        };
+        updatedHistory = [newHistoryEntry, ...history].slice(0, 100);
+      }
+      await saveHistory(updatedHistory);
     }
   };
 
@@ -166,15 +240,6 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
         );
         await saveLibrary(newLibrary);
       }
-    } else if (manga) {
-      const entry: LibraryEntry = {
-        manga,
-        addedAt: new Date().toISOString(),
-        progress: null,
-        isFavorite: false,
-        readChapters: [chapterId],
-      };
-      await saveLibrary([...library, entry]);
     }
   };
 
@@ -226,9 +291,9 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
   };
 
   const getProgress = useCallback((mangaId: string): ReadingProgress | null => {
-    const entry = library.find(e => e.manga.id === mangaId);
+    const entry = library.find(e => e.manga.id === mangaId) || history.find(e => e.manga.id === mangaId);
     return entry?.progress || null;
-  }, [library]);
+  }, [library, history]);
 
   const isInLibrary = useCallback((mangaId: string): boolean => {
     return library.some(entry => entry.manga.id === mangaId);
@@ -240,19 +305,23 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
   }, [library]);
 
   const isChapterRead = useCallback((mangaId: string, chapterId: string): boolean => {
-    const entry = library.find(e => e.manga.id === mangaId);
+    const entry = library.find(e => e.manga.id === mangaId) || history.find(e => e.manga.id === mangaId);
     return entry?.readChapters?.includes(chapterId) || false;
-  }, [library]);
+  }, [library, history]);
 
   const getReadChapters = useCallback((mangaId: string): string[] => {
-    const entry = library.find(e => e.manga.id === mangaId);
+    const entry = library.find(e => e.manga.id === mangaId) || history.find(e => e.manga.id === mangaId);
     return entry?.readChapters || [];
-  }, [library]);
+  }, [library, history]);
 
   const clearHistory = async () => {
-    const newLibrary = library
-      .map(entry => ({ ...entry, progress: null, lastReadChapter: undefined, readChapters: [] }))
-      .filter(entry => entry.isFavorite);
+    await saveHistory([]);
+    const newLibrary = library.map(entry => ({
+      ...entry,
+      progress: null,
+      lastReadChapter: undefined,
+      readChapters: [],
+    }));
     await saveLibrary(newLibrary);
   };
 
@@ -397,6 +466,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
     <LibraryContext.Provider value={{
       library,
       favorites,
+      history,
       addToLibrary,
       removeFromLibrary,
       toggleFavorite,

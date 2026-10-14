@@ -30,7 +30,7 @@ type HistoryScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>
 
 export const HistoryScreen: React.FC = () => {
   const { theme } = useTheme();
-  const { library, clearHistory, addToLibrary, removeFromLibrary, toggleFavorite, isInLibrary, isFavorite } = useLibrary();
+  const { history, clearHistory, addToLibrary, removeFromLibrary, toggleFavorite, isInLibrary, isFavorite } = useLibrary();
   const navigation = useNavigation<HistoryScreenNavigationProp>();
   const { dialogVisible, dialogConfig, showDialog, hideDialog } = useDialog();
   const [settings, setSettings] = useState<GeneralSettings>(defaultSettings);
@@ -101,7 +101,7 @@ export const HistoryScreen: React.FC = () => {
   // Filter and sort by last read (Paperback Incognito mode: hidden from history when hideReadHistory is enabled)
   const readingHistory = settings.hideReadHistory
     ? []
-    : library
+    : (history || [])
         .filter(entry => entry.progress !== null)
         .sort((a, b) => {
           const dateA = new Date(a.progress?.lastRead || 0);
