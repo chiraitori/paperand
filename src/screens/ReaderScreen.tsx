@@ -466,22 +466,25 @@ const ChapterTransition: React.FC<{
   onNavigate: () => void;
 }> = ({ type, chapter, isLoading, onNavigate }) => {
   const isPrevious = type === 'previous';
-  const topPadding = isPrevious ? (Platform.OS === 'ios' ? 70 : (StatusBar.currentHeight || 36) + 30) : 20;
-  const bottomPadding = !isPrevious ? (Platform.OS === 'ios' ? 100 : 90) : 20;
+  const topPadding = isPrevious ? 20 : 16;
+  const bottomPadding = !isPrevious ? 24 : 16;
 
   if (!chapter) {
+    if (isPrevious) {
+      return null;
+    }
     return (
       <View style={[styles.transitionContainer, { paddingTop: topPadding, paddingBottom: bottomPadding }]}>
         <View style={styles.transitionContent}>
           <View style={styles.transitionBadge}>
             <Ionicons
-              name={isPrevious ? 'flag-outline' : 'checkmark-done-circle-outline'}
+              name="checkmark-done-circle-outline"
               size={16}
               color="#888"
               style={{ marginRight: 6 }}
             />
             <Text style={styles.transitionLabel}>
-              {isPrevious ? t('reader.noPreviousChapter') : t('reader.noNextChapter')}
+              {t('reader.noNextChapter')}
             </Text>
           </View>
         </View>
@@ -1666,13 +1669,15 @@ export const ReaderScreen: React.FC = () => {
           updateCellsBatchingPeriod={50}
           extraData={{ screenWidth, screenHeight, isLandscape, isPillarboxed }}
           ListHeaderComponent={
-            <ChapterTransition
-              type="previous"
-              chapter={previousChapter}
-              manga={manga}
-              isLoading={isTransitioning}
-              onNavigate={goToPreviousChapter}
-            />
+            previousChapter ? (
+              <ChapterTransition
+                type="previous"
+                chapter={previousChapter}
+                manga={manga}
+                isLoading={isTransitioning}
+                onNavigate={goToPreviousChapter}
+              />
+            ) : null
           }
           ListFooterComponent={
             <ChapterTransition
@@ -2226,7 +2231,7 @@ const styles = StyleSheet.create({
     zIndex: 25,
   },
   transitionContainer: {
-    minHeight: 120,
+    minHeight: 64,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#000',

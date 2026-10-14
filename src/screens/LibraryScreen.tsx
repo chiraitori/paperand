@@ -362,6 +362,7 @@ export const LibraryScreen: React.FC = () => {
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
+        style={styles.filterScrollView}
         contentContainerStyle={styles.filterContainer}
       >
         {allFilters.map(filter => (
@@ -505,7 +506,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingTop: Platform.OS === 'ios' ? 60 : 48,
-    paddingBottom: 16,
+    paddingBottom: 8,
   },
   headerActions: {
     flexDirection: 'row',
@@ -523,10 +524,14 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: 'bold',
   },
+  filterScrollView: {
+    flexGrow: 0,
+    marginBottom: 8,
+  },
   filterContainer: {
     flexDirection: 'row',
     paddingHorizontal: 16,
-    paddingBottom: 16,
+    paddingVertical: 4,
     gap: 8,
     alignItems: 'center',
   },
@@ -595,6 +600,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingHorizontal: 16,
+    paddingTop: 4,
     paddingBottom: 100,
   },
   row: {
