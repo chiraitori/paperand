@@ -612,7 +612,7 @@ export const ReaderScreen: React.FC = () => {
   const prevReaderModeRef = useRef<ReaderMode>(defaultReaderSettings.readerMode);
 
   // HUD Controls state
-  const [showControls, setShowControls] = useState(false);
+  const [showControls, setShowControls] = useState(true);
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [spotifyPickerOpen, setSpotifyPickerOpen] = useState(false);
@@ -1988,10 +1988,11 @@ export const ReaderScreen: React.FC = () => {
 
       {/* Pull-to-change-chapter hint ("RELEASE / PREVIOUS CHAPTER") */}
       {/* Paperback HUD Overlay (ChapterRendererOverlayView) */}
-      <Animated.View
-        style={[styles.topBar, { opacity: fadeAnim }]}
-        pointerEvents={showControls ? 'box-none' : 'none'}
-      >
+      {showControls && (
+        <Animated.View
+          style={[styles.topBar, { opacity: fadeAnim }]}
+          pointerEvents="box-none"
+        >
         <View style={styles.topPill}>
           <View style={styles.titleContainer}>
             <Text style={styles.mangaTitle} numberOfLines={1}>
@@ -2026,12 +2027,14 @@ export const ReaderScreen: React.FC = () => {
           <Text style={styles.infoGlyph}>i</Text>
         </TouchableOpacity>
       </Animated.View>
+      )}
 
       {/* Bottom controls: quick actions on the left, page pill on the right */}
-      <Animated.View
-        style={[styles.bottomBar, { opacity: fadeAnim }]}
-        pointerEvents={showControls ? 'box-none' : 'none'}
-      >
+      {showControls && (
+        <Animated.View
+          style={[styles.bottomBar, { opacity: fadeAnim }]}
+          pointerEvents="box-none"
+        >
         <View style={styles.bottomRow}>
           {readerSettings.chapterChangeArrows === 'left' ? (
             <View style={styles.pagePill}>
@@ -2098,6 +2101,7 @@ export const ReaderScreen: React.FC = () => {
           ) : null}
         </View>
       </Animated.View>
+      )}
 
       {/* Spotify Mini Player */}
       <Animated.View
