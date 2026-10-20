@@ -61,6 +61,8 @@ export const LibraryScreen: React.FC = () => {
   // Category modal state
   const [categoryModalVisible, setCategoryModalVisible] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [optionsMenuVisible, setOptionsMenuVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [settings, setSettings] = useState<GeneralSettings>(defaultSettings);
   const [sortType, setSortType] = useState<'name' | 'lastUpdated' | 'dateFollowed' | 'lastRead' | 'unreadChapters'>('lastUpdated');
@@ -152,7 +154,8 @@ export const LibraryScreen: React.FC = () => {
   const filteredLibrary = getFilteredLibrary();
 
   // Paperback LibraryMangaSort: name | lastUpdated | dateFollowed | lastRead | unreadChapters
-  const sortedLibrary = [...filteredLibrary].sort((a, b) => {
+  const searchedLibrary = filteredLibrary.filter(entry => !searchQuery.trim() || (entry.manga.title || '').toLowerCase().includes(searchQuery.toLowerCase().trim()));
+  const sortedLibrary = [...searchedLibrary].sort((a, b) => {
     let comparison = 0;
     switch (sortType) {
       case 'name':
@@ -317,45 +320,43 @@ export const LibraryScreen: React.FC = () => {
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.headerIconButton}
+          onPress={handleOpenLibraryUpdater}
+          accessibilityRole="button"
+          accessibilityLabel="Check library updates"
+        >
+          <Ionicons name="arrow-down-circle-outline" size={26} color="#FA233B" />
+        </TouchableOpacity>
+
         <Text style={[styles.title, { color: theme.text }]}>{t('library.title')}</Text>
-        <View style={styles.headerActions}>
-          <TouchableOpacity
-            style={[styles.headerActionButton, { backgroundColor: theme.card }]}
-            onPress={() => setSortOrder(prev => prev === 'ascending' ? 'descending' : 'ascending')}
-            accessibilityRole="button"
-            accessibilityLabel="Toggle sort order"
-          >
-            <Ionicons
-              name={sortOrder === 'ascending' ? 'arrow-up' : 'arrow-down'}
-              size={18}
-              color={theme.primary}
-            />
-          </TouchableOpacity>
-          <NativeDropdown
-            options={[
-              { label: 'Recently Updated', value: 'lastUpdated' },
-              { label: 'Title', value: 'name' },
-              { label: 'Date Added', value: 'dateFollowed' },
-              { label: 'Recently Read', value: 'lastRead' },
-              { label: 'Unread Chapters', value: 'unreadChapters' },
-            ]}
-            selectedValue={sortType}
-            onSelect={(val) => setSortType(val as any)}
-            title="Sort Library"
-          >
-            <View style={[styles.headerActionButton, { backgroundColor: theme.card }]}>
-              <Ionicons name="swap-vertical" size={20} color={theme.primary} />
-            </View>
-          </NativeDropdown>
-          <TouchableOpacity
-            style={[styles.headerActionButton, { backgroundColor: theme.card }]}
-            onPress={handleOpenLibraryUpdater}
-            accessibilityRole="button"
-            accessibilityLabel="Check library updates"
-            accessibilityHint="Checks all manga in library for new chapter updates"
-          >
-            <Ionicons name="cloud-download-outline" size={22} color={theme.primary} />
-          </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.headerIconButton}
+          onPress={() => setOptionsMenuVisible(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Library options"
+        >
+          <Ionicons name="ellipsis-horizontal-circle-outline" size={26} color="#FA233B" />
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.searchBarContainer}>
+        <View style={styles.searchBar}>
+          <Ionicons name="search" size={16} color="#8E8E93" />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search"
+            placeholderTextColor="#8E8E93"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            autoCorrect={false}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="close-circle" size={16} color="#8E8E93" />
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
@@ -454,6 +455,82 @@ export const LibraryScreen: React.FC = () => {
         onStartUpdate={handleStartUpdate}
       />
 
+      {/* Library Options Modal */}
+      <Modal
+        visible={optionsMenuVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setOptionsMenuVisible(false)}
+      >
+        <TouchableOpacity 
+          style={styles.modalBackdrop} 
+          activeOpacity={1} 
+          onPress={() => setOptionsMenuVisible(false)}
+        >
+          <View style={[styles.optionsCard, { backgroundColor: '#1C1C1E', borderColor: '#2C2C2E' }]}>
+            <Text style={styles.optionsTitle}>SORT BY</Text>
+            {[
+              { label: 'Recently Updated', value: 'lastUpdated' },
+              { label: 'Title', value: 'name' },
+              { label: 'Date Added', value: 'dateFollowed' },
+              { label: 'Recently Read', value: 'lastRead' },
+              { label: 'Unread Chapters', value: 'unreadChapters' },
+            ].map(opt => (
+              <TouchableOpacity
+                key={opt.value}
+                style={styles.optionRow}
+                onPress={() => {
+                  setSortType(opt.value as any);
+                  setOptionsMenuVisible(false);
+                }}
+              >
+                <Text style={[styles.optionLabel, sortType === opt.value && { color: '#FA233B', fontWeight: '600' }]}>
+                  {opt.label}
+                </Text>
+                {sortType === opt.value && (
+                  <Ionicons name="checkmark" size={18} color="#FA233B" />
+                )}
+              </TouchableOpacity>
+            ))}
+
+            <View style={styles.optionDivider} />
+            <Text style={styles.optionsTitle}>ORDER</Text>
+            {[
+              { label: 'Ascending', value: 'ascending' },
+              { label: 'Descending', value: 'descending' },
+            ].map(opt => (
+              <TouchableOpacity
+                key={opt.value}
+                style={styles.optionRow}
+                onPress={() => {
+                  setSortOrder(opt.value as any);
+                  setOptionsMenuVisible(false);
+                }}
+              >
+                <Text style={[styles.optionLabel, sortOrder === opt.value && { color: '#FA233B', fontWeight: '600' }]}>
+                  {opt.label}
+                </Text>
+                {sortOrder === opt.value && (
+                  <Ionicons name="checkmark" size={18} color="#FA233B" />
+                )}
+              </TouchableOpacity>
+            ))}
+
+            <View style={styles.optionDivider} />
+            <TouchableOpacity
+              style={styles.actionRow}
+              onPress={() => {
+                setOptionsMenuVisible(false);
+                setCategoryModalVisible(true);
+              }}
+            >
+              <Ionicons name="folder-open-outline" size={18} color="#FA233B" style={{ marginRight: 8 }} />
+              <Text style={styles.actionRowText}>Add Category / Collection</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       {/* Category Creation Modal */}
       <Modal
         visible={categoryModalVisible}
@@ -521,8 +598,75 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   title: {
-    fontSize: 28,
-    fontWeight: 'bold',
+    fontSize: 20,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  headerIconButton: {
+    width: 36,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  searchBarContainer: {
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1C1C1E',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    height: 36,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    color: '#FFFFFF',
+    paddingVertical: 0,
+    marginLeft: 6,
+  },
+  optionsCard: {
+    width: '85%',
+    maxWidth: 340,
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  optionsTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#8E8E93',
+    letterSpacing: 0.5,
+    marginTop: 6,
+    marginBottom: 6,
+  },
+  optionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  optionLabel: {
+    fontSize: 16,
+    color: '#FFFFFF',
+  },
+  optionDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: '#2C2C2E',
+    marginVertical: 8,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  actionRowText: {
+    fontSize: 16,
+    color: '#FA233B',
+    fontWeight: '500',
   },
   filterScrollView: {
     flexGrow: 0,

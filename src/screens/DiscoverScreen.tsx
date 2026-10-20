@@ -19,6 +19,7 @@ import { AppState, AppStateStatus } from 'react-native';
 import { getCookies as getNativeCookies, launchBypassActivity } from 'cloudflare-bypass';
 import { setCookiesForDomain } from '../services/cookieStore';
 import { useTheme } from '../context/ThemeContext';
+import { useLibrary } from '../context/LibraryContext';
 import { LoadingIndicator } from '../components';
 import {
   getInstalledExtensions,
@@ -58,6 +59,7 @@ const GENRE_COLORS = [
 
 export const DiscoverScreen: React.FC = () => {
   const { theme } = useTheme();
+  const { addToLibrary, isInLibrary } = useLibrary();
   const navigation = useNavigation<DiscoverScreenNavigationProp>();
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
@@ -350,21 +352,36 @@ export const DiscoverScreen: React.FC = () => {
               )}
               <View style={styles.featuredButtons}>
                 <TouchableOpacity
-                  style={[styles.featuredButton, styles.addToLibraryButton]}
+                  style={styles.featuredButton}
                   onPress={(e) => {
                     e.stopPropagation();
-                    // TODO: Add to library functionality
+                    addToLibrary({
+                      id: manga.id,
+                      source: activeSource,
+                      title: manga.title,
+                      coverImage: manga.image,
+                      author: '',
+                      description: '',
+                      genres: [],
+                      status: 'ongoing',
+                      chapters: [],
+                      lastUpdated: new Date().toISOString(),
+                    });
                   }}
+                  activeOpacity={0.8}
                 >
-                  <Ionicons name="bookmark-outline" size={16} color="#fff" />
-                  <Text style={styles.addButtonText}>{t('discover.addToLibrary')}</Text>
+                  <Ionicons name={isInLibrary(manga.id) ? "bookmark" : "bookmark-outline"} size={16} color="#FA233B" />
+                  <Text style={styles.addButtonText}>
+                    {isInLibrary(manga.id) ? (t('discover.inLibrary') || 'In Library') : t('discover.addToLibrary')}
+                  </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.featuredButton, styles.readNowButton]}
+                  style={styles.featuredButton}
                   onPress={() => navigateToManga(manga)}
+                  activeOpacity={0.8}
                 >
-                  <Ionicons name="book-outline" size={16} color={theme.primary} />
-                  <Text style={[styles.readButtonText, { color: theme.primary }]}>{t('discover.readNow')}</Text>
+                  <Ionicons name="book" size={16} color="#FA233B" />
+                  <Text style={styles.readButtonText}>{t('discover.readNow')}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -397,17 +414,17 @@ export const DiscoverScreen: React.FC = () => {
   };
 
   const renderGenreCard = (tag: Tag, index: number) => {
-    const color = GENRE_COLORS[index % GENRE_COLORS.length];
-
     return (
       <TouchableOpacity
         key={tag.id}
-        style={[styles.genreCard, { backgroundColor: color, width: GENRE_CARD_WIDTH }]}
+        style={[styles.genreCard, { width: GENRE_CARD_WIDTH }]}
         onPress={() => navigateToGenre(tag)}
         activeOpacity={0.8}
       >
+        <View style={styles.genreArrowBadge}>
+          <Ionicons name="arrow-forward" size={13} color="#FA5565" />
+        </View>
         <Text style={styles.genreText} numberOfLines={1}>{tag.label}</Text>
-        <Ionicons name="arrow-forward" size={16} color="rgba(255,255,255,0.8)" />
       </TouchableOpacity>
     );
   };
@@ -422,11 +439,8 @@ export const DiscoverScreen: React.FC = () => {
         <View style={styles.sectionHeader}>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>{t('discover.genres')}</Text>
           {tags.length > 6 && (
-            <TouchableOpacity
-              style={[styles.expandButton, { backgroundColor: theme.card }]}
-              onPress={navigateToAllGenres}
-            >
-              <Ionicons name="resize-outline" size={18} color={theme.primary} />
+            <TouchableOpacity style={styles.expandButton} onPress={navigateToAllGenres} activeOpacity={0.7}>
+              <Ionicons name="expand-outline" size={16} color="#FA8072" />
             </TouchableOpacity>
           )}
         </View>
@@ -474,16 +488,17 @@ export const DiscoverScreen: React.FC = () => {
   };
 
   const renderDiscoverGenreCard = (manga: SourceManga, sectionId: string, index: number) => {
-    const color = GENRE_COLORS[index % GENRE_COLORS.length];
     return (
       <TouchableOpacity
         key={`${sectionId}-${manga.id}-${index}`}
-        style={[styles.genreCard, { backgroundColor: color, width: GENRE_CARD_WIDTH }]}
+        style={[styles.genreCard, { width: GENRE_CARD_WIDTH }]}
         onPress={() => navigateToManga(manga)}
         activeOpacity={0.8}
       >
+        <View style={styles.genreArrowBadge}>
+          <Ionicons name="arrow-forward" size={13} color="#FA5565" />
+        </View>
         <Text style={styles.genreText} numberOfLines={1}>{manga.title}</Text>
-        <Ionicons name="arrow-forward" size={16} color="rgba(255,255,255,0.8)" />
       </TouchableOpacity>
     );
   };
@@ -516,11 +531,8 @@ export const DiscoverScreen: React.FC = () => {
         <View style={styles.sectionHeader}>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>{section.title}</Text>
           {section.containsMoreItems && (
-            <TouchableOpacity
-              style={[styles.expandButton, { backgroundColor: theme.card }]}
-              onPress={() => navigateToCategory(section)}
-            >
-              <Ionicons name="resize-outline" size={18} color={theme.primary} />
+            <TouchableOpacity style={styles.expandButton} onPress={() => navigateToCategory(section)} activeOpacity={0.7}>
+              <Ionicons name="expand-outline" size={16} color="#FA8072" />
             </TouchableOpacity>
           )}
         </View>
@@ -550,7 +562,7 @@ export const DiscoverScreen: React.FC = () => {
             accessibilityHint="Open the active extension website to sign in or complete verification"
             hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
           >
-            <Ionicons name="globe-outline" size={24} color={theme.primary} />
+            <Ionicons name={activeSource.toLowerCase().includes('paperback') ? "cloud-outline" : "globe-outline"} size={26} color="#FA233B" />
           </TouchableOpacity>
         </View>
       </View>
@@ -718,31 +730,30 @@ const styles = StyleSheet.create({
   },
   featuredButtons: {
     flexDirection: 'row',
-    gap: 10,
-    marginTop: 8,
+    gap: 12,
+    marginTop: 10,
+    width: '100%',
   },
   featuredButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 8,
-    gap: 6,
-  },
-  addToLibraryButton: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
-  },
-  readNowButton: {
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(28, 28, 30, 0.9)',
+    gap: 8,
   },
   addButtonText: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
     color: '#fff',
   },
   readButtonText: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
+    color: '#fff',
   },
   // Genres Section Styles
   genresGrid: {
@@ -752,19 +763,25 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   genreCard: {
-    // Width is set dynamically via inline style
-    paddingVertical: 18,
-    paddingHorizontal: 10,
-    borderRadius: 10,
-    flexDirection: 'row',
+    height: 95,
+    borderRadius: 14,
+    backgroundColor: '#FA5565',
+    padding: 12,
     justifyContent: 'space-between',
+  },
+  genreArrowBadge: {
+    alignSelf: 'flex-end',
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
     alignItems: 'center',
   },
   genreText: {
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: 'bold',
     color: '#fff',
-    flex: 1,
   },
   // Section Styles
   section: {
@@ -782,12 +799,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   expandButton: {
-    width: 34,
-    height: 34,
+    width: 32,
+    height: 32,
     borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#333',
+    backgroundColor: '#2C1E20',
   },
   mangaList: {
     paddingHorizontal: 16,

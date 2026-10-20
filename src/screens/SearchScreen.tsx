@@ -341,16 +341,17 @@ export const SearchScreen: React.FC = () => {
       <TouchableOpacity
         style={styles.sourceCard}
         onPress={() => setActiveSource(null)}
+        activeOpacity={0.8}
       >
         <View style={[
           styles.sourceIconContainer,
-          { borderColor: activeSource === null ? theme.primary : 'transparent' }
+          activeSource === null && { borderColor: '#FA233B', borderWidth: 2 }
         ]}>
-          <Ionicons name="globe-outline" size={28} color={activeSource === null ? theme.primary : theme.textSecondary} />
+          <Ionicons name="globe-outline" size={40} color={activeSource === null ? "#FA233B" : "#8E8E93"} />
         </View>
         <Text style={[
           styles.sourceName,
-          { color: activeSource === null ? theme.primary : theme.text }
+          { color: activeSource === null ? '#FFFFFF' : '#8E8E93' }
         ]} numberOfLines={1}>
           {t('search.all')}
         </Text>
@@ -358,25 +359,27 @@ export const SearchScreen: React.FC = () => {
 
       {installedExtensions.map((ext) => {
         const iconUrl = getExtensionIconUrl(ext);
+        const isSelected = activeSource === ext.id;
         return (
           <TouchableOpacity
             key={ext.id}
             style={styles.sourceCard}
             onPress={() => setActiveSource(ext.id)}
+            activeOpacity={0.8}
           >
             <View style={[
               styles.sourceIconContainer,
-              { borderColor: activeSource === ext.id ? theme.primary : 'transparent' }
+              isSelected && { borderColor: '#FA233B', borderWidth: 2 }
             ]}>
               {iconUrl ? (
-                <Image source={{ uri: iconUrl }} style={styles.sourceIconImage} />
+                <Image source={{ uri: iconUrl }} style={styles.sourceIconImage} contentFit="contain" />
               ) : (
-                <Text style={styles.sourceIcon}>📚</Text>
+                <Ionicons name="image-outline" size={40} color="#FA233B" />
               )}
             </View>
             <Text style={[
               styles.sourceName,
-              { color: activeSource === ext.id ? theme.primary : theme.text }
+              { color: isSelected ? '#FFFFFF' : '#8E8E93' }
             ]} numberOfLines={1}>
               {ext.name}
             </Text>
@@ -391,11 +394,11 @@ export const SearchScreen: React.FC = () => {
 
     return (
       <View style={styles.recentContainer}>
-        <View style={[styles.recentCard, { backgroundColor: theme.card }]}>
+        <View style={styles.recentCard}>
           <View style={styles.recentHeader}>
-            <Text style={[styles.recentTitle, { color: theme.textSecondary }]}>{t('search.recentSearches')}</Text>
-            <TouchableOpacity onPress={clearRecentSearches}>
-              <Text style={[styles.clearText, { color: theme.error }]}>{t('search.clear')}</Text>
+            <Text style={styles.recentTitle}>RECENT SEARCHES</Text>
+            <TouchableOpacity onPress={clearRecentSearches} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={styles.clearText}>CLEAR</Text>
             </TouchableOpacity>
           </View>
           {recentSearches.map((item, index) => (
@@ -403,11 +406,12 @@ export const SearchScreen: React.FC = () => {
               key={index}
               style={[
                 styles.recentItem,
-                index < recentSearches.length - 1 && { borderBottomColor: theme.border, borderBottomWidth: StyleSheet.hairlineWidth }
+                index < recentSearches.length - 1 && styles.recentDivider
               ]}
               onPress={() => performSearch(item)}
+              activeOpacity={0.7}
             >
-              <Text style={[styles.recentItemText, { color: theme.text }]}>{item}</Text>
+              <Text style={styles.recentItemText}>{item}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -492,11 +496,8 @@ export const SearchScreen: React.FC = () => {
               {sourceResult.extensionName}
             </Text>
             {sourceResult.results.length > 0 && (
-              <TouchableOpacity
-                style={[styles.expandButton, { backgroundColor: theme.card }]}
-                onPress={() => navigateToViewMore(sourceResult)}
-              >
-                <Ionicons name="resize-outline" size={18} color={theme.primary} />
+              <TouchableOpacity style={styles.expandButton} onPress={() => navigateToViewMore(sourceResult)} activeOpacity={0.7}>
+                <Ionicons name="expand-outline" size={16} color="#FA8072" />
               </TouchableOpacity>
             )}
           </View>
@@ -518,9 +519,14 @@ export const SearchScreen: React.FC = () => {
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={[styles.title, { color: theme.text }]}>{t('search.searchEverything')}</Text>
-        <TouchableOpacity onPress={() => performSearch(query)}>
-          <Text style={[styles.searchButton, { color: theme.primary }]}>{t('search.title')}</Text>
+        <Text style={[styles.title, { color: theme.text }]}>Search Everything</Text>
+        <TouchableOpacity
+          onPress={() => performSearch(query)}
+          disabled={!query.trim()}
+        >
+          <Text style={[styles.searchButton, { color: query.trim() ? '#FA233B' : '#545458' }]}>
+            Search
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -669,19 +675,18 @@ const styles = StyleSheet.create({
   },
   sourceCard: {
     alignItems: 'center',
-    width: 72,
+    width: 96,
   },
   sourceIconContainer: {
-    width: 64,
-    height: 64,
-    borderRadius: 12,
+    width: 96,
+    height: 96,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 6,
-    borderWidth: 2,
-    borderColor: 'transparent',
+    marginBottom: 8,
+    backgroundColor: '#1C1C1E',
     overflow: 'hidden',
-    backgroundColor: '#1A1A1A',
+    padding: 14,
   },
   sourceIconImage: {
     width: '100%',
@@ -691,8 +696,8 @@ const styles = StyleSheet.create({
     fontSize: 28,
   },
   sourceName: {
-    fontSize: 11,
-    fontWeight: '500',
+    fontSize: 14,
+    fontWeight: '600',
     textAlign: 'center',
   },
   noExtensions: {
@@ -709,6 +714,7 @@ const styles = StyleSheet.create({
   },
   recentCard: {
     borderRadius: 12,
+    backgroundColor: '#1C1C1E',
     overflow: 'hidden',
   },
   recentHeader: {
@@ -721,17 +727,34 @@ const styles = StyleSheet.create({
   recentTitle: {
     fontSize: 13,
     fontWeight: '500',
+    color: '#8E8E93',
+    letterSpacing: 0.5,
   },
   clearText: {
     fontSize: 13,
-    fontWeight: '500',
+    fontWeight: '600',
+    color: '#FA233B',
+    letterSpacing: 0.5,
   },
   recentItem: {
     paddingVertical: 14,
     paddingHorizontal: 16,
   },
+  recentDivider: {
+    borderBottomColor: '#2C2C2E',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
   recentItemText: {
     fontSize: 16,
+    color: '#FFFFFF',
+  },
+  expandButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#2C1E20',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   resultsGrid: {
     paddingHorizontal: GRID_PADDING,
@@ -783,13 +806,6 @@ const styles = StyleSheet.create({
   sourceSectionTitle: {
     fontSize: 20,
     fontWeight: '700',
-  },
-  expandButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   horizontalList: {
     paddingHorizontal: 16,

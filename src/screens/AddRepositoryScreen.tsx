@@ -166,7 +166,7 @@ export const AddRepositoryScreen: React.FC = () => {
         <View style={[styles.modal, { backgroundColor: theme.card }]}>
           {/* Cube Icon */}
           <View style={styles.iconContainer}>
-            <Ionicons name="cube-outline" size={80} color={theme.textSecondary} />
+            <Ionicons name="cube-outline" size={76} color="#FFFFFF" />
           </View>
 
           {/* Input Fields */}
@@ -227,7 +227,7 @@ export const AddRepositoryScreen: React.FC = () => {
             style={[
               styles.addButton,
               {
-                backgroundColor: allChecked ? '#8B3A3A' : '#4A2A2A',
+                backgroundColor: allChecked ? '#FA233B' : '#2C1E20',
                 opacity: allChecked ? 1 : 0.6
               }
             ]}

@@ -1,3 +1,4 @@
+import { Image } from 'expo-image';
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View,
@@ -108,6 +109,54 @@ export const HistoryScreen: React.FC = () => {
           const dateB = new Date(b.progress?.lastRead || 0);
           return dateB.getTime() - dateA.getTime();
         });
+
+  
+  const getTimeAgo = (dateString?: string): string => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffSec = Math.floor((now.getTime() - date.getTime()) / 1000);
+    if (diffSec < 60) return 'just now';
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHours = Math.floor(diffMin / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays === 1) return 'yesterday';
+    if (diffDays < 7) return `${diffDays}d ago`;
+    if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`;
+    return `${Math.floor(diffDays / 30)}mo ago`;
+  };
+
+  const getHistorySections = (entries: LibraryEntry[]) => {
+    const groups: { [key: string]: LibraryEntry[] } = {};
+    const now = new Date();
+
+    entries.forEach(entry => {
+      const readDate = new Date(entry.progress?.lastRead || 0);
+      const diffMs = now.getTime() - readDate.getTime();
+      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+      let key = 'OVER A MONTH AGO';
+      if (diffDays === 0) {
+        key = 'TODAY';
+      } else if (diffDays === 1) {
+        key = 'YESTERDAY';
+      } else if (diffDays < 7) {
+        key = 'THIS WEEK';
+      } else if (diffDays < 30) {
+        key = 'THIS MONTH';
+      }
+
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(entry);
+    });
+
+    const order = ['TODAY', 'YESTERDAY', 'THIS WEEK', 'THIS MONTH', 'OVER A MONTH AGO'];
+    return order
+      .filter(k => groups[k] && groups[k].length > 0)
+      .map(k => ({ title: k, data: groups[k] }));
+  };
 
   const handleClearHistory = () => {
     showDialog(
@@ -247,14 +296,18 @@ export const HistoryScreen: React.FC = () => {
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <View style={styles.header}>
+        <View style={styles.headerSpacer} />
         <Text style={[styles.title, { color: theme.text }]}>{t('history.title')}</Text>
-        {readingHistory.length > 0 && isAuthenticated && (
+        {readingHistory.length > 0 && isAuthenticated ? (
           <TouchableOpacity
             style={styles.clearButton}
             onPress={handleClearHistory}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <Ionicons name="trash-outline" size={24} color={theme.error} />
+            <Text style={styles.clearText}>Clear</Text>
           </TouchableOpacity>
+        ) : (
+          <View style={styles.headerSpacer} />
         )}
       </View>
 
@@ -266,14 +319,66 @@ export const HistoryScreen: React.FC = () => {
         />
       ) : (
         <FlatList
-          key={`history-${numColumns}`}
-          data={readingHistory}
-          renderItem={renderItem}
-          keyExtractor={item => item.manga.id}
-          numColumns={numColumns}
+          data={getHistorySections(readingHistory)}
+          keyExtractor={(item) => item.title}
           contentContainerStyle={styles.listContent}
-          columnWrapperStyle={numColumns > 1 ? styles.row : undefined}
           showsVerticalScrollIndicator={false}
+          renderItem={({ item: section }) => (
+            <View style={styles.sectionContainer}>
+              <Text style={styles.sectionTitle}>{section.title}</Text>
+              <View style={styles.sectionCard}>
+                {section.data.map((entry, index) => {
+                  const chapter = entry.manga.chapters.find(ch => ch.id === entry.progress?.chapterId);
+                  const chapterDisplay = chapter
+                    ? (chapter.title ? `Chapter ${chapter.number} - ${chapter.title}` : `Chapter ${chapter.number}`)
+                    : (entry.progress?.chapterId ? `Chapter ${getChapterNumber(entry)}` : 'Unknown chapter');
+                  const pageDisplay = entry.progress?.pageNumber ? `Last Page Read: ${entry.progress.pageNumber}` : 'Last Read';
+                  const timeDisplay = getTimeAgo(entry.progress?.lastRead);
+
+                  return (
+                    <View key={entry.manga.id}>
+                      <TouchableOpacity
+                        style={styles.historyRow}
+                        onPress={() => {
+                          if (entry.progress?.chapterId) {
+                            navigation.navigate('Reader', {
+                              mangaId: entry.manga.id,
+                              chapterId: entry.progress.chapterId,
+                              sourceId: entry.manga.source,
+                            });
+                          } else {
+                            navigateToManga(entry);
+                          }
+                        }}
+                        onLongPress={() => handleLongPress(entry)}
+                        activeOpacity={0.7}
+                      >
+                        <Image
+                          source={{ uri: entry.manga.coverImage }}
+                          style={styles.historyCover}
+                          contentFit="cover"
+                          transition={200}
+                        />
+                        <View style={styles.historyInfo}>
+                          <Text style={styles.mangaTitle} numberOfLines={1}>
+                            {entry.manga.title}
+                          </Text>
+                          <Text style={styles.chapterSubtitle} numberOfLines={1}>
+                            {chapterDisplay}
+                          </Text>
+                          <Text style={styles.historyFooter} numberOfLines={1}>
+                            {timeDisplay ? `${pageDisplay} • ${timeDisplay}` : pageDisplay}
+                          </Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={18} color="#545458" />
+                      </TouchableOpacity>
+                      {index < section.data.length - 1 && <View style={styles.rowDivider} />}
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+          )}
         />
       )}
 
@@ -313,27 +418,86 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: 60,
-    paddingBottom: 16,
+    paddingTop: 54,
+    paddingBottom: 12,
+  },
+  headerSpacer: {
+    width: 50,
   },
   title: {
-    fontSize: 28,
-    fontWeight: 'bold',
+    fontSize: 20,
+    fontWeight: '700',
+    textAlign: 'center',
   },
   clearButton: {
-    padding: 8,
+    width: 50,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+  },
+  clearText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FA233B',
   },
   listContent: {
-    paddingHorizontal: 12,
     paddingBottom: 100,
   },
-  row: {
-    justifyContent: 'flex-start',
-    gap: 8,
-    paddingHorizontal: 6,
+  sectionContainer: {
+    marginTop: 18,
+    paddingHorizontal: 16,
+  },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#8E8E93',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+    marginLeft: 4,
+  },
+  sectionCard: {
+    backgroundColor: '#1C1C1E',
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  historyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  historyCover: {
+    width: 48,
+    height: 70,
+    borderRadius: 6,
+    backgroundColor: '#2C2C2E',
+    marginRight: 12,
+  },
+  historyInfo: {
+    flex: 1,
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  mangaTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    marginBottom: 3,
+  },
+  chapterSubtitle: {
+    fontSize: 13,
+    color: '#8E8E93',
+    marginBottom: 5,
+  },
+  historyFooter: {
+    fontSize: 12,
+    color: '#8E8E93',
+  },
+  rowDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: '#2C2C2E',
+    marginLeft: 74,
   },
   itemContainer: {
-    // Don't use flex: 1 - MangaCard calculates its own width
   },
   progressText: {
     fontSize: 11,

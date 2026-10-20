@@ -256,9 +256,7 @@ export const BrowseRepositoryScreen: React.FC = () => {
           style={[
             styles.actionButton,
             {
-              backgroundColor: isInstalled ? 'transparent' : theme.primary,
-              borderWidth: isInstalled ? 1 : 0,
-              borderColor: theme.primary,
+              backgroundColor: '#FA233B',
             },
           ]}
           onPress={() => (isInstalled ? handleReload(ext) : handleInstall(ext))}
@@ -266,12 +264,12 @@ export const BrowseRepositoryScreen: React.FC = () => {
           disabled={isLoading}
         >
           {isLoading ? (
-            <ActivityIndicator size="small" color={isInstalled ? theme.primary : '#FFF'} />
+            <ActivityIndicator size="small" color="#FFF" />
           ) : (
             <Text
               style={[
                 styles.actionButtonText,
-                { color: isInstalled ? theme.primary : '#FFF' },
+                { color: '#FFF' },
               ]}
             >
               {isInstalled ? t('repositories.reload') : t('repositories.get')}

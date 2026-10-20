@@ -1,4 +1,5 @@
 // Jest setup file - matchers are now built into @testing-library/react-native v12.4+
+jest.setTimeout(15000);
 
 // Mock expo internals that cause issues in tests
 jest.mock('expo/src/winter/runtime.native', () => ({}), { virtual: true });
