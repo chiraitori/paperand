@@ -25,6 +25,7 @@ export interface ReaderSettingsValues {
   overlayStrength: number; // 0.0 - 1.0 (default 0.7)
   pillarbox: boolean;
   pillarboxOrientation: DeviceOrientationSetting;
+  pillarboxAmount: number; // Side margin in percent of screen width (0 = off)
 }
 
 export const defaultReaderSettings: ReaderSettingsValues = {
@@ -44,6 +45,7 @@ export const defaultReaderSettings: ReaderSettingsValues = {
   overlayStrength: 0.7,
   pillarbox: false,
   pillarboxOrientation: 'both',
+  pillarboxAmount: 0,
 };
 
 const GLOBAL_SETTINGS_KEY = '@paperback_reader_settings_global';

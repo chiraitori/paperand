@@ -135,7 +135,7 @@ describe('ReaderScreen', () => {
     }, { timeout: 3000 });
     
     // Check that page indicator shows correct page count
-    const pageIndicator = await findByText('1 / 3');
+    const pageIndicator = await findByText('1 of 3');
     expect(pageIndicator).toBeTruthy();
   });
 
@@ -180,7 +180,7 @@ describe('ReaderScreen Page Count Logic', () => {
     }, { timeout: 3000 });
     
     // Should show "1 / 5" for 5 pages
-    const pageIndicator = await findByText('1 / 5');
+    const pageIndicator = await findByText('1 of 5');
     expect(pageIndicator).toBeTruthy();
   });
 
@@ -206,7 +206,7 @@ describe('ReaderScreen Page Count Logic', () => {
     }, { timeout: 3000 });
     
     // Should show "1 / 1" for single page
-    const pageIndicator = await findByText('1 / 1');
+    const pageIndicator = await findByText('1 of 1');
     expect(pageIndicator).toBeTruthy();
   });
 });
@@ -257,7 +257,7 @@ describe('ReaderScreen Progress Saving', () => {
     ]);
 
     const { findByText } = render(<TestReaderScreen />);
-    const indicator = await findByText('1 / 2');
+    const indicator = await findByText('1 of 2');
     expect(indicator).toBeTruthy();
   });
 });

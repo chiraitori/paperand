@@ -5,8 +5,21 @@ jest.mock('expo/src/winter/runtime.native', () => ({}), { virtual: true });
 jest.mock('expo/src/winter/installGlobal', () => ({}), { virtual: true });
 
 // Mock expo modules
-jest.mock('expo-image', () => ({
-  Image: 'Image',
+jest.mock('expo-image', () => {
+  const React = require('react');
+  const Image = (props) => React.createElement('Image', props);
+  Image.prefetch = jest.fn().mockResolvedValue(true);
+  Image.clearMemoryCache = jest.fn().mockResolvedValue(true);
+  Image.clearDiskCache = jest.fn().mockResolvedValue(true);
+  return {
+    __esModule: true,
+    Image,
+    default: Image,
+  };
+});
+
+jest.mock('expo-linear-gradient', () => ({
+  LinearGradient: 'LinearGradient',
 }));
 
 jest.mock('expo-file-system', () => ({
@@ -71,6 +84,10 @@ jest.mock('expo-status-bar', () => ({
 
 jest.mock('@expo/vector-icons', () => ({
   Ionicons: 'Ionicons',
+  MaterialCommunityIcons: 'MaterialCommunityIcons',
+  MaterialIcons: 'MaterialIcons',
+  FontAwesome: 'FontAwesome',
+  Feather: 'Feather',
 }));
 
 jest.mock('@react-native-async-storage/async-storage', () => ({

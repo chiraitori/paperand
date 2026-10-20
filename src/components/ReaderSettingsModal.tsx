@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -19,10 +19,10 @@ import {
   ReaderDirection,
   PagedDisplayMode,
   ChapterBackground,
-  SettingButtonLocation,
-  ChapterChangeArrowLocation,
   DeviceOrientationSetting,
 } from '../services/readerSettingsService';
+
+export type ReaderSettingsScope = 'global' | 'manga';
 
 interface ReaderSettingsModalProps {
   visible: boolean;
@@ -32,36 +32,54 @@ interface ReaderSettingsModalProps {
     key: K,
     value: ReaderSettingsValues[K]
   ) => void;
+  scope?: ReaderSettingsScope;
+  onScopeChange?: (scope: ReaderSettingsScope) => void;
   isCustom?: boolean;
   onApplyGlobally?: () => void;
   onResetToGlobal?: () => void;
   mangaTitle?: string;
 }
 
+const SHEET_BG = '#0C0C0D';
+const CARD_BG = '#1C1C1E';
+const SEGMENT_ACTIVE = '#636366';
+const DIVIDER = '#38383A';
+const MUTED = '#8E8E93';
+const ACCENT = '#FA233B';
+const SWITCH_GREEN = '#34C759';
+
+const tr = (key: string, fallback: string): string => {
+  const value = t(key);
+  return !value || value === key ? fallback : value;
+};
+
 export const ReaderSettingsModal: React.FC<ReaderSettingsModalProps> = ({
   visible,
   onClose,
   settings,
   onUpdateSetting,
+  scope = 'global',
+  onScopeChange,
   isCustom = false,
   onApplyGlobally,
   onResetToGlobal,
-  mangaTitle,
 }) => {
   const { theme } = useTheme();
+  const [openPicker, setOpenPicker] = useState<string | null>(null);
 
   const handleResetToGlobal = () => {
     Alert.alert(
-      t('reader.resetToGlobal') || 'Reset to Global',
-      t('reader.resetConfirm') || 'All custom reader settings for this title will be reset to global defaults. Continue?',
+      tr('reader.resetToGlobal', 'Reset to Global'),
+      tr(
+        'reader.resetConfirm',
+        'All custom reader settings for this title will be reset to global defaults. Continue?'
+      ),
       [
-        { text: t('common.cancel') || 'Cancel', style: 'cancel' },
+        { text: tr('common.cancel', 'Cancel'), style: 'cancel' },
         {
-          text: t('reader.resetToGlobal') || 'Reset',
+          text: tr('reader.resetToGlobal', 'Reset'),
           style: 'destructive',
-          onPress: () => {
-            onResetToGlobal?.();
-          },
+          onPress: () => onResetToGlobal?.(),
         },
       ]
     );
@@ -69,16 +87,11 @@ export const ReaderSettingsModal: React.FC<ReaderSettingsModalProps> = ({
 
   const handleApplyGlobally = () => {
     Alert.alert(
-      t('reader.applyGlobally') || 'Apply Globally',
+      tr('reader.applyGlobally', 'Apply Globally'),
       'Set current reader settings as the default for all titles?',
       [
-        { text: t('common.cancel') || 'Cancel', style: 'cancel' },
-        {
-          text: t('common.ok') || 'OK',
-          onPress: () => {
-            onApplyGlobally?.();
-          },
-        },
+        { text: tr('common.cancel', 'Cancel'), style: 'cancel' },
+        { text: tr('common.ok', 'OK'), onPress: () => onApplyGlobally?.() },
       ]
     );
   };
@@ -88,24 +101,18 @@ export const ReaderSettingsModal: React.FC<ReaderSettingsModalProps> = ({
     selectedValue: T,
     onSelect: (val: T) => void
   ) => (
-    <View style={[styles.segmentContainer, { backgroundColor: '#2C2C2E' }]}>
+    <View style={styles.segmentContainer}>
       {options.map((opt) => {
         const isSelected = selectedValue === opt.value;
         return (
           <TouchableOpacity
             key={opt.value}
-            style={[
-              styles.segmentItem,
-              isSelected && { backgroundColor: theme.primary },
-            ]}
+            style={[styles.segmentItem, isSelected && styles.segmentItemActive]}
             onPress={() => onSelect(opt.value)}
             activeOpacity={0.7}
           >
             <Text
-              style={[
-                styles.segmentText,
-                isSelected ? styles.segmentTextActive : { color: '#8E8E93' },
-              ]}
+              style={[styles.segmentText, isSelected && styles.segmentTextActive]}
               numberOfLines={1}
               adjustsFontSizeToFit
               minimumFontScale={0.75}
@@ -118,28 +125,95 @@ export const ReaderSettingsModal: React.FC<ReaderSettingsModalProps> = ({
     </View>
   );
 
-  return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
-    >
-      <View style={styles.modalContainer}>
+  // iOS style "label ........ value ^" row that expands into the available options
+  const renderPickerRow = <T extends string>(
+    id: string,
+    label: string,
+    options: { label: string; value: T }[],
+    selectedValue: T,
+    onSelect: (val: T) => void,
+    first = false
+  ) => {
+    const isOpen = openPicker === id;
+    const current = options.find((o) => o.value === selectedValue);
+    return (
+      <View>
         <TouchableOpacity
-          style={styles.modalBackdrop}
-          activeOpacity={1}
-          onPress={onClose}
-        />
-        <View style={[styles.modalContent, { backgroundColor: '#1C1C1E' }]}>
-          {/* Header */}
-          <View style={styles.header}>
-            <View style={{ width: 60 }} />
-            <Text style={styles.title}>{t('reader.settingsTitle') || 'Reader Settings'}</Text>
-            <TouchableOpacity onPress={onClose} style={styles.doneButtonContainer}>
-              <Text style={[styles.doneButton, { color: theme.primary }]}>
-                {t('common.done') || 'Done'}
+          style={[styles.row, !first && styles.dividerRow]}
+          activeOpacity={0.6}
+          onPress={() => setOpenPicker(isOpen ? null : id)}
+        >
+          <Text style={styles.rowLabel}>{label}</Text>
+          <View style={styles.pickerValueWrap}>
+            <Text style={styles.pickerValue} numberOfLines={1}>
+              {current?.label}
+            </Text>
+            <Ionicons name="chevron-expand" size={16} color={ACCENT} />
+          </View>
+        </TouchableOpacity>
+        {isOpen &&
+          options.map((opt) => (
+            <TouchableOpacity
+              key={opt.value}
+              style={[styles.row, styles.dividerRow, styles.optionRow]}
+              activeOpacity={0.6}
+              onPress={() => {
+                onSelect(opt.value);
+                setOpenPicker(null);
+              }}
+            >
+              <Text style={[styles.rowLabel, { color: opt.value === selectedValue ? ACCENT : '#FFFFFF' }]}>
+                {opt.label}
               </Text>
+              {opt.value === selectedValue && <Ionicons name="checkmark" size={18} color={ACCENT} />}
+            </TouchableOpacity>
+          ))}
+      </View>
+    );
+  };
+
+  const renderSwitchRow = (
+    label: string,
+    value: boolean,
+    onChange: (val: boolean) => void,
+    subtitle?: string,
+    first = false
+  ) => (
+    <View style={[styles.row, !first && styles.dividerRow]}>
+      <View style={{ flex: 1, paddingRight: 12 }}>
+        <Text style={styles.rowLabel}>{label}</Text>
+        {subtitle ? <Text style={styles.rowSubtitle}>{subtitle}</Text> : null}
+      </View>
+      <Switch
+        value={value}
+        onValueChange={onChange}
+        trackColor={{ false: '#3A3A3C', true: SWITCH_GREEN }}
+        thumbColor="#FFFFFF"
+        ios_backgroundColor="#3A3A3C"
+      />
+    </View>
+  );
+
+  const orientationOptions: { label: string; value: DeviceOrientationSetting }[] = [
+    { label: tr('reader.both', 'Both'), value: 'both' },
+    { label: tr('reader.portrait', 'Portrait'), value: 'portrait' },
+    { label: tr('reader.landscape', 'Landscape'), value: 'landscape' },
+  ];
+
+  const amount = settings.pillarboxAmount ?? 0;
+  const setAmount = (next: number) => {
+    const clamped = Math.max(0, Math.min(40, next));
+    onUpdateSetting('pillarboxAmount', clamped);
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.modalContainer}>
+        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={onClose} />
+        <View style={styles.modalContent}>
+          <View style={styles.header}>
+            <TouchableOpacity onPress={onClose} style={styles.doneButtonContainer} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Text style={styles.doneButton}>{tr('common.done', 'Done')}</Text>
             </TouchableOpacity>
           </View>
 
@@ -148,269 +222,197 @@ export const ReaderSettingsModal: React.FC<ReaderSettingsModalProps> = ({
             contentContainerStyle={styles.scrollViewContent}
             showsVerticalScrollIndicator={false}
           >
-            {/* Custom Settings Indicator / Controls */}
-            {isCustom && (
-              <View style={[styles.scopeBanner, { backgroundColor: '#2C2C2E', borderColor: theme.primary }]}>
-                <View style={styles.scopeBannerLeft}>
-                  <Ionicons name="options-outline" size={20} color={theme.primary} />
-                  <Text style={styles.scopeBannerText}>
-                    Custom settings for this manga
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  style={[styles.scopeActionButton, { borderColor: theme.error }]}
-                  onPress={handleResetToGlobal}
-                >
-                  <Text style={[styles.scopeActionButtonText, { color: theme.error }]}>
-                    {t('reader.resetToGlobal') || 'Reset'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
+            <Text style={styles.title}>{tr('reader.settingsTitle', 'Reader Settings')}</Text>
+
+            {/* Settings scope */}
+            <Text style={styles.sectionHeader}>{tr('reader.settingsScope', 'Settings Scope')}</Text>
+            {renderSegment<ReaderSettingsScope>(
+              [
+                { label: tr('reader.scopeGlobal', 'Global'), value: 'global' },
+                { label: tr('reader.scopeManga', 'Manga'), value: 'manga' },
+              ],
+              scope,
+              (val) => onScopeChange?.(val)
             )}
 
-            {/* Reader Mode (Horizontal vs Vertical) */}
-            <Text style={styles.sectionHeader}>{t('reader.readerType') || 'READER TYPE'}</Text>
+            {/* Reader type */}
+            <Text style={styles.sectionHeader}>{tr('reader.readerType', 'Reader Type')}</Text>
             {renderSegment<ReaderMode>(
               [
-                { label: t('reader.horizontal') || 'Horizontal', value: 'horizontal' },
-                { label: t('reader.vertical') || 'Vertical (Long Strip)', value: 'longStrip' },
+                { label: tr('reader.vertical', 'Vertical'), value: 'longStrip' },
+                { label: tr('reader.horizontal', 'Horizontal'), value: 'horizontal' },
               ],
               settings.readerMode,
               (val) => onUpdateSetting('readerMode', val)
             )}
 
-            {/* Horizontal Reader Settings (Only when in horizontal mode) */}
-            {settings.readerMode === 'horizontal' && (
+            {settings.readerMode === 'horizontal' ? (
               <>
                 <Text style={styles.sectionHeader}>
-                  {t('reader.horizontalSettings') || 'HORIZONTAL READER SETTINGS'}
+                  {tr('reader.horizontalSettings', 'Horizontal Reader Settings')}
                 </Text>
-                <View style={[styles.card, { backgroundColor: '#2C2C2E' }]}>
-                  {/* Display Mode (Single / Double / Auto) */}
+                <View style={styles.card}>
+                  {renderPickerRow<PagedDisplayMode>(
+                    'displayMode',
+                    tr('reader.displayMode', 'Display Mode'),
+                    [
+                      { label: tr('reader.singlePage', 'Single'), value: 'singlePage' },
+                      { label: tr('reader.doublePage', 'Double'), value: 'doublePage' },
+                      { label: tr('reader.automatic', 'Automatic'), value: 'automatic' },
+                    ],
+                    settings.pagedDisplayMode,
+                    (val) => onUpdateSetting('pagedDisplayMode', val),
+                    true
+                  )}
+                  {renderSwitchRow(
+                    tr('reader.alwaysSeparateFirstPage', 'Always Separate First Page'),
+                    settings.markFirstPageAsSingle,
+                    (val) => onUpdateSetting('markFirstPageAsSingle', val)
+                  )}
+                </View>
+              </>
+            ) : (
+              <>
+                <Text style={styles.sectionHeader}>
+                  {tr('reader.verticalSettings', 'Vertical Reader Settings')}
+                </Text>
+                <Text style={[styles.sectionHeader, { marginTop: 8 }]}>
+                  {tr('reader.pillarboxSettings', 'Pillarbox Settings')}
+                </Text>
+                <View style={styles.card}>
                   <View style={styles.row}>
-                    <Text style={styles.rowLabel}>{t('reader.displayMode') || 'Display Mode'}</Text>
-                  </View>
-                  <View style={{ marginBottom: 12 }}>
-                    {renderSegment<PagedDisplayMode>(
-                      [
-                        { label: t('reader.singlePage') || 'Single', value: 'singlePage' },
-                        { label: t('reader.doublePage') || 'Double', value: 'doublePage' },
-                        { label: t('reader.automatic') || 'Automatic', value: 'automatic' },
-                      ],
-                      settings.pagedDisplayMode,
-                      (val) => onUpdateSetting('pagedDisplayMode', val)
-                    )}
-                  </View>
-
-                  {/* Always Separate First Page */}
-                  <View style={[styles.row, styles.dividerRow]}>
-                    <View style={{ flex: 1, paddingRight: 12 }}>
-                      <Text style={styles.rowLabel}>
-                        {t('reader.alwaysSeparateFirstPage') || 'Always Separate First Page'}
-                      </Text>
-                      <Text style={styles.rowSubtitle}>
-                        {t('reader.alwaysSeparateFirstPageHint') || 'Displays cover page alone in two-page spread'}
-                      </Text>
+                    <Text style={styles.rowLabel}>{tr('reader.pillarboxAmount', 'Amount')}</Text>
+                    <View style={styles.stepperWrap}>
+                      <Text style={styles.stepperValueText}>{amount}</Text>
+                      <View style={styles.stepper}>
+                        <TouchableOpacity
+                          style={styles.stepperButton}
+                          onPress={() => setAmount(amount - 2)}
+                          activeOpacity={0.6}
+                        >
+                          <Ionicons name="remove" size={18} color={amount <= 0 ? '#555' : '#FFFFFF'} />
+                        </TouchableOpacity>
+                        <View style={styles.stepperDivider} />
+                        <TouchableOpacity
+                          style={styles.stepperButton}
+                          onPress={() => setAmount(amount + 2)}
+                          activeOpacity={0.6}
+                        >
+                          <Ionicons name="add" size={18} color="#FFFFFF" />
+                        </TouchableOpacity>
+                      </View>
                     </View>
-                    <Switch
-                      value={settings.markFirstPageAsSingle}
-                      onValueChange={(val) => onUpdateSetting('markFirstPageAsSingle', val)}
-                      trackColor={{ false: '#3A3A3C', true: theme.primary }}
-                      thumbColor="#FFFFFF"
-                    />
                   </View>
-
-                  {/* Reading Direction */}
-                  <View style={[styles.row, styles.dividerRow]}>
-                    <Text style={styles.rowLabel}>
-                      {t('reader.readingDirection') || 'Reader Direction'}
-                    </Text>
-                  </View>
-                  <View style={{ marginBottom: 8 }}>
-                    {renderSegment<ReaderDirection>(
-                      [
-                        { label: t('reader.rtl') || 'Right to Left (Manga)', value: 'rightToLeft' },
-                        { label: t('reader.ltr') || 'Left to Right (Comics)', value: 'leftToRight' },
-                      ],
-                      settings.readerDirection,
-                      (val) => onUpdateSetting('readerDirection', val)
-                    )}
-                  </View>
+                  {renderPickerRow<DeviceOrientationSetting>(
+                    'pillarboxOrientation',
+                    tr('reader.deviceOrientation', 'Device Orientation'),
+                    orientationOptions,
+                    settings.pillarboxOrientation,
+                    (val) => onUpdateSetting('pillarboxOrientation', val)
+                  )}
                 </View>
               </>
             )}
 
-            {/* General Settings */}
-            <Text style={styles.sectionHeader}>
-              {t('reader.generalSettings') || 'GENERAL SETTINGS'}
-            </Text>
-            <View style={[styles.card, { backgroundColor: '#2C2C2E' }]}>
-              {/* Orientation Setting */}
-              <View style={styles.row}>
-                <Text style={styles.rowLabel}>
-                  {t('reader.deviceOrientation') || 'Device Orientation'}
-                </Text>
-              </View>
-              <View style={{ marginBottom: 12 }}>
-                {renderSegment<DeviceOrientationSetting>(
-                  [
-                    { label: t('reader.both') || 'Free', value: 'both' },
-                    { label: t('reader.portrait') || 'Portrait', value: 'portrait' },
-                    { label: t('reader.landscape') || 'Landscape', value: 'landscape' },
-                  ],
-                  settings.pillarboxOrientation,
-                  (val) => onUpdateSetting('pillarboxOrientation', val)
-                )}
-              </View>
-
-              {/* Lock Rotation */}
-              <View style={[styles.row, styles.dividerRow]}>
-                <Text style={styles.rowLabel}>{t('reader.lockRotation') || 'Lock Rotation'}</Text>
-                <Switch
-                  value={settings.rotationLocked}
-                  onValueChange={(val) => onUpdateSetting('rotationLocked', val)}
-                  trackColor={{ false: '#3A3A3C', true: theme.primary }}
-                  thumbColor="#FFFFFF"
-                />
-              </View>
-
-              {/* Page Padding */}
-              <View style={[styles.row, styles.dividerRow]}>
-                <Text style={styles.rowLabel}>{t('reader.pagePadding') || 'Page Padding'}</Text>
-                <Switch
-                  value={settings.pagePadding}
-                  onValueChange={(val) => onUpdateSetting('pagePadding', val)}
-                  trackColor={{ false: '#3A3A3C', true: theme.primary }}
-                  thumbColor="#FFFFFF"
-                />
-              </View>
-
-              {/* Tap to Navigate */}
-              <View style={[styles.row, styles.dividerRow]}>
-                <View style={{ flex: 1, paddingRight: 12 }}>
-                  <Text style={styles.rowLabel}>
-                    {t('reader.enableTapNavigation') || 'Enable Tap Navigation'}
-                  </Text>
-                  <Text style={styles.rowSubtitle}>
-                    Tap sides to turn pages, center to toggle controls
-                  </Text>
-                </View>
-                <Switch
-                  value={settings.tapSidesToNavgiate}
-                  onValueChange={(val) => onUpdateSetting('tapSidesToNavgiate', val)}
-                  trackColor={{ false: '#3A3A3C', true: theme.primary }}
-                  thumbColor="#FFFFFF"
-                />
-              </View>
-
-              {/* Page Saving */}
-              <View style={[styles.row, styles.dividerRow]}>
-                <View style={{ flex: 1, paddingRight: 12 }}>
-                  <Text style={styles.rowLabel}>
-                    {t('reader.enablePageSaving') || 'Enable Page Saving'}
-                  </Text>
-                  <Text style={styles.rowSubtitle}>
-                    Long press any page to save or share
-                  </Text>
-                </View>
-                <Switch
-                  value={settings.longPressToSaveImageEnabled}
-                  onValueChange={(val) => onUpdateSetting('longPressToSaveImageEnabled', val)}
-                  trackColor={{ false: '#3A3A3C', true: theme.primary }}
-                  thumbColor="#FFFFFF"
-                />
-              </View>
-
-              {/* Downsample Pages */}
-              <View style={[styles.row, styles.dividerRow]}>
-                <View style={{ flex: 1, paddingRight: 12 }}>
-                  <Text style={styles.rowLabel}>
-                    {t('reader.downsamplePages') || 'Downsample Pages'}
-                  </Text>
-                  <Text style={styles.rowSubtitle}>
-                    Reduces memory usage for large high-res pages
-                  </Text>
-                </View>
-                <Switch
-                  value={settings.downsamplePages}
-                  onValueChange={(val) => onUpdateSetting('downsamplePages', val)}
-                  trackColor={{ false: '#3A3A3C', true: theme.primary }}
-                  thumbColor="#FFFFFF"
-                />
-              </View>
-
-              {/* Chapter Background */}
-              <View style={[styles.row, styles.dividerRow]}>
-                <Text style={styles.rowLabel}>
-                  {t('reader.chapterBackground') || 'Chapter Background'}
-                </Text>
-              </View>
-              <View style={{ marginBottom: 8 }}>
-                {renderSegment<ChapterBackground>(
-                  [
-                    { label: 'Black', value: 'black' },
-                    { label: 'Dark', value: 'dark' },
-                    { label: 'Theme', value: 'theme' },
-                    { label: 'White', value: 'white' },
-                  ],
-                  settings.chapterBackgroundColor,
-                  (val) => onUpdateSetting('chapterBackgroundColor', val)
-                )}
-              </View>
+            {/* General settings */}
+            <Text style={styles.sectionHeader}>{tr('reader.generalSettings', 'General Settings')}</Text>
+            <View style={styles.card}>
+              {renderPickerRow<ReaderDirection>(
+                'direction',
+                tr('reader.readingDirection', 'Reader Direction'),
+                [
+                  { label: tr('reader.rtl', 'Right to Left (Manga)'), value: 'rightToLeft' },
+                  { label: tr('reader.ltr', 'Left to Right (Comics)'), value: 'leftToRight' },
+                ],
+                settings.readerDirection,
+                (val) => onUpdateSetting('readerDirection', val),
+                true
+              )}
+              {renderSwitchRow(
+                tr('reader.downsamplePages', 'Downsample Pages'),
+                settings.downsamplePages,
+                (val) => onUpdateSetting('downsamplePages', val)
+              )}
+              {renderSwitchRow(
+                tr('reader.pagePadding', 'Page Padding'),
+                settings.pagePadding,
+                (val) => onUpdateSetting('pagePadding', val)
+              )}
+              {renderSwitchRow(
+                tr('reader.lockRotation', 'Lock Rotation'),
+                settings.rotationLocked,
+                (val) => onUpdateSetting('rotationLocked', val)
+              )}
+              {renderSwitchRow(
+                tr('reader.enableTapNavigation', 'Enable Tap Navigation'),
+                settings.tapSidesToNavgiate,
+                (val) => onUpdateSetting('tapSidesToNavgiate', val)
+              )}
+              {renderSwitchRow(
+                tr('reader.enablePageSaving', 'Enable Page Saving'),
+                settings.longPressToSaveImageEnabled,
+                (val) => onUpdateSetting('longPressToSaveImageEnabled', val)
+              )}
+              {renderPickerRow<ChapterBackground>(
+                'background',
+                tr('reader.chapterBackground', 'Chapter Background'),
+                [
+                  { label: 'Theme', value: 'theme' },
+                  { label: 'Black', value: 'black' },
+                  { label: 'Dark', value: 'dark' },
+                  { label: 'White', value: 'white' },
+                ],
+                settings.chapterBackgroundColor,
+                (val) => onUpdateSetting('chapterBackgroundColor', val)
+              )}
             </View>
 
-            {/* Action Buttons Settings */}
-            <Text style={styles.sectionHeader}>
-              {t('reader.actionButtonsSettings') || 'ACTION BUTTONS SETTINGS'}
-            </Text>
-            <View style={[styles.card, { backgroundColor: '#2C2C2E' }]}>
-              {/* Settings Button Location */}
-              <View style={styles.row}>
-                <Text style={styles.rowLabel}>
-                  {t('reader.settingsButtonLocation') || 'Settings Button Location'}
-                </Text>
-              </View>
-              <View style={{ marginBottom: 12 }}>
-                {renderSegment<SettingButtonLocation>(
-                  [
-                    { label: t('reader.left') || 'Left', value: 'left' },
-                    { label: t('reader.right') || 'Right', value: 'right' },
-                  ],
-                  settings.settingButtonLocation,
-                  (val) => onUpdateSetting('settingButtonLocation', val)
-                )}
-              </View>
-
-              {/* Chevron Buttons Location */}
-              <View style={[styles.row, styles.dividerRow]}>
-                <Text style={styles.rowLabel}>
-                  {t('reader.chevronButtonLocation') || 'Chevron Button Location'}
-                </Text>
-              </View>
-              <View style={{ marginBottom: 8 }}>
-                {renderSegment<ChapterChangeArrowLocation>(
-                  [
-                    { label: t('reader.left') || 'Left', value: 'left' },
-                    { label: t('reader.middle') || 'Middle', value: 'middle' },
-                    { label: t('reader.right') || 'Right', value: 'right' },
-                  ],
-                  settings.chapterChangeArrows,
-                  (val) => onUpdateSetting('chapterChangeArrows', val)
-                )}
-              </View>
+            {/* Action buttons settings */}
+            <Text style={styles.sectionHeader}>{tr('reader.actionButtonsSettings', 'Action Buttons Settings')}</Text>
+            <View style={styles.card}>
+              {renderPickerRow<string>(
+                'chevronButtonLocation',
+                tr('reader.chevronButtonLocation', 'Chevron Button Location'),
+                [
+                  { label: tr('reader.right', 'Right'), value: 'right' },
+                  { label: tr('reader.left', 'Left'), value: 'left' },
+                ],
+                settings.chapterChangeArrows === 'left' ? 'left' : 'right',
+                (val) => onUpdateSetting('chapterChangeArrows', val as any),
+                true
+              )}
+              {renderPickerRow<string>(
+                'settingsButtonLocation',
+                tr('reader.settingsButtonLocation', 'Settings Button Location'),
+                [
+                  { label: tr('reader.right', 'Right'), value: 'right' },
+                  { label: tr('reader.left', 'Left'), value: 'left' },
+                ],
+                settings.settingButtonLocation,
+                (val) => onUpdateSetting('settingButtonLocation', val as any)
+              )}
             </View>
 
-            {/* Apply Globally Button */}
+            {/* Apply Globally Button Card */}
             <TouchableOpacity
-              style={[styles.applyButton, { backgroundColor: theme.primary }]}
+              style={styles.applyButtonCard}
               onPress={handleApplyGlobally}
-              activeOpacity={0.8}
+              activeOpacity={0.7}
             >
-              <Ionicons name="globe-outline" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
-              <Text style={styles.applyButtonText}>
-                {t('reader.applyGlobally') || 'Apply Globally'}
-              </Text>
+              <Text style={styles.applyButtonCardText}>{tr('reader.applyGlobally', 'Apply Globally')}</Text>
             </TouchableOpacity>
+
+            {scope === 'manga' && isCustom ? (
+              <TouchableOpacity
+                style={[styles.applyButtonCard, { marginTop: 12 }]}
+                onPress={handleResetToGlobal}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.applyButtonCardText, { color: '#FF453A' }]}>
+                  {tr('reader.resetToGlobal', 'Reset to Global')}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
 
             <View style={{ height: 40 }} />
           </ScrollView>
@@ -427,129 +429,170 @@ const styles = StyleSheet.create({
   },
   modalBackdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
   modalContent: {
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    maxHeight: '85%',
-    paddingBottom: Platform.OS === 'android' ? 36 : 24,
+    backgroundColor: SHEET_BG,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    height: '88%',
+    overflow: 'hidden',
   },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#38383A',
-  },
-  title: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    textAlign: 'center',
+    justifyContent: 'flex-end',
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 4,
   },
   doneButtonContainer: {
-    width: 60,
     alignItems: 'flex-end',
   },
   doneButton: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '600',
+    color: ACCENT,
+  },
+  title: {
+    fontSize: 34,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    marginBottom: 12,
   },
   scrollView: {
     paddingHorizontal: 16,
-    paddingTop: 12,
   },
   scrollViewContent: {
     paddingBottom: Platform.OS === 'android' ? 30 : 16,
   },
-  scopeBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    marginBottom: 16,
-  },
-  scopeBannerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  scopeBannerText: {
-    fontSize: 13,
-    color: '#FFFFFF',
-    fontWeight: '500',
-    marginLeft: 8,
-  },
-  scopeActionButton: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
-    borderWidth: 1,
-  },
-  scopeActionButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
   sectionHeader: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#8E8E93',
+    fontSize: 13,
+    fontWeight: '500',
+    color: MUTED,
     textTransform: 'uppercase',
-    marginTop: 16,
+    marginTop: 22,
     marginBottom: 8,
-    marginLeft: 4,
+    marginLeft: 6,
+    letterSpacing: 0.3,
   },
   card: {
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingTop: 12,
-    paddingBottom: 4,
-    marginBottom: 8,
+    backgroundColor: CARD_BG,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    overflow: 'hidden',
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 10,
+    minHeight: 50,
+    paddingVertical: 8,
+  },
+  optionRow: {
+    paddingLeft: 12,
+    backgroundColor: 'rgba(255,255,255,0.03)',
   },
   dividerRow: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#38383A',
+    borderTopColor: DIVIDER,
   },
   rowLabel: {
-    fontSize: 15,
+    fontSize: 17,
     fontWeight: '400',
     color: '#FFFFFF',
   },
   rowSubtitle: {
     fontSize: 12,
-    color: '#8E8E93',
+    color: MUTED,
     marginTop: 2,
+  },
+  pickerValueWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexShrink: 1,
+    marginLeft: 12,
+  },
+  pickerValue: {
+    fontSize: 16,
+    color: MUTED,
+    flexShrink: 1,
+  },
+  stepperWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  stepperValueText: {
+    fontSize: 17,
+    fontWeight: '400',
+    color: '#FFFFFF',
+    marginRight: 16,
+  },
+  stepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2C2C2E',
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  stepperButton: {
+    width: 46,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepperDivider: {
+    width: StyleSheet.hairlineWidth,
+    height: 18,
+    backgroundColor: '#555',
   },
   segmentContainer: {
     flexDirection: 'row',
-    borderRadius: 8,
-    padding: 3,
+    borderRadius: 10,
+    padding: 2,
+    backgroundColor: CARD_BG,
   },
   segmentItem: {
     flex: 1,
-    paddingVertical: 6,
+    paddingVertical: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 6,
+    borderRadius: 8,
+  },
+  segmentItemActive: {
+    backgroundColor: SEGMENT_ACTIVE,
   },
   segmentText: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '500',
+    color: '#FFFFFF',
   },
   segmentTextActive: {
-    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  applyButtonCard: {
+    backgroundColor: CARD_BG,
+    borderRadius: 12,
+    height: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 24,
+  },
+  applyButtonCardText: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: ACCENT,
+  },
+  secondaryButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 13,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 20,
+  },
+  secondaryButtonText: {
+    fontSize: 15,
     fontWeight: '600',
   },
   applyButton: {
@@ -557,8 +600,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 14,
-    borderRadius: 10,
-    marginTop: 20,
+    borderRadius: 12,
+    marginTop: 14,
   },
   applyButtonText: {
     fontSize: 15,
