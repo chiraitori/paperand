@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, waitFor } from '@testing-library/react-native';
+import { render, waitFor, fireEvent } from '@testing-library/react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
@@ -262,3 +262,26 @@ describe('ReaderScreen Progress Saving', () => {
   });
 });
 
+describe('ReaderScreen HUD & Info Modal Interactions', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('renders detached info button and opens info modal when tapped', async () => {
+    const { findByText, getByText } = render(<TestReaderScreen />);
+
+    await waitFor(() => {
+      expect(getByText('Test Manga')).toBeTruthy();
+    }, { timeout: 3000 });
+
+    const infoButtonGlyph = await findByText('i');
+    expect(infoButtonGlyph).toBeTruthy();
+
+    fireEvent.press(infoButtonGlyph);
+
+    // Info modal should display with Read Now and Chapters
+    await waitFor(() => {
+      expect(getByText('Read Now')).toBeTruthy();
+    });
+  });
+});

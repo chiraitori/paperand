@@ -243,7 +243,28 @@ const InfoModal: React.FC<{
 }) => {
   const [showFullDescription, setShowFullDescription] = useState(false);
 
-  if (!manga || !chapter) return null;
+  const safeManga: Manga = manga || {
+    id: 'unknown',
+    title: 'Manga Info',
+    author: '',
+    description: '',
+    coverImage: '',
+    genres: [],
+    status: 'ongoing',
+    chapters: [],
+    lastUpdated: '',
+    source: '',
+  };
+
+  const safeChapter: Chapter = chapter || {
+    id: 'unknown',
+    mangaId: safeManga.id,
+    number: 1,
+    title: 'Chapter',
+    pages: [],
+    releaseDate: '',
+    isRead: false,
+  };
 
   const handleContinue = () => {
     onClose();
@@ -258,13 +279,13 @@ const InfoModal: React.FC<{
   const handleShare = async () => {
     try {
       await Share.share({
-        title: manga.title,
-        message: `${manga.title} - Chapter ${chapter.number}\nRead on Paperback`,
+        title: safeManga.title,
+        message: `${safeManga.title} - Chapter ${safeChapter.number}\nRead on Paperback`,
       });
     } catch {}
   };
 
-  const isCompleted = manga.status?.toLowerCase() === 'completed';
+  const isCompleted = safeManga.status?.toLowerCase() === 'completed';
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -277,9 +298,9 @@ const InfoModal: React.FC<{
           <ScrollView style={styles.infoModalScroll} showsVerticalScrollIndicator={false}>
             {/* Hero Cover Banner with smooth bottom gradient fade */}
             <View style={styles.infoHeroBanner}>
-              {manga.coverImage ? (
+              {safeManga.coverImage ? (
                 <ExpoImage
-                  source={{ uri: manga.coverImage }}
+                  source={{ uri: safeManga.coverImage }}
                   style={StyleSheet.absoluteFill}
                   contentFit="cover"
                   cachePolicy="memory-disk"
@@ -292,7 +313,7 @@ const InfoModal: React.FC<{
 
               <View style={styles.infoHeroContent}>
                 <Text style={styles.infoHeroTitle} numberOfLines={2}>
-                  {manga.title}
+                  {safeManga.title}
                 </Text>
                 <View style={styles.infoHeroMetaRow}>
                   <View style={styles.infoHeroStatusWrap}>
@@ -301,16 +322,16 @@ const InfoModal: React.FC<{
                       {isCompleted ? 'Completed' : 'Ongoing'}
                     </Text>
                   </View>
-                  {manga.author ? (
+                  {safeManga.author ? (
                     <View style={styles.infoHeroMetaItem}>
                       <Ionicons name="pencil" size={12} color="#8E8E93" style={{ marginRight: 4 }} />
-                      <Text style={styles.infoHeroMetaText} numberOfLines={1}>{manga.author}</Text>
+                      <Text style={styles.infoHeroMetaText} numberOfLines={1}>{safeManga.author}</Text>
                     </View>
                   ) : null}
-                  {manga.artist && manga.artist !== manga.author ? (
+                  {safeManga.artist && safeManga.artist !== safeManga.author ? (
                     <View style={styles.infoHeroMetaItem}>
                       <Ionicons name="color-palette-outline" size={12} color="#8E8E93" style={{ marginRight: 4 }} />
-                      <Text style={styles.infoHeroMetaText} numberOfLines={1}>{manga.artist}</Text>
+                      <Text style={styles.infoHeroMetaText} numberOfLines={1}>{safeManga.artist}</Text>
                     </View>
                   ) : null}
                 </View>
@@ -350,9 +371,9 @@ const InfoModal: React.FC<{
                   style={styles.infoDescriptionText}
                   numberOfLines={showFullDescription ? undefined : 3}
                 >
-                  {manga.description || 'No description'}
+                  {safeManga.description || 'No description'}
                 </Text>
-                {manga.description && manga.description.length > 100 ? (
+                {safeManga.description && safeManga.description.length > 100 ? (
                   <Text style={styles.infoMoreText}>
                     {showFullDescription ? 'Less' : 'More'}
                   </Text>
@@ -361,13 +382,13 @@ const InfoModal: React.FC<{
             </View>
 
             {/* Tag Pills */}
-            {manga.genres && manga.genres.length > 0 ? (
+            {safeManga.genres && safeManga.genres.length > 0 ? (
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.infoTagsScroll}
               >
-                {manga.genres.map((genre, idx) => (
+                {safeManga.genres.map((genre, idx) => (
                   <TouchableOpacity
                     key={`${genre}-${idx}`}
                     style={styles.infoTagPill}
@@ -383,7 +404,7 @@ const InfoModal: React.FC<{
             {/* Source Badge & More Button */}
             <View style={styles.infoSourceRow}>
               <View style={styles.infoSourcePill}>
-                <Text style={styles.infoSourcePillText}>{manga.source || 'Source'}</Text>
+                <Text style={styles.infoSourcePillText}>{safeManga.source || 'Source'}</Text>
               </View>
               <TouchableOpacity style={styles.infoSourceMoreButton} activeOpacity={0.7}>
                 <Ionicons name="ellipsis-horizontal" size={18} color="#FFFFFF" />
@@ -391,15 +412,15 @@ const InfoModal: React.FC<{
             </View>
 
             {/* Chapters List */}
-            {manga.chapters && manga.chapters.length > 0 ? (
+            {safeManga.chapters && safeManga.chapters.length > 0 ? (
               <>
                 <View style={styles.infoChaptersHeader}>
                   <Text style={styles.infoChaptersTitle}>Chapters</Text>
-                  <Text style={styles.infoChaptersCount}>{manga.chapters.length}</Text>
+                  <Text style={styles.infoChaptersCount}>{safeManga.chapters.length}</Text>
                 </View>
                 <View style={styles.infoChaptersList}>
-                  {manga.chapters.map((ch) => {
-                    const isCurrent = ch.id === chapter.id;
+                  {safeManga.chapters.map((ch) => {
+                    const isCurrent = ch.id === safeChapter.id;
                     return (
                       <TouchableOpacity
                         key={ch.id}
@@ -613,6 +634,8 @@ export const ReaderScreen: React.FC = () => {
 
   // HUD Controls state
   const [showControls, setShowControls] = useState(true);
+  const showControlsRef = useRef(showControls);
+  showControlsRef.current = showControls;
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [spotifyPickerOpen, setSpotifyPickerOpen] = useState(false);
@@ -1085,18 +1108,12 @@ export const ReaderScreen: React.FC = () => {
   );
 
   // Controls Visibility
-  const startControlsTimer = useCallback(() => {
-    if (controlsTimeoutRef.current) {
-      clearTimeout(controlsTimeoutRef.current);
-    }
-    if (spotifyPickerOpen || showSettingsModal || showInfoModal) return;
-    controlsTimeoutRef.current = setTimeout(() => {
-      hideControls();
-    }, 5000);
-  }, [spotifyPickerOpen, showSettingsModal, showInfoModal]);
-
   const hideControls = useCallback(() => {
     if (spotifyPickerOpen || showSettingsModal || showInfoModal) return;
+    if (controlsTimeoutRef.current) {
+      clearTimeout(controlsTimeoutRef.current);
+      controlsTimeoutRef.current = null;
+    }
     Animated.timing(fadeAnim, {
       toValue: 0,
       duration: 200,
@@ -1104,15 +1121,27 @@ export const ReaderScreen: React.FC = () => {
     }).start(() => setShowControls(false));
   }, [spotifyPickerOpen, showSettingsModal, showInfoModal, fadeAnim]);
 
+  const startControlsTimer = useCallback(() => {
+    if (controlsTimeoutRef.current) {
+      clearTimeout(controlsTimeoutRef.current);
+      controlsTimeoutRef.current = null;
+    }
+    if (spotifyPickerOpen || showSettingsModal || showInfoModal) return;
+    controlsTimeoutRef.current = setTimeout(() => {
+      hideControls();
+    }, 5000);
+  }, [spotifyPickerOpen, showSettingsModal, showInfoModal, hideControls]);
+
   useEffect(() => {
     if (showSettingsModal || showInfoModal || spotifyPickerOpen) {
       if (controlsTimeoutRef.current) {
         clearTimeout(controlsTimeoutRef.current);
+        controlsTimeoutRef.current = null;
       }
     }
   }, [showSettingsModal, showInfoModal, spotifyPickerOpen]);
 
-  const showControlsWithTimer = () => {
+  const showControlsWithTimer = useCallback(() => {
     setShowControls(true);
     Animated.timing(fadeAnim, {
       toValue: 1,
@@ -1120,15 +1149,27 @@ export const ReaderScreen: React.FC = () => {
       useNativeDriver: true,
     }).start();
     startControlsTimer();
-  };
+  }, [fadeAnim, startControlsTimer]);
 
-  const toggleControls = () => {
-    if (showControls) {
+  const toggleControls = useCallback(() => {
+    if (showControlsRef.current) {
       hideControls();
     } else {
       showControlsWithTimer();
     }
-  };
+  }, [hideControls, showControlsWithTimer]);
+
+  // Auto-hide controls after 5 seconds on initial mount if controls are open
+  useEffect(() => {
+    if (showControlsRef.current) {
+      startControlsTimer();
+    }
+    return () => {
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+      }
+    };
+  }, [startControlsTimer]);
 
   // Progress Saving
   const saveProgress = useCallback(
@@ -1474,53 +1515,57 @@ export const ReaderScreen: React.FC = () => {
       }
       lastTapTimeRef.current = now;
 
-      if (!readerSettings.tapSidesToNavgiate) {
-        toggleControls();
+      // 1. When controls are showing, ANY single tap anywhere hides them immediately!
+      if (showControlsRef.current) {
+        hideControls();
         return;
       }
 
+      // 2. In vertical / long-strip mode, navigation is continuous scroll.
+      // Single tap anywhere toggles/shows controls!
+      if (readerSettings.readerMode !== 'horizontal' || !readerSettings.tapSidesToNavgiate) {
+        showControlsWithTimer();
+        return;
+      }
+
+      // 3. In horizontal mode with tap-to-navigate enabled:
       const { pageX } = e.nativeEvent;
       const leftThreshold = screenWidth * 0.25;
       const rightThreshold = screenWidth * 0.75;
 
       if (pageX < leftThreshold) {
         // Left Zone
-        if (readerSettings.readerMode === 'horizontal') {
-          if (readerSettings.readerDirection === 'rightToLeft') {
-            // RTL Manga: Tapping Left goes forward!
-            goToNextPage();
-          } else {
-            // LTR Comics: Tapping Left goes backward!
-            goToPreviousPage();
-          }
+        if (readerSettings.readerDirection === 'rightToLeft') {
+          // RTL Manga: Tapping Left goes forward!
+          goToNextPage();
         } else {
-          // Vertical mode: scroll to previous page
-          if (currentPage > 0) {
-            goToPage(currentPage - 1, true);
-          }
+          // LTR Comics: Tapping Left goes backward!
+          goToPreviousPage();
         }
       } else if (pageX > rightThreshold) {
         // Right Zone
-        if (readerSettings.readerMode === 'horizontal') {
-          if (readerSettings.readerDirection === 'rightToLeft') {
-            // RTL Manga: Tapping Right goes backward!
-            goToPreviousPage();
-          } else {
-            // LTR Comics: Tapping Right goes forward!
-            goToNextPage();
-          }
+        if (readerSettings.readerDirection === 'rightToLeft') {
+          // RTL Manga: Tapping Right goes backward!
+          goToPreviousPage();
         } else {
-          // Vertical mode: scroll to next page
-          if (currentPage < pages.length - 1) {
-            goToPage(currentPage + 1, true);
-          }
+          // LTR Comics: Tapping Right goes forward!
+          goToNextPage();
         }
       } else {
-        // Center Zone: Toggle HUD
-        toggleControls();
+        // Center Zone: Show HUD
+        showControlsWithTimer();
       }
     },
-    [readerSettings.tapSidesToNavgiate, readerSettings.readerMode, readerSettings.readerDirection, screenWidth, currentPage, pages.length, goToNextPage, goToPreviousPage, goToPage]
+    [
+      hideControls,
+      showControlsWithTimer,
+      readerSettings.readerMode,
+      readerSettings.tapSidesToNavgiate,
+      readerSettings.readerDirection,
+      screenWidth,
+      goToNextPage,
+      goToPreviousPage,
+    ]
   );
 
   // Warm the cache for the next few pages so they are decoded before the user gets there
@@ -1727,7 +1772,11 @@ export const ReaderScreen: React.FC = () => {
         const rightPage = isRtl ? item.pages[0] : item.pages[1];
 
         return (
-          <View style={[styles.pageGroupContainer, { width: screenWidth, height: screenHeight, backgroundColor: readerBgColor }]}>
+          <TouchableOpacity
+            activeOpacity={1}
+            onPress={handleReaderPress}
+            style={[styles.pageGroupContainer, { width: screenWidth, height: screenHeight, backgroundColor: readerBgColor }]}
+          >
             <View style={[styles.doublePageRow, { width: containerWidth, height: screenHeight }]}>
               <View style={{ width: halfWidth, height: screenHeight, justifyContent: 'center', alignItems: 'center' }}>
                 <PageImageElement
@@ -1758,14 +1807,18 @@ export const ReaderScreen: React.FC = () => {
                 />
               </View>
             </View>
-          </View>
+          </TouchableOpacity>
         );
       }
 
       // Single page in group
       const singlePage = item.pages[0];
       return (
-        <View style={[styles.pageGroupContainer, { width: screenWidth, height: screenHeight, backgroundColor: readerBgColor }]}>
+        <TouchableOpacity
+          activeOpacity={1}
+          onPress={handleReaderPress}
+          style={[styles.pageGroupContainer, { width: screenWidth, height: screenHeight, backgroundColor: readerBgColor }]}
+        >
           <PageImageElement
             page={singlePage}
             targetWidth={containerWidth}
@@ -1778,7 +1831,7 @@ export const ReaderScreen: React.FC = () => {
             isVertical={false}
             downsamplePages={readerSettings.downsamplePages}
           />
-        </View>
+        </TouchableOpacity>
       );
     },
     [
@@ -1803,7 +1856,9 @@ export const ReaderScreen: React.FC = () => {
       const targetWidth = screenWidth - (pillarboxMargin * 2) - horizontalPadding;
 
       return (
-        <View
+        <TouchableOpacity
+          activeOpacity={1}
+          onPress={handleReaderPress}
           style={{
             width: screenWidth,
             alignItems: 'center',
@@ -1823,7 +1878,7 @@ export const ReaderScreen: React.FC = () => {
             isVertical={true}
             downsamplePages={readerSettings.downsamplePages}
           />
-        </View>
+        </TouchableOpacity>
       );
     },
     [
@@ -1989,118 +2044,129 @@ export const ReaderScreen: React.FC = () => {
       {/* Pull-to-change-chapter hint ("RELEASE / PREVIOUS CHAPTER") */}
       {/* Paperback HUD Overlay (ChapterRendererOverlayView) */}
       {showControls && (
-        <Animated.View
-          style={[styles.topBar, { opacity: fadeAnim }]}
+        <View
+          style={styles.topBar}
           pointerEvents="box-none"
         >
-        <View style={styles.topPill}>
-          <View style={styles.titleContainer}>
-            <Text style={styles.mangaTitle} numberOfLines={1}>
-              {manga?.title}
-            </Text>
-            <Text style={styles.chapterInfo} numberOfLines={1}>
-              Ch. {chapter?.number}{chapter?.title ? ` - ${chapter.title}` : ''}
-            </Text>
-          </View>
-          {sourceId ? (
-            <TouchableOpacity
-              style={styles.pillIconButton}
-              onPress={handleOpenWebBypass}
-              hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
-            >
-              <Ionicons name="globe-outline" size={20} color="#fff" />
-            </TouchableOpacity>
-          ) : null}
-          <TouchableOpacity
-            style={styles.closeButton}
-            onPress={() => navigation.goBack()}
-            hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
+          <Animated.View
+            style={[styles.topBarAnimated, { opacity: fadeAnim }]}
+            pointerEvents="box-none"
           >
-            <Ionicons name="close" size={24} color="#fff" />
-          </TouchableOpacity>
+            <View style={styles.topPill} pointerEvents="auto">
+              <View style={styles.titleContainer}>
+                <Text style={styles.mangaTitle} numberOfLines={1}>
+                  {manga?.title}
+                </Text>
+                <Text style={styles.chapterInfo} numberOfLines={1}>
+                  Ch. {chapter?.number}{chapter?.title ? ` - ${chapter.title}` : ''}
+                </Text>
+              </View>
+              {sourceId ? (
+                <TouchableOpacity
+                  style={styles.pillIconButton}
+                  onPress={handleOpenWebBypass}
+                  hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
+                >
+                  <Ionicons name="globe-outline" size={20} color="#fff" />
+                </TouchableOpacity>
+              ) : null}
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => navigation.goBack()}
+                hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
+              >
+                <Ionicons name="close" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity
+              style={styles.detachedInfoButton}
+              onPress={() => setShowInfoModal(true)}
+              activeOpacity={0.8}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <Text style={styles.infoGlyph}>i</Text>
+            </TouchableOpacity>
+          </Animated.View>
         </View>
-        <TouchableOpacity
-          style={styles.detachedInfoButton}
-          onPress={() => setShowInfoModal(true)}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.infoGlyph}>i</Text>
-        </TouchableOpacity>
-      </Animated.View>
       )}
 
       {/* Bottom controls: quick actions on the left, page pill on the right */}
       {showControls && (
-        <Animated.View
-          style={[styles.bottomBar, { opacity: fadeAnim }]}
+        <View
+          style={styles.bottomBar}
           pointerEvents="box-none"
         >
-        <View style={styles.bottomRow}>
-          {readerSettings.chapterChangeArrows === 'left' ? (
-            <View style={styles.pagePill}>
-              <TouchableOpacity
-                style={styles.pillChevron}
-                onPress={readerSettings.readerMode === 'horizontal' && isRtl ? goToNextPage : goToPreviousPage}
-                activeOpacity={0.7}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Ionicons name="chevron-back" size={20} color="#fff" />
-              </TouchableOpacity>
-              <Text style={styles.pagePillText}>{getPageIndicatorText()}</Text>
-              <TouchableOpacity
-                style={styles.pillChevron}
-                onPress={readerSettings.readerMode === 'horizontal' && isRtl ? goToPreviousPage : goToNextPage}
-                activeOpacity={0.7}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Ionicons name="chevron-forward" size={20} color="#fff" />
-              </TouchableOpacity>
-            </View>
-          ) : null}
+          <Animated.View
+            style={[styles.bottomBarAnimated, { opacity: fadeAnim }]}
+            pointerEvents="box-none"
+          >
+            <View style={styles.bottomRow} pointerEvents="auto">
+              {readerSettings.chapterChangeArrows === 'left' ? (
+                <View style={styles.pagePill}>
+                  <TouchableOpacity
+                    style={styles.pillChevron}
+                    onPress={readerSettings.readerMode === 'horizontal' && isRtl ? goToNextPage : goToPreviousPage}
+                    activeOpacity={0.7}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Ionicons name="chevron-back" size={20} color="#fff" />
+                  </TouchableOpacity>
+                  <Text style={styles.pagePillText}>{getPageIndicatorText()}</Text>
+                  <TouchableOpacity
+                    style={styles.pillChevron}
+                    onPress={readerSettings.readerMode === 'horizontal' && isRtl ? goToPreviousPage : goToNextPage}
+                    activeOpacity={0.7}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Ionicons name="chevron-forward" size={20} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              ) : null}
 
-          <View style={styles.bottomLeft}>
-            <TouchableOpacity style={styles.roundButton} onPress={toggleQuickMode} activeOpacity={0.8}>
-              <MaterialCommunityIcons name="swap-horizontal" size={24} color="#fff" />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.roundButton} onPress={toggleOrientationLock} activeOpacity={0.8}>
-              <MaterialCommunityIcons
-                name={orientationLocked ? 'screen-rotation-lock' : 'screen-rotation'}
-                size={22}
-                color={orientationLocked ? '#FA233B' : '#fff'}
-              />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.roundButton}
-              onPress={() => setShowSettingsModal(true)}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="settings-sharp" size={20} color="#fff" />
-            </TouchableOpacity>
-          </View>
+              <View style={styles.bottomLeft}>
+                <TouchableOpacity style={styles.roundButton} onPress={toggleQuickMode} activeOpacity={0.8}>
+                  <MaterialCommunityIcons name="swap-horizontal" size={24} color="#fff" />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.roundButton} onPress={toggleOrientationLock} activeOpacity={0.8}>
+                  <MaterialCommunityIcons
+                    name={orientationLocked ? 'screen-rotation-lock' : 'screen-rotation'}
+                    size={22}
+                    color={orientationLocked ? '#FA233B' : '#fff'}
+                  />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.roundButton}
+                  onPress={() => setShowSettingsModal(true)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="settings-sharp" size={20} color="#fff" />
+                </TouchableOpacity>
+              </View>
 
-          {readerSettings.chapterChangeArrows !== 'left' ? (
-            <View style={styles.pagePill}>
-              <TouchableOpacity
-                style={styles.pillChevron}
-                onPress={readerSettings.readerMode === 'horizontal' && isRtl ? goToNextPage : goToPreviousPage}
-                activeOpacity={0.7}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Ionicons name="chevron-back" size={20} color="#fff" />
-              </TouchableOpacity>
-              <Text style={styles.pagePillText}>{getPageIndicatorText()}</Text>
-              <TouchableOpacity
-                style={styles.pillChevron}
-                onPress={readerSettings.readerMode === 'horizontal' && isRtl ? goToPreviousPage : goToNextPage}
-                activeOpacity={0.7}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Ionicons name="chevron-forward" size={20} color="#fff" />
-              </TouchableOpacity>
+              {readerSettings.chapterChangeArrows !== 'left' ? (
+                <View style={styles.pagePill}>
+                  <TouchableOpacity
+                    style={styles.pillChevron}
+                    onPress={readerSettings.readerMode === 'horizontal' && isRtl ? goToNextPage : goToPreviousPage}
+                    activeOpacity={0.7}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Ionicons name="chevron-back" size={20} color="#fff" />
+                  </TouchableOpacity>
+                  <Text style={styles.pagePillText}>{getPageIndicatorText()}</Text>
+                  <TouchableOpacity
+                    style={styles.pillChevron}
+                    onPress={readerSettings.readerMode === 'horizontal' && isRtl ? goToPreviousPage : goToNextPage}
+                    activeOpacity={0.7}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Ionicons name="chevron-forward" size={20} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              ) : null}
             </View>
-          ) : null}
+          </Animated.View>
         </View>
-      </Animated.View>
       )}
 
       {/* Spotify Mini Player */}
@@ -2282,6 +2348,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     zIndex: 30,
   },
+  topBarAnimated: {
+    width: '100%',
+  },
   topPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2349,6 +2418,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingBottom: Platform.OS === 'ios' ? 34 : 18,
     zIndex: 30,
+  },
+  bottomBarAnimated: {
+    width: '100%',
   },
   bottomRow: {
     flexDirection: 'row',
