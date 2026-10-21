@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as IntentLauncher from 'expo-intent-launcher';
+import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -30,6 +31,7 @@ export interface ReleaseInfo {
   downloadUrl: string | null;
   apkDownloadUrl: string | null;
   apkSize: number | null;
+  apkArchitecture?: string | null;
 }
 
 export interface UpdateCheckResult {
@@ -77,20 +79,135 @@ export const compareVersions = (v1: string, v2: string): number => {
 };
 
 /**
+ * Normalizes an architecture name to standard Android ABI names
+ */
+export const normalizeArch = (arch: string): string => {
+  const lower = (arch || '').toLowerCase();
+  if (lower.includes('arm64') || lower.includes('aarch64')) return 'arm64-v8a';
+  if (lower.includes('v7') || lower.includes('armeabi')) return 'armeabi-v7a';
+  if (lower.includes('x86_64') || lower.includes('x64')) return 'x86_64';
+  if (lower.includes('x86')) return 'x86';
+  if (lower.includes('universal')) return 'universal';
+  return lower;
+};
+
+/**
+ * Determine the architecture of an APK asset from its filename
+ */
+export const getAssetArch = (fileName: string): string => {
+  const lower = (fileName || '').toLowerCase();
+  if (lower.includes('arm64-v8a') || lower.includes('arm64') || lower.includes('aarch64')) {
+    return 'arm64-v8a';
+  }
+  if (lower.includes('armeabi-v7a') || lower.includes('armeabi') || lower.includes('armv7')) {
+    return 'armeabi-v7a';
+  }
+  if (lower.includes('x86_64') || lower.includes('x64')) {
+    return 'x86_64';
+  }
+  if (lower.includes('x86') && !lower.includes('x86_64')) {
+    return 'x86';
+  }
+  return 'universal';
+};
+
+/**
+ * Get device's supported CPU architectures, with primary ABI first
+ */
+export const getDeviceSupportedAbis = (): string[] => {
+  if (Device.supportedCpuArchitectures && Device.supportedCpuArchitectures.length > 0) {
+    return Device.supportedCpuArchitectures.map(normalizeArch);
+  }
+  return [];
+};
+
+/**
+ * Get primary device architecture name
+ */
+export const getDeviceArchitecture = (): string => {
+  const abis = getDeviceSupportedAbis();
+  return abis.length > 0 ? abis[0] : 'universal';
+};
+
+/**
+ * Select the best matching APK asset based on device CPU architecture.
+ * Priority order:
+ * 1. Match supported CPU architectures in order of preference (primary ABI first).
+ * 2. Universal APK (e.g. 'universal' or default release apk).
+ * 3. Fallback to any available .apk asset.
+ */
+export const selectBestApkAsset = (
+  assets: any[],
+  customDeviceAbi?: string
+): { asset: any; arch: string } | null => {
+  if (!assets || !Array.isArray(assets)) return null;
+
+  const apkAssets = assets.filter((asset: any) =>
+    asset?.name?.toLowerCase().endsWith('.apk')
+  );
+  if (apkAssets.length === 0) return null;
+
+  if (apkAssets.length === 1) {
+    return {
+      asset: apkAssets[0],
+      arch: getAssetArch(apkAssets[0].name),
+    };
+  }
+
+  const deviceAbis = customDeviceAbi
+    ? [normalizeArch(customDeviceAbi)]
+    : getDeviceSupportedAbis();
+
+  // 1. Try matching device ABIs in order of preference (primary ABI first)
+  for (const abi of deviceAbis) {
+    const matched = apkAssets.find((asset: any) => {
+      const arch = getAssetArch(asset.name);
+      return arch === abi;
+    });
+
+    if (matched) {
+      return {
+        asset: matched,
+        arch: getAssetArch(matched.name),
+      };
+    }
+  }
+
+  // 2. Try universal APK
+  const universal = apkAssets.find((asset: any) => {
+    const arch = getAssetArch(asset.name);
+    return arch === 'universal';
+  });
+
+  if (universal) {
+    return {
+      asset: universal,
+      arch: 'universal',
+    };
+  }
+
+  // 3. Fallback to first available APK
+  return {
+    asset: apkAssets[0],
+    arch: getAssetArch(apkAssets[0].name),
+  };
+};
+
+/**
  * Parse GitHub release data to extract relevant information
  */
-const parseReleaseData = (data: any): ReleaseInfo => {
-  // Find APK download URL from assets
+export const parseReleaseData = (data: any, customDeviceAbi?: string): ReleaseInfo => {
+  // Find APK download URL from assets based on device CPU architecture
   let apkDownloadUrl: string | null = null;
   let apkSize: number | null = null;
+  let apkArchitecture: string | null = null;
 
   if (data.assets && Array.isArray(data.assets)) {
-    const apkAsset = data.assets.find(
-      (asset: any) => asset.name?.endsWith('.apk')
-    );
-    if (apkAsset) {
-      apkDownloadUrl = apkAsset.browser_download_url;
-      apkSize = apkAsset.size;
+    const selected = selectBestApkAsset(data.assets, customDeviceAbi);
+    if (selected) {
+      apkDownloadUrl = selected.asset.browser_download_url;
+      apkSize = selected.asset.size;
+      apkArchitecture = selected.arch;
     }
   }
 
@@ -107,6 +224,7 @@ const parseReleaseData = (data: any): ReleaseInfo => {
     downloadUrl: data.html_url || null,
     apkDownloadUrl,
     apkSize,
+    apkArchitecture,
   };
 };
 

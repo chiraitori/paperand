@@ -266,7 +266,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
             </View>
             <Text style={[styles.title, { color: colors.text }]}>Update Available!</Text>
             <Text style={[styles.versionInfo, { color: colors.textSecondary }]}>
-              {currentVersion} → {releaseInfo.version}
+              {currentVersion} → {releaseInfo.version}{releaseInfo.apkArchitecture ? ' (' + releaseInfo.apkArchitecture + ')' : ''}
             </Text>
           </View>
 
