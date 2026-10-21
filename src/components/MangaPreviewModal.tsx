@@ -67,6 +67,7 @@ export const MangaPreviewModal: React.FC<MangaPreviewModalProps> = ({
     const { width, height } = useWindowDimensions();
     const [loading, setLoading] = useState(false);
     const [chapters, setChapters] = useState<ChapterInfo[]>([]);
+    const [firstChapterId, setFirstChapterId] = useState<string | null>(null);
     const [totalChapters, setTotalChapters] = useState<number>(0); // Total chapter count
     const [fullDetails, setFullDetails] = useState<any>(null);
 
@@ -85,6 +86,7 @@ export const MangaPreviewModal: React.FC<MangaPreviewModalProps> = ({
         if (!visible) {
             // Reset state when closed
             setChapters([]);
+            setFirstChapterId(null);
             setTotalChapters(0);
             setFullDetails(null);
         }
@@ -102,6 +104,17 @@ export const MangaPreviewModal: React.FC<MangaPreviewModalProps> = ({
 
             setFullDetails(details);
             setTotalChapters(chaptersData.length); // Store total count
+            if (chaptersData.length > 0) {
+                const sortedByNum = [...chaptersData].sort(
+                    (a: any, b: any) => (a.chapNum ?? Infinity) - (b.chapNum ?? Infinity)
+                );
+                const earliest = sortedByNum[0]?.chapNum !== undefined
+                    ? sortedByNum[0]
+                    : chaptersData[chaptersData.length - 1];
+                setFirstChapterId(earliest?.id ?? chaptersData[chaptersData.length - 1].id);
+            } else {
+                setFirstChapterId(null);
+            }
             setChapters(chaptersData.slice(0, 10).map((ch: any) => ({
                 id: ch.id,
                 name: ch.name || `Chapter ${ch.chapNum}`,
@@ -116,9 +129,9 @@ export const MangaPreviewModal: React.FC<MangaPreviewModalProps> = ({
     };
 
     const handleReadNow = () => {
-        if (manga && chapters.length > 0 && onReadNow) {
-            const firstChapter = chapters[chapters.length - 1];
-            onReadNow(manga, firstChapter.id);
+        if (manga && (firstChapterId || chapters.length > 0) && onReadNow) {
+            const targetChapterId = firstChapterId || chapters[chapters.length - 1].id;
+            onReadNow(manga, targetChapterId);
         }
         onClose();
     };

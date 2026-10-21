@@ -30,16 +30,20 @@ export const SearchResultsScreen: React.FC = () => {
   const { theme } = useTheme();
   const navigation = useNavigation<SearchResultsScreenNavigationProp>();
   const route = useRoute<SearchResultsScreenRouteProp>();
-  const { sourceId, sourceName, query, initialItems } = route.params;
+  const { sourceId, sourceName, query, initialItems, initialMetadata } = route.params as any;
   const { width, height } = useWindowDimensions();
 
   const [results, setResults] = useState<SourceManga[]>(initialItems || []);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [metadata, setMetadata] = useState<any>(null);
-  const [hasMoreResults, setHasMoreResults] = useState(true);
+  const [metadata, setMetadata] = useState<any>(initialMetadata ?? null);
+  const [hasMoreResults, setHasMoreResults] = useState(
+    initialMetadata !== undefined ? Boolean(initialMetadata) : true
+  );
   const [settings, setSettings] = useState<GeneralSettings>(defaultSettings);
   const isInitialLoad = useRef(true);
+  const metadataRef = useRef<any>(initialMetadata ?? null);
+  metadataRef.current = metadata;
 
   // Determine orientation and get appropriate column count
   const isLandscape = width > height;
@@ -60,17 +64,8 @@ export const SearchResultsScreen: React.FC = () => {
     }, [])
   );
 
-  useEffect(() => {
-    if (isInitialLoad.current) {
-      isInitialLoad.current = false;
-      loadResults(true);
-    }
-  }, []);
-
-  const loadResults = async (isFirstLoad: boolean = false) => {
-    if (isFirstLoad && initialItems && initialItems.length > 0) {
-      setLoading(true);
-    } else if (isFirstLoad) {
+  const loadResults = useCallback(async (isFirstLoad: boolean = false) => {
+    if (isFirstLoad) {
       setLoading(true);
     } else {
       if (!hasMoreResults) return;
@@ -81,7 +76,7 @@ export const SearchResultsScreen: React.FC = () => {
       const result = await searchManga(
         sourceId,
         query,
-        isFirstLoad ? null : metadata
+        isFirstLoad ? null : metadataRef.current
       );
 
       if (result.results.length === 0) {
@@ -96,13 +91,20 @@ export const SearchResultsScreen: React.FC = () => {
             setResults(result.results);
           }
         } else {
-          setResults(prev => [...prev, ...result.results]);
+          setResults(prev => {
+            const existingIds = new Set(prev.map((item: SourceManga) => item.id));
+            const newItems = result.results.filter((item: SourceManga) => !existingIds.has(item.id));
+            return [...prev, ...newItems];
+          });
         }
       }
 
       if (!result.metadata) {
         setHasMoreResults(false);
+        metadataRef.current = null;
+        setMetadata(null);
       } else {
+        metadataRef.current = result.metadata;
         setMetadata(result.metadata);
       }
     } catch (error) {
@@ -112,12 +114,21 @@ export const SearchResultsScreen: React.FC = () => {
       setLoading(false);
       setLoadingMore(false);
     }
-  };
+  }, [sourceId, query, hasMoreResults, initialItems]);
+
+  useEffect(() => {
+    if (isInitialLoad.current) {
+      isInitialLoad.current = false;
+      if (!initialItems || initialItems.length === 0 || initialMetadata === undefined) {
+        loadResults(true);
+      }
+    }
+  }, [loadResults, initialItems, initialMetadata]);
 
   const loadMoreResults = useCallback(() => {
     if (loadingMore || loading || !hasMoreResults) return;
     loadResults(false);
-  }, [loadingMore, loading, hasMoreResults]);
+  }, [loadingMore, loading, hasMoreResults, loadResults]);
 
   const navigateToManga = (manga: SourceManga) => {
     navigation.navigate('MangaDetail', {

@@ -172,7 +172,8 @@ export const ExtensionRunner: React.FC = () => {
             cookies: [],
           };
 
-          if (isImageRequest) {
+          const respContentType = responseMeta.mimeType || '';
+          if (isImageRequest || /^image\//i.test(respContentType) || /application\/octet-stream/i.test(respContentType)) {
             // For image requests, return as base64 for binary processing
             const arrayBuffer = await response.arrayBuffer();
             const bytes = new Uint8Array(arrayBuffer);
@@ -494,6 +495,7 @@ const proxyFetch = async (url, options) => {
         headers: options?.headers || {},
         body: options?.body,
         data: options?.data, // For form data (used by some extensions)
+        responseType: options?.responseType,
       },
     });
     
@@ -616,11 +618,12 @@ const App = {
   },
   
   createSourceStateManager: () => {
-    // This will be set when an extension is loaded
-    let currentExtensionId = null;
+    // Initialize with activeExtensionId so constructor/custom-property state calls are scoped properly
+    let currentExtensionId = activeExtensionId || null;
     
     const storeValue = async (key, value) => {
-      if (!currentExtensionId) {
+      const targetExtId = currentExtensionId || activeExtensionId;
+      if (!targetExtId) {
         // Fallback to in-memory storage
         extensionStates[key] = value;
         return;
@@ -632,7 +635,7 @@ const App = {
         sendToRN({
           type: 'stateStore',
           requestId,
-          extensionId: currentExtensionId,
+          extensionId: targetExtId,
           key,
           value,
         });
@@ -649,7 +652,8 @@ const App = {
     };
     
     const retrieveValue = async (key) => {
-      if (!currentExtensionId) {
+      const targetExtId = currentExtensionId || activeExtensionId;
+      if (!targetExtId) {
         return extensionStates[key] || null;
       }
       
@@ -661,7 +665,7 @@ const App = {
         sendToRN({
           type: 'stateRetrieve',
           requestId,
-          extensionId: currentExtensionId,
+          extensionId: targetExtId,
           key,
         });
         
@@ -1007,6 +1011,11 @@ const Application = {
     for (const interceptor of interceptors) {
       const callback = selectorRegistry.get(interceptor.requestSelector);
       if (callback) finalRequest = await callback(finalRequest);
+    }
+
+    const appendedUrl = appendRequestParams(finalRequest.url, finalRequest.param);
+    if (appendedUrl !== finalRequest.url) {
+      finalRequest = { ...finalRequest, url: appendedUrl };
     }
 
     if (finalRequest.cookies && Object.keys(finalRequest.cookies).length > 0) {

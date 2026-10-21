@@ -215,5 +215,17 @@ describe('Update Service', () => {
       expect(normalizeArch('armv7l')).toBe('armeabi-v7a');
       expect(normalizeArch('x64')).toBe('x86_64');
     });
+
+    it('should compare pre-release and build metadata versions accurately', () => {
+      expect(updateService.isNewerVersion('1.0.0', '1.0.0-rc.1')).toBe(true);
+      expect(updateService.isNewerVersion('1.0.0-rc.2', '1.0.0-rc.1')).toBe(true);
+      expect(updateService.isNewerVersion('1.0.0+build.2', '1.0.0+build.1')).toBe(false);
+    });
+
+    it('should expose resumable APK download state helpers', async () => {
+      const state = await updateService.getApkDownloadState('https://github.com/test/paperand-arm64-v8a.apk');
+      expect(state).toHaveProperty('state', 'idle');
+      expect(state).toHaveProperty('progress', 0);
+    });
   });
 });

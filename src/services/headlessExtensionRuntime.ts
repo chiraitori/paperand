@@ -178,6 +178,15 @@ const createPaperback09Application = () => ({
             if (callback) finalRequest = await callback(finalRequest);
         }
 
+        if (finalRequest.param) {
+            const rawParam = String(finalRequest.param).replace(/^[?&]+/, '');
+            if (rawParam) {
+                const separator = finalRequest.url.includes('?') ? '&' : '?';
+                finalRequest = { ...finalRequest, url: `${finalRequest.url}${separator}${rawParam}` };
+            }
+        }
+        finalRequest.headers = await addNativeBrowserAuth(extensionId || '', finalRequest.url, finalRequest.headers || {});
+
         if (finalRequest.cookies) {
             const cookieHeader = Object.entries(finalRequest.cookies)
                 .map(([name, value]) => `${name}=${value}`)

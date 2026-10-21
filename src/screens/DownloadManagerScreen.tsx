@@ -312,7 +312,7 @@ export const DownloadManagerScreen: React.FC = () => {
 
                                     {/* Queue Items */}
                                     {group.jobs.map((job, idx) => {
-                                        const progress = job.total > 0 ? job.progress / job.total : 0;
+                                        const progress = job.total > 0 ? Math.min(1, Math.max(0, job.progress / job.total)) : 0;
                                         const isActive = job.status === 'downloading';
 
                                         return (

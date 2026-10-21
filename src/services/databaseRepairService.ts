@@ -5,7 +5,7 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Directory, File, Paths } from 'expo-file-system';
+import { Directory, Paths } from 'expo-file-system';
 import { logger } from './loggerService';
 import { LibraryEntry } from '../types';
 
@@ -29,6 +29,17 @@ const STORAGE_KEYS = {
   DOWNLOAD_QUEUE: '@download_queue',
 };
 
+// Keys that legitimately store raw strings instead of JSON
+const RAW_STRING_KEYS = new Set([
+  '@paperback_theme',
+  '@paperback_active_custom_theme',
+  '@update_last_check',
+  '@update_skipped_version',
+  '@update_modal_dismissed',
+  '@paperand_cache_limit',
+  '@app_language',
+]);
+
 /**
  * Execute full database and storage repair routine
  */
@@ -51,6 +62,9 @@ export const repairDatabase = async (): Promise<DatabaseRepairReport> => {
     report.totalKeysAudited = allKeys.length;
 
     for (const key of allKeys) {
+      if (RAW_STRING_KEYS.has(key)) {
+        continue;
+      }
       if (key.startsWith('@paperback') || key.startsWith('@general') || key.startsWith('@theme') || key.startsWith('@download')) {
         try {
           const raw = await AsyncStorage.getItem(key);
@@ -219,7 +233,12 @@ export const repairDatabase = async (): Promise<DatabaseRepairReport> => {
       if (rawRepos) {
         const repos = JSON.parse(rawRepos);
         if (Array.isArray(repos)) {
-          const validRepos = repos.filter(r => r && r.url && typeof r.url === 'string');
+          const validRepos = repos
+            .filter(r => r && ((typeof r.baseUrl === 'string' && r.baseUrl) || (typeof r.url === 'string' && r.url)))
+            .map(r => ({
+              ...r,
+              baseUrl: r.baseUrl || r.url,
+            }));
           if (validRepos.length !== repos.length) {
             await AsyncStorage.setItem(STORAGE_KEYS.REPOSITORIES, JSON.stringify(validRepos));
             report.repairedRecordsCount += (repos.length - validRepos.length);

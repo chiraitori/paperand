@@ -41,6 +41,13 @@ export const ExtensionSettingsScreen: React.FC = () => {
   // Local state for input values - key is "sectionId/rowId"
   const [inputValues, setInputValues] = useState<Record<string, string>>({});
 
+  const normalizeFormSections = useCallback((form: any): DUISection[] => {
+    if (Array.isArray(form)) return form;
+    if (form && Array.isArray(form.sections)) return form.sections;
+    if (form && Array.isArray(form.rows)) return [form];
+    return [];
+  }, []);
+
   const loadSettings = useCallback(async () => {
     setLoading(true);
     try {
@@ -52,20 +59,20 @@ export const ExtensionSettingsScreen: React.FC = () => {
         console.log('[ExtSettings] Reconstructing form path, stack length:', formStack.length);
 
         // Start with the result sections (which contain rows, not the other way around)
-        let currentSections: DUISection[] | undefined = result.sections;
+        let currentSections: DUISection[] | undefined = normalizeFormSections(result.sections);
 
         for (const stackItem of formStack) {
-          if (!currentSections) break;
+          if (!currentSections || currentSections.length === 0) break;
 
           console.log('[ExtSettings] Looking for row:', stackItem.rowId);
 
           // Find the navigation row in any section
           let found = false;
           for (const section of currentSections) {
-            const row = section.rows?.find(r => r.id === stackItem.rowId);
+            const row = (section.rows || []).find(r => r.id === stackItem.rowId);
             if (row?.form) {
               console.log('[ExtSettings] Found form for row:', stackItem.rowId);
-              currentSections = row.form;
+              currentSections = normalizeFormSections(row.form);
               found = true;
               break;
             }
@@ -87,7 +94,7 @@ export const ExtensionSettingsScreen: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [extensionId, formStack]);
+  }, [extensionId, formStack, normalizeFormSections]);
 
   useEffect(() => {
     loadSettings();
@@ -100,8 +107,9 @@ export const ExtensionSettingsScreen: React.FC = () => {
 
   const handleNavigationPress = (row: DUIRow, sectionId: string) => {
     if (row.form) {
-      setFormStack(prev => [...prev, { title: row.label, sections: row.form!, rowId: row.id, sectionId }]);
-      setCurrentForm(row.form);
+      const normalized = normalizeFormSections(row.form);
+      setFormStack(prev => [...prev, { title: row.label, sections: normalized, rowId: row.id, sectionId }]);
+      setCurrentForm(normalized);
     }
   };
 
@@ -148,8 +156,38 @@ export const ExtensionSettingsScreen: React.FC = () => {
       const basePath = getCurrentPath();
       const fullPath = basePath ? `${basePath}/${sectionId}/${row.id}` : `${sectionId}/${row.id}`;
 
-      console.log('Updating setting:', fullPath, 'to', [selectedValue]);
-      const success = await updateExtensionSetting(extensionId, fullPath, [selectedValue]);
+      const existingValues = Array.isArray(row.value)
+        ? row.value
+        : row.value !== undefined && row.value !== null
+        ? [row.value]
+        : [];
+      const newValues = (row as any).allowsMultiselect
+        ? existingValues.includes(selectedValue)
+          ? existingValues.filter((v: any) => v !== selectedValue)
+          : [...existingValues, selectedValue]
+        : [selectedValue];
+
+      const updateSectionsRowValue = (sections: DUISection[]): DUISection[] =>
+        sections.map((sec, idx) => {
+          const secId = sec.id || `section_${idx}`;
+          if (secId === sectionId || sec.id === sectionId) {
+            return {
+              ...sec,
+              rows: (sec.rows || []).map(r => (r.id === row.id ? { ...r, value: newValues } : r)),
+            };
+          }
+          return sec;
+        });
+
+      setCurrentForm(prev => (prev ? updateSectionsRowValue(prev) : prev));
+      setSettings(prev =>
+        prev && prev.sections
+          ? { ...prev, sections: updateSectionsRowValue(prev.sections) }
+          : prev
+      );
+
+      console.log('Updating setting:', fullPath, 'to', newValues);
+      const success = await updateExtensionSetting(extensionId, fullPath, newValues);
 
       if (success) {
         // Don't reload settings - it breaks form navigation
@@ -396,7 +434,7 @@ export const ExtensionSettingsScreen: React.FC = () => {
     console.log('[ExtSettings] Section:', sectionId, 'rows:', section.rows?.length, JSON.stringify(section.rows?.map(r => ({ id: r.id, type: r.type, label: r.label, value: r.value }))));
 
     // Pre-render rows to filter out nulls
-    const renderedRows = section.rows
+    const renderedRows = (section.rows || [])
       .map((row, rowIndex) => {
         // Log each row for debugging
         console.log('[ExtSettings] Row:', row.id, 'type:', row.type, 'label:', row.label, 'value:', row.value);

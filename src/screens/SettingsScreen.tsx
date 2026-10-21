@@ -30,7 +30,9 @@ import { getGeneralSettings, updateGeneralSetting, clearAllSearchHistory } from 
 
 export const SettingsScreen: React.FC = () => {
   const { theme } = useTheme();
-  const { clearHistory, library } = useLibrary();
+  const { clearHistory, library, reloadLibrary } = useLibrary() as ReturnType<typeof useLibrary> & {
+    reloadLibrary?: () => Promise<void>;
+  };
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [hideReadHistory, setHideReadHistory] = useState(false);
   const [errorPopups, setErrorPopups] = useState(true);
@@ -319,6 +321,9 @@ export const SettingsScreen: React.FC = () => {
                         setIsRepairing(true);
                         try {
                           const report = await repairDatabase();
+                          if (report.success) {
+                            await reloadLibrary?.();
+                          }
                           setIsRepairing(false);
                           if (report.success) {
                             Alert.alert(

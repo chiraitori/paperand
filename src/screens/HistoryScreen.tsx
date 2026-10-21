@@ -94,10 +94,28 @@ export const HistoryScreen: React.FC = () => {
   useFocusEffect(
     useCallback(() => {
       getGeneralSettings().then((loaded) => {
-        setSettings(loaded);
+        setSettings((prev) => {
+          if (loaded.historyAuth && !prev.historyAuth) {
+            setIsAuthenticated(false);
+            performAuthCheck();
+          }
+          return loaded;
+        });
       });
-    }, [])
+    }, [performAuthCheck])
   );
+
+  // Re-run auth check when app resumes from background if historyAuth is enabled
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
+      if (appState.current === 'background' && nextAppState === 'active' && settings.historyAuth) {
+        setIsAuthenticated(false);
+        performAuthCheck();
+      }
+      appState.current = nextAppState;
+    });
+    return () => subscription.remove();
+  }, [settings.historyAuth, performAuthCheck]);
 
   // Filter and sort by last read (Paperback Incognito mode: hidden from history when hideReadHistory is enabled)
   const readingHistory = settings.hideReadHistory
@@ -134,8 +152,10 @@ export const HistoryScreen: React.FC = () => {
 
     entries.forEach(entry => {
       const readDate = new Date(entry.progress?.lastRead || 0);
-      const diffMs = now.getTime() - readDate.getTime();
-      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+      const readDayStart = new Date(readDate.getFullYear(), readDate.getMonth(), readDate.getDate()).getTime();
+      const diffMs = todayStart - readDayStart;
+      const diffDays = Math.max(0, Math.round(diffMs / (1000 * 60 * 60 * 24)));
 
       let key = 'OVER A MONTH AGO';
       if (diffDays === 0) {
@@ -231,14 +251,20 @@ export const HistoryScreen: React.FC = () => {
   const getChapterNumber = (entry: LibraryEntry): string => {
     if (!entry.progress) return '?';
     const chapter = entry.manga.chapters.find(ch => ch.id === entry.progress?.chapterId);
-    return chapter?.number.toString() || '?';
+    if (chapter && chapter.number !== undefined && chapter.number !== null) {
+      return chapter.number.toString();
+    }
+    const match = entry.progress?.chapterId?.match(/(\d+(?:\.\d+)?)/);
+    return match ? match[1] : '?';
   };
 
   const formatDate = (dateString: string): string => {
     const date = new Date(dateString);
     const now = new Date();
     const diffTime = Math.abs(now.getTime() - date.getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const dateStart = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+    const diffDays = Math.max(0, Math.round((todayStart - dateStart) / (1000 * 60 * 60 * 24)));
 
     if (diffDays === 0) return t('history.today');
     if (diffDays === 1) return t('history.yesterday');
@@ -345,6 +371,9 @@ export const HistoryScreen: React.FC = () => {
                               mangaId: entry.manga.id,
                               chapterId: entry.progress.chapterId,
                               sourceId: entry.manga.source,
+                              initialPage: entry.progress?.pageNumber
+                                ? Math.max(0, entry.progress.pageNumber - 1)
+                                : 0,
                             });
                           } else {
                             navigateToManga(entry);

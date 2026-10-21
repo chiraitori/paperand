@@ -5,7 +5,7 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Dimensions,
+  useWindowDimensions,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -16,9 +16,6 @@ import { t } from '../services/i18nService';
 
 type GenreListScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'GenreList'>;
 type GenreListScreenRouteProp = RouteProp<RootStackParamList, 'GenreList'>;
-
-const { width } = Dimensions.get('window');
-const GENRE_CARD_WIDTH = (width - 48) / 2;
 
 // Predefined colors for genre cards (Paperback style)
 const GENRE_COLORS = [
@@ -44,6 +41,8 @@ export const GenreListScreen: React.FC = () => {
   const navigation = useNavigation<GenreListScreenNavigationProp>();
   const route = useRoute<GenreListScreenRouteProp>();
   const { sourceId, tags } = route.params;
+  const { width } = useWindowDimensions();
+  const genreCardWidth = (width - 48) / 2;
 
   const navigateToGenre = (tag: { id: string; label: string }) => {
     navigation.navigate('Category', {
@@ -60,7 +59,7 @@ export const GenreListScreen: React.FC = () => {
     return (
       <TouchableOpacity
         key={tag.id}
-        style={[styles.genreCard, { backgroundColor: color }]}
+        style={[styles.genreCard, { width: genreCardWidth, backgroundColor: color }]}
         onPress={() => navigateToGenre(tag)}
         activeOpacity={0.8}
       >
@@ -132,7 +131,6 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   genreCard: {
-    width: GENRE_CARD_WIDTH,
     paddingVertical: 24,
     paddingHorizontal: 14,
     borderRadius: 12,

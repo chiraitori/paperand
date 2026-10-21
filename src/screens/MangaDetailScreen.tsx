@@ -9,6 +9,7 @@ import {
   Dimensions,
   Platform,
   Linking,
+  Alert,
 } from 'react-native';
 import { AppState } from 'react-native';
 import { getCookies as getNativeCookies, launchBypassActivity } from 'cloudflare-bypass';
@@ -20,6 +21,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useLibrary } from '../context/LibraryContext';
 import { ChapterListItem, LoadingIndicator, NativeDropdown, MigrationModal } from '../components';
 import { useDownloads } from '../context/DownloadContext';
+import { downloadService } from '../services/downloadService';
 import { getMangaDetails, getChapters, getMangaShareUrl, getCloudflareBypassRequest } from '../services/sourceService';
 import { getGeneralSettings, updateGeneralSetting } from '../services/settingsService';
 import {
@@ -29,7 +31,7 @@ import {
   getCachedChapterList
 } from '../services/cacheService';
 import { t } from '../services/i18nService';
-import { Manga, RootStackParamList } from '../types';
+import { Manga, Chapter, RootStackParamList } from '../types';
 
 type MangaDetailRouteProp = RouteProp<RootStackParamList, 'MangaDetail'>;
 type MangaDetailNavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -152,7 +154,17 @@ export const MangaDetailScreen: React.FC = () => {
     markAllAboveAsRead,
     markAllBelowAsRead,
   } = useLibrary();
-  const { downloadChapter, isChapterDownloaded, isDownloading, isQueued, getDownloadProgress } = useDownloads();
+  const downloadsCtx = useDownloads();
+  const {
+    downloads,
+    downloadChapter,
+    deleteDownload,
+    isChapterDownloaded,
+    isDownloading,
+    isQueued,
+    getDownloadProgress,
+    isOnWifi,
+  } = downloadsCtx;
 
   const [manga, setManga] = useState<Manga | null>(null);
   const [loading, setLoading] = useState(true);
@@ -277,8 +289,8 @@ export const MangaDetailScreen: React.FC = () => {
             chapters: chapters.map((ch, idx) => ({
               id: ch.id,
               mangaId: mangaId,
-              number: ch.chapNum || idx + 1,
-              title: ch.name || `Chapter ${ch.chapNum || idx + 1}`,
+              number: ch.chapNum ?? idx + 1,
+              title: ch.name || `Chapter ${ch.chapNum ?? idx + 1}`,
               pages: [],
               releaseDate: ch.time || new Date().toISOString(),
               isRead: false,
@@ -308,16 +320,57 @@ export const MangaDetailScreen: React.FC = () => {
     if (inLibrary) {
       await removeFromLibrary(manga.id);
     } else {
-      await addToLibrary(manga);
+      await addToLibrary({ ...manga });
     }
   };
 
   const handleFavoriteToggle = async () => {
     if (!manga) return;
     if (!inLibrary) {
-      await addToLibrary(manga);
+      await addToLibrary({ ...manga });
     }
     await toggleFavorite(manga.id);
+  };
+
+  const handleBulkDownload = async (chaptersToDownload: Chapter[]) => {
+    if (!manga || chaptersToDownload.length === 0) return;
+    const batchFn = (downloadsCtx as any).downloadChaptersBatch;
+    if (typeof batchFn === 'function') {
+      await batchFn(manga, chaptersToDownload);
+      return;
+    }
+
+    const onWifi = await isOnWifi();
+    if (!onWifi) {
+      const confirmed = await new Promise<boolean>((resolve) => {
+        Alert.alert(
+          t('downloadManager.cellularTitle') || 'Download on Cellular?',
+          t('downloadManager.cellularMessage') ||
+            'You are on cellular data. Downloading may use significant data. Continue?',
+          [
+            {
+              text: t('common.cancel') || 'Cancel',
+              style: 'cancel',
+              onPress: () => resolve(false),
+            },
+            {
+              text: t('downloadManager.continue') || 'Download',
+              onPress: () => resolve(true),
+            },
+          ],
+          { cancelable: true, onDismiss: () => resolve(false) }
+        );
+      });
+      if (!confirmed) return;
+    }
+
+    for (const ch of chaptersToDownload) {
+      downloadService.downloadChapter(
+        { id: manga.id, title: manga.title, coverImage: manga.coverImage, source: manga.source },
+        ch,
+        () => {}
+      );
+    }
   };
 
   const handleOpenWeb = async () => {
@@ -445,9 +498,9 @@ export const MangaDetailScreen: React.FC = () => {
     );
   }
 
-  const sortedChapters = sortDescending
-    ? [...manga.chapters].reverse()
-    : manga.chapters;
+  const sortedChapters = [...manga.chapters].sort((a, b) => sortDescending ? (b.number ?? 0) - (a.number ?? 0) : (a.number ?? 0) - (b.number ?? 0));
+
+
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -605,26 +658,35 @@ export const MangaDetailScreen: React.FC = () => {
                       break;
                     case 'downloadAll':
                       // Sort by chapter number so we download from chapter 1 first
-                      const allSorted = [...manga.chapters].sort((a, b) => (a.number || 0) - (b.number || 0));
+                      const allSorted = [...manga.chapters].sort((a, b) => (a.number ?? 0) - (b.number ?? 0)).filter(chapter => !isChapterDownloaded(chapter.id) && !isDownloading(chapter.id) && !isQueued(chapter.id));
+                      handleBulkDownload(allSorted);
+
                       console.log('[Download] Sorted chapters:', allSorted.map(c => c.number).slice(0, 5).join(', '), '...');
-                      allSorted.forEach(chapter => {
-                        if (!isChapterDownloaded(chapter.id) && !isDownloading(chapter.id)) {
-                          downloadChapter(manga, chapter);
-                        }
-                      });
                       break;
                     case 'downloadUnread':
                       // Sort by chapter number so we download from chapter 1 first
-                      const unreadSorted = [...manga.chapters].sort((a, b) => (a.number || 0) - (b.number || 0));
+                      const unreadSorted = [...manga.chapters].sort((a, b) => (a.number ?? 0) - (b.number ?? 0)).filter(chapter => !isChapterRead(manga.id, chapter.id) && !isChapterDownloaded(chapter.id) && !isDownloading(chapter.id) && !isQueued(chapter.id));
+                      handleBulkDownload(unreadSorted);
+
                       console.log('[Download] Sorted unread chapters:', unreadSorted.map(c => c.number).slice(0, 5).join(', '), '...');
-                      unreadSorted.forEach(chapter => {
-                        if (!isChapterRead(manga.id, chapter.id) && !isChapterDownloaded(chapter.id) && !isDownloading(chapter.id)) {
-                          downloadChapter(manga, chapter);
-                        }
-                      });
                       break;
                     case 'removeRead':
-                      // TODO: Implement remove read downloads
+                      {
+                        const readDownloadedIds = new Set<string>();
+                        manga.chapters.forEach((ch) => {
+                          if (isChapterDownloaded(ch.id) && isChapterRead(manga.id, ch.id)) {
+                            readDownloadedIds.add(ch.id);
+                          }
+                        });
+                        downloads.forEach((dl) => {
+                          if (dl.mangaId === manga.id && isChapterRead(manga.id, dl.chapterId)) {
+                            readDownloadedIds.add(dl.chapterId);
+                          }
+                        });
+                        readDownloadedIds.forEach((chId) => {
+                          deleteDownload(chId);
+                        });
+                      }
                       break;
                   }
                 }}

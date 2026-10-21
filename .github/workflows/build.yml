@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to build (e.g., 0.0.32)'
+        description: 'Version to build (e.g., 0.0.33)'
         required: false
         default: ''
 
@@ -190,12 +190,12 @@ jobs:
           
           echo "Build ID: $BUILD_ID, Status: $BUILD_STATUS"
           
-          # Wait if still building (max 10 more minutes)
-          for i in {1..20}; do
+          # Wait if still building (max 25 minutes)
+          for i in {1..50}; do
             if [ "$BUILD_STATUS" == "finished" ]; then
               break
             fi
-            echo "Build still $BUILD_STATUS, waiting 30s..."
+            echo "Build still $BUILD_STATUS, waiting 30s ($i/50)..."
             sleep 30
             BUILD_RESPONSE=$(curl -s -H "x-auth-token: $CODEMAGIC_TOKEN" \
               "https://api.codemagic.io/builds/$BUILD_ID")

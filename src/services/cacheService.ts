@@ -157,6 +157,10 @@ export const clearImageCache = async (): Promise<boolean> => {
         const items = cacheDir.list();
         for (const item of items) {
           try {
+            const name = (item.name || '').toLowerCase();
+            if (name.endsWith('.apk') || name.endsWith('.paperback') || name.startsWith('paperand_logs') || name === 'documentpicker') {
+              continue;
+            }
             item.delete();
           } catch {
             // Skip files we can't delete

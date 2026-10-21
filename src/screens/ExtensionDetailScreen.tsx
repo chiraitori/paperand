@@ -14,9 +14,10 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
+import { useLibrary } from '../context/LibraryContext';
 import { ExtensionSource } from '../services/extensionService';
 import { getInstalledExtensionIconUrl } from '../services/extensionStorageService';
-import { hasExtensionSettings } from '../services/sourceService';
+import { hasExtensionSettings, clearExtensionCache } from '../services/sourceService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { RootStackParamList } from '../types';
 import { t } from '../services/i18nService';
@@ -33,17 +34,59 @@ const INSTALLED_EXTENSIONS_KEY = '@installed_extensions_data';
 
 export const ExtensionDetailScreen: React.FC = () => {
   const { theme } = useTheme();
+  const { library, removeFromLibrary } = useLibrary();
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<RouteProp<RouteParams, 'ExtensionDetail'>>();
   const { extension } = route.params;
 
   const [parallelChapterDownloads, setParallelChapterDownloads] = useState(1);
-  const [parallelPageDownloads, setParallelPageDownloads] = useState(2);
+  const [parallelPageDownloads, setParallelPageDownloads] = useState(5);
   const [hideFromSearch, setHideFromSearch] = useState(false);
+  const [prefsLoaded, setPrefsLoaded] = useState(false);
   const [hasSettings, setHasSettings] = useState(false);
+  const prefsKey = `@extension_prefs_${extension.id}`;
 
   // Build icon URL
   const iconUrl = getInstalledExtensionIconUrl(extension);
+
+  // Load persisted extension preferences
+  useEffect(() => {
+    const loadPrefs = async () => {
+      try {
+        const storedPrefs = await AsyncStorage.getItem(prefsKey);
+        if (storedPrefs) {
+          const parsed = JSON.parse(storedPrefs);
+          if (typeof parsed.parallelChapterDownloads === 'number') {
+            setParallelChapterDownloads(parsed.parallelChapterDownloads);
+          }
+          if (typeof parsed.parallelPageDownloads === 'number') {
+            setParallelPageDownloads(parsed.parallelPageDownloads);
+          }
+          if (typeof parsed.hideFromSearch === 'boolean') {
+            setHideFromSearch(parsed.hideFromSearch);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load extension prefs:', error);
+      } finally {
+        setPrefsLoaded(true);
+      }
+    };
+    loadPrefs();
+  }, [prefsKey]);
+
+  // Persist extension preferences when changed
+  useEffect(() => {
+    if (!prefsLoaded) return;
+    AsyncStorage.setItem(
+      prefsKey,
+      JSON.stringify({
+        parallelChapterDownloads,
+        parallelPageDownloads,
+        hideFromSearch,
+      })
+    ).catch(error => console.error('Failed to save extension prefs:', error));
+  }, [prefsKey, prefsLoaded, parallelChapterDownloads, parallelPageDownloads, hideFromSearch]);
 
   // Check if extension has settings
   useEffect(() => {
@@ -61,6 +104,24 @@ export const ExtensionDetailScreen: React.FC = () => {
     });
   };
 
+  const handleResetToDefault = async () => {
+    setParallelChapterDownloads(1);
+    setParallelPageDownloads(5);
+    setHideFromSearch(false);
+    try {
+      await AsyncStorage.setItem(
+        prefsKey,
+        JSON.stringify({
+          parallelChapterDownloads: 1,
+          parallelPageDownloads: 5,
+          hideFromSearch: false,
+        })
+      );
+    } catch (error) {
+      console.error('Failed to reset extension prefs:', error);
+    }
+  };
+
   const handlePurgeFromLibrary = () => {
     Alert.alert(
       t('extensions.purge'),
@@ -70,8 +131,11 @@ export const ExtensionDetailScreen: React.FC = () => {
         {
           text: t('extensions.purge').split(' ')[0], // Hack, or add new key 'purgeAction'
           style: 'destructive',
-          onPress: () => {
-            // TODO: Implement purge logic
+          onPress: async () => {
+            const toPurge = library.filter(e => e.manga.source === extension.id);
+            for (const entry of toPurge) {
+              await removeFromLibrary(entry.manga.id);
+            }
             Alert.alert(t('extensions.purged'), t('extensions.purgedMessage', { name: extension.name }));
           },
         },
@@ -96,6 +160,7 @@ export const ExtensionDetailScreen: React.FC = () => {
                 const updated = extensions.filter((ext: any) => ext.id !== extension.id);
                 await AsyncStorage.setItem(INSTALLED_EXTENSIONS_KEY, JSON.stringify(updated));
               }
+              await clearExtensionCache(extension.id);
               navigation.goBack();
             } catch (error) {
               console.error('Error uninstalling extension:', error);
@@ -226,7 +291,7 @@ export const ExtensionDetailScreen: React.FC = () => {
                 <Text style={[styles.settingsLabel, { color: theme.text }]}>{t('extensions.domainSettings')}</Text>
                 <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.resetButton]}>
+              <TouchableOpacity style={[styles.resetButton]} onPress={handleResetToDefault}>
                 <Text style={[styles.resetText, { color: theme.primary }]}>{t('extensions.resetToDefault')}</Text>
               </TouchableOpacity>
             </View>

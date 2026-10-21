@@ -38,7 +38,9 @@ interface BackupRecord {
 export const BackupsScreen: React.FC = () => {
   const { theme } = useTheme();
   const navigation = useNavigation();
-  const { library } = useLibrary();
+  const { library, reloadLibrary } = useLibrary() as ReturnType<typeof useLibrary> & {
+    reloadLibrary?: () => Promise<void>;
+  };
   const [backups, setBackups] = useState<BackupRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const { dialogVisible, dialogConfig, showDialog, hideDialog } = useDialog();
@@ -71,12 +73,25 @@ export const BackupsScreen: React.FC = () => {
     setLoading(true);
     try {
       // Gather all app data for backup (matches Paperback iOS BackupManager schema)
-      const [storedLib, storedCats, storedRepos, storedSettings, storedThemes, storedHistory] = await Promise.all([
+      const [
+        storedLib,
+        storedCats,
+        storedRepos,
+        storedExtensions,
+        storedSettings,
+        storedThemes,
+        storedThemeMode,
+        storedActiveCustomTheme,
+        storedHistory,
+      ] = await Promise.all([
         AsyncStorage.getItem('@paperback_library'),
         AsyncStorage.getItem('@paperback_library_categories'),
         AsyncStorage.getItem('@added_repositories'),
+        AsyncStorage.getItem('@installed_extensions_data'),
         AsyncStorage.getItem('@general_settings'),
         AsyncStorage.getItem('@paperback_custom_themes'),
+        AsyncStorage.getItem('@paperback_theme'),
+        AsyncStorage.getItem('@paperback_active_custom_theme'),
         AsyncStorage.getItem('@reading_history'),
       ]);
 
@@ -91,18 +106,23 @@ export const BackupsScreen: React.FC = () => {
         library: parsedLib,
         categories: storedCats ? JSON.parse(storedCats) : [],
         repositories: parsedRepos,
+        installedExtensions: storedExtensions ? JSON.parse(storedExtensions) : [],
         settings: storedSettings ? JSON.parse(storedSettings) : null,
         customThemes: storedThemes ? JSON.parse(storedThemes) : [],
+        themeMode: storedThemeMode || null,
+        activeCustomTheme: storedActiveCustomTheme || null,
         history: storedHistory ? JSON.parse(storedHistory) : [],
       };
 
       const jsonStr = JSON.stringify(backupPayload, null, 2);
       const now = new Date();
       const dateTag = now.toISOString().split('T')[0];
-      const timeTag = `${now.getHours()}${now.getMinutes()}${now.getSeconds()}`;
+      const pad2 = (n: number) => String(n).padStart(2, '0');
+      const pad3 = (n: number) => String(n).padStart(3, '0');
+      const timeTag = `${pad2(now.getHours())}${pad2(now.getMinutes())}${pad2(now.getSeconds())}_${pad3(now.getMilliseconds())}`;
       const fileName = `Paperback_Backup_${dateTag}_${timeTag}.paperback`;
 
-      const backupFile = new File(Paths.cache, fileName);
+      const backupFile = new File(Paths.document, fileName);
       await backupFile.write(jsonStr);
 
       const newRecord: BackupRecord = {
@@ -221,15 +241,26 @@ export const BackupsScreen: React.FC = () => {
       if (Array.isArray(data.repositories)) {
         await AsyncStorage.setItem('@added_repositories', JSON.stringify(data.repositories));
       }
+      if (Array.isArray(data.installedExtensions)) {
+        await AsyncStorage.setItem('@installed_extensions_data', JSON.stringify(data.installedExtensions));
+      }
       if (data.settings) {
         await AsyncStorage.setItem('@general_settings', JSON.stringify(data.settings));
       }
       if (Array.isArray(data.customThemes)) {
         await AsyncStorage.setItem('@paperback_custom_themes', JSON.stringify(data.customThemes));
       }
+      if (typeof data.themeMode === 'string') {
+        await AsyncStorage.setItem('@paperback_theme', data.themeMode);
+      }
+      if (typeof data.activeCustomTheme === 'string') {
+        await AsyncStorage.setItem('@paperback_active_custom_theme', data.activeCustomTheme);
+      }
       if (Array.isArray(data.history)) {
         await AsyncStorage.setItem('@reading_history', JSON.stringify(data.history));
       }
+
+      await reloadLibrary?.();
 
       showDialog(
         t('common.success') || 'Success',
@@ -253,6 +284,13 @@ export const BackupsScreen: React.FC = () => {
           text: t('common.delete') || 'Delete',
           style: 'destructive',
           onPress: async () => {
+            if (backup.uri) {
+              try {
+                new File(backup.uri).delete();
+              } catch (e) {
+                console.warn('Failed to delete backup file on disk:', e);
+              }
+            }
             const filtered = backups.filter(b => b.id !== backup.id);
             await saveBackupsList(filtered);
             hideDialog();

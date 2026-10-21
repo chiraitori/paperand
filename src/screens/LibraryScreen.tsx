@@ -14,6 +14,7 @@ import {
   TextInput,
   Modal,
   Platform,
+  Alert,
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -112,6 +113,33 @@ export const LibraryScreen: React.FC = () => {
     performAuthCheck();
   }, []); // Only run once on mount
 
+  // Reload settings on screen focus and re-authenticate if libraryAuth was just enabled
+  useFocusEffect(
+    useCallback(() => {
+      getGeneralSettings().then((loaded) => {
+        setSettings((prev) => {
+          if (loaded.libraryAuth && !prev.libraryAuth) {
+            setIsAuthenticated(false);
+            performAuthCheck();
+          }
+          return loaded;
+        });
+      });
+    }, [performAuthCheck])
+  );
+
+  // Re-run auth check when app resumes from background if libraryAuth is enabled
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
+      if (appState.current === 'background' && nextAppState === 'active' && settings.libraryAuth) {
+        setIsAuthenticated(false);
+        performAuthCheck();
+      }
+      appState.current = nextAppState;
+    });
+    return () => subscription.remove();
+  }, [settings.libraryAuth, performAuthCheck]);
+
   // Block screenshots when auth is enabled (requires app restart to unblock)
   useEffect(() => {
     const enableScreenCapture = async () => {
@@ -143,11 +171,12 @@ export const LibraryScreen: React.FC = () => {
       case 'favorites':
         return favorites;
       case 'reading':
-        return library.filter(entry => entry.progress !== null);
+        return library.filter(entry => entry.progress !== null || entry.category?.toLowerCase() === 'reading');
       case 'completed':
-        return library.filter(entry => entry.manga.status === 'completed');
+        return library.filter(entry => entry.manga.status === 'completed' || entry.category?.toLowerCase() === 'completed');
       default:
-        return library.filter(entry => entry.category === activeFilter);
+        const catName = activeFilter.startsWith('cat:') ? activeFilter.slice(4) : activeFilter;
+        return library.filter(entry => entry.category === catName);
     }
   };
 
@@ -190,7 +219,9 @@ export const LibraryScreen: React.FC = () => {
 
   const allFilters = [
     ...baseFilters,
-    ...categories.map(cat => ({ key: cat, label: cat })),
+    ...categories
+      .filter(cat => !['all', 'favorites', 'reading', 'completed'].includes(cat.trim().toLowerCase()))
+      .map(cat => ({ key: cat, label: cat, isCustom: true })),
   ];
 
   const handleStartUpdate = async () => {
@@ -381,6 +412,27 @@ export const LibraryScreen: React.FC = () => {
               },
             ]}
             onPress={() => setActiveFilter(filter.key)}
+            onLongPress={() => {
+              if ((filter as any).isCustom) {
+                Alert.alert(
+                  filter.label,
+                  `Remove category "${filter.label}"?`,
+                  [
+                    { text: t('common.cancel') || 'Cancel', style: 'cancel' },
+                    {
+                      text: t('common.delete') || 'Delete',
+                      style: 'destructive',
+                      onPress: async () => {
+                        await removeCategory(filter.label);
+                        if (activeFilter === filter.key) {
+                          setActiveFilter('all');
+                        }
+                      },
+                    },
+                  ]
+                );
+              }
+            }}
           >
             <Text
               style={[

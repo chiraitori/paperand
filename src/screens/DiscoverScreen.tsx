@@ -77,7 +77,18 @@ export const DiscoverScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const activeSourceRef = useRef<string>('');
+  const loadedSourceRef = useRef<string | null>(null);
+  const appStateSubscriptionRef = useRef<{ remove: () => void } | null>(null);
   const initialLoadDone = useRef(false);
+
+  activeSourceRef.current = activeSource;
+
+  useEffect(() => {
+    return () => {
+      appStateSubscriptionRef.current?.remove();
+      appStateSubscriptionRef.current = null;
+    };
+  }, []);
 
   // Keep ref in sync with state
   useEffect(() => {
@@ -92,7 +103,7 @@ export const DiscoverScreen: React.FC = () => {
     useCallback(() => {
       loadExtensions();
       // Reload data when returning from WebView bypass (if we had no content due to Cloudflare)
-      if (activeSource && sections.length === 0 && !loading) {
+      if (activeSource && sections.length === 0 && !loading && loadedSourceRef.current !== activeSource) {
         loadSourceData(activeSource);
       }
     }, [activeSource, sections.length, loading])
@@ -139,6 +150,7 @@ export const DiscoverScreen: React.FC = () => {
   };
 
   const loadSourceData = async (extensionId: string, retryCount: number = 0) => {
+    loadedSourceRef.current = extensionId;
     setLoading(true);
     try {
       const [homeSections, sourceTags] = await Promise.all([
@@ -146,13 +158,18 @@ export const DiscoverScreen: React.FC = () => {
         getTags(extensionId),
       ]);
 
+      if (activeSourceRef.current !== extensionId) return;
+
       // If we got empty results and haven't retried yet, retry after a delay
       // This handles the case where the extension bridge isn't ready on initial startup
       if (homeSections.length === 0 && retryCount < 2) {
         console.log(`[Discover] Empty results, retrying in 1s (attempt ${retryCount + 1})`);
         await new Promise(resolve => setTimeout(resolve, 1000));
+        if (activeSourceRef.current !== extensionId) return;
         return loadSourceData(extensionId, retryCount + 1);
       }
+
+      if (activeSourceRef.current !== extensionId) return;
 
       setSections(homeSections);
       setTags(sourceTags);
@@ -170,10 +187,13 @@ export const DiscoverScreen: React.FC = () => {
     } catch (error) {
       console.error('Failed to load source data:', error);
 
+      if (activeSourceRef.current !== extensionId) return;
+
       // Retry on error too
       if (retryCount < 2) {
         console.log(`[Discover] Error, retrying in 1s (attempt ${retryCount + 1})`);
         await new Promise(resolve => setTimeout(resolve, 1000));
+        if (activeSourceRef.current !== extensionId) return;
         return loadSourceData(extensionId, retryCount + 1);
       }
 
@@ -181,7 +201,9 @@ export const DiscoverScreen: React.FC = () => {
       setTags([]);
       setFeaturedItems([]);
     } finally {
-      setLoading(false);
+      if (activeSourceRef.current === extensionId) {
+        setLoading(false);
+      }
     }
   };
 
@@ -213,6 +235,7 @@ export const DiscoverScreen: React.FC = () => {
     const sourceName = activeExtension?.name || 'Website';
     const authCaptureJson = Object.entries(bypassRequest?.headers || {})
       .find(([key]) => key.toLowerCase() === 'x-paperback-auth-capture')?.[1] || '';
+    appStateSubscriptionRef.current?.remove();
     let leftReactActivity = false;
     const subscription = AppState.addEventListener('change', async (state: AppStateStatus) => {
       if (state !== 'active') {
@@ -222,6 +245,9 @@ export const DiscoverScreen: React.FC = () => {
       if (!leftReactActivity) return;
 
       subscription.remove();
+      if (appStateSubscriptionRef.current === subscription) {
+        appStateSubscriptionRef.current = null;
+      }
       try {
         const cookies = await getNativeCookies(targetUrl);
         if (cookies) {
@@ -233,6 +259,7 @@ export const DiscoverScreen: React.FC = () => {
 
       await loadSourceData(activeSourceRef.current);
     });
+    appStateSubscriptionRef.current = subscription;
 
     // Website, login and Cloudflare verification share one globe action.
     // Cloud icons remain reserved for local/cloud storage and downloads.

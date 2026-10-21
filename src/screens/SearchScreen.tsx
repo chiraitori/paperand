@@ -123,8 +123,17 @@ export const SearchScreen: React.FC = () => {
 
   const saveRecentSearch = async (searchQuery: string) => {
     try {
-      const updated = [searchQuery, ...recentSearches.filter(s => s !== searchQuery)].slice(0, 10);
-      setRecentSearches(updated);
+      const saved = await AsyncStorage.getItem(RECENT_SEARCHES_KEY);
+      const existing: string[] = saved ? JSON.parse(saved) : [];
+      let updated: string[] = [];
+      setRecentSearches(prev => {
+        const base = prev.length > existing.length ? prev : existing;
+        updated = [searchQuery, ...base.filter(s => s !== searchQuery)].slice(0, 10);
+        return updated;
+      });
+      if (updated.length === 0) {
+        updated = [searchQuery, ...existing.filter(s => s !== searchQuery)].slice(0, 10);
+      }
       await AsyncStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(updated));
     } catch (e) {
       console.error('Failed to save recent search:', e);
@@ -135,6 +144,7 @@ export const SearchScreen: React.FC = () => {
   const performSearchDirect = async (searchText: string, extensions: InstalledExtension[]) => {
     if (searchText.trim().length === 0 || extensions.length === 0) return;
 
+    setActiveSource(null);
     setQuery(searchText);
     setLoading(true);
     setHasSearched(true);
@@ -262,6 +272,18 @@ export const SearchScreen: React.FC = () => {
       setLoadingMore(false);
     }
   };
+
+  const isFirstSourceMountRef = useRef(true);
+  useEffect(() => {
+    if (isFirstSourceMountRef.current) {
+      isFirstSourceMountRef.current = false;
+      return;
+    }
+    const activeQuery = currentQueryRef.current || query.trim();
+    if (hasSearched && activeQuery) {
+      performSearch(activeQuery, true);
+    }
+  }, [activeSource]);
 
   const loadMoreResults = () => {
     // Only load more if not already loading, have more results, and have a search query
@@ -479,11 +501,12 @@ export const SearchScreen: React.FC = () => {
 
   const navigateToViewMore = (sourceResult: SourceSearchResult) => {
     // Navigate to SearchResults screen with the source results and query for pagination
-    navigation.navigate('SearchResults', {
+    (navigation.navigate as any)('SearchResults', {
       sourceId: sourceResult.extensionId,
       sourceName: sourceResult.extensionName,
       query: currentQueryRef.current,
       initialItems: sourceResult.results,
+      initialMetadata: sourceResult.metadata,
     });
   };
 

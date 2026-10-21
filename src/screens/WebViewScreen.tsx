@@ -59,12 +59,14 @@ export const WebViewScreen: React.FC = () => {
 
   // Poll cookies periodically while the page is loaded
   useEffect(() => {
+    if (cookiesSynced) return;
+
     const interval = setInterval(() => {
       syncCookiesFromNative(currentUrl);
     }, 3000); // Check every 3 seconds
 
     return () => clearInterval(interval);
-  }, [currentUrl, syncCookiesFromNative]);
+  }, [currentUrl, cookiesSynced, syncCookiesFromNative]);
 
   // After each navigation finishes, sync cookies from native
   const handleNavigationStateChange = useCallback((navState: WebViewNavigation) => {

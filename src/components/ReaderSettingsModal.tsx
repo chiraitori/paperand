@@ -375,9 +375,10 @@ export const ReaderSettingsModal: React.FC<ReaderSettingsModalProps> = ({
                 tr('reader.chevronButtonLocation', 'Chevron Button Location'),
                 [
                   { label: tr('reader.right', 'Right'), value: 'right' },
+                  { label: tr('reader.middle', 'Middle'), value: 'middle' },
                   { label: tr('reader.left', 'Left'), value: 'left' },
                 ],
-                settings.chapterChangeArrows === 'left' ? 'left' : 'right',
+                settings.chapterChangeArrows || 'right',
                 (val) => onUpdateSetting('chapterChangeArrows', val as any),
                 true
               )}

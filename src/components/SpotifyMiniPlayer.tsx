@@ -356,7 +356,7 @@ export const SpotifyMiniPlayer: React.FC<SpotifyMiniPlayerProps> = ({
     }
 
     // Connected but no track playing
-    if (isConnected && !playerState?.track) {
+    if (isConnected && (!playerState?.track || (!playerState.track.uri && !playerState.track.name))) {
         return (
             <>
                 {renderPickerModal()}

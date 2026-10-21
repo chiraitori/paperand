@@ -44,7 +44,11 @@ import {
   getCloudflareBypassRequest,
   fetchImageThroughExtension,
 } from '../services/sourceService';
-import { cacheChapterPages } from '../services/cacheService';
+import {
+  cacheChapterPages,
+  getCachedMangaMetadata,
+  getCachedChapterList,
+} from '../services/cacheService';
 import {
   ReaderSettingsValues,
   defaultReaderSettings,
@@ -242,6 +246,8 @@ const InfoModal: React.FC<{
   onToggleBookmark,
 }) => {
   const [showFullDescription, setShowFullDescription] = useState(false);
+
+  if (!visible) return null;
 
   const safeManga: Manga = manga || {
     id: 'unknown',
@@ -484,6 +490,7 @@ const PageImageElementComponent: React.FC<{
   fitMode?: 'contain' | 'cover';
   isVertical?: boolean;
   downsamplePages?: boolean;
+  currentPageRef?: React.MutableRefObject<number>;
 }> = ({
   page,
   targetWidth,
@@ -495,6 +502,7 @@ const PageImageElementComponent: React.FC<{
   fitMode = 'contain',
   isVertical = false,
   downsamplePages = true,
+  currentPageRef,
 }) => {
   const url = page.resolvedUrl || page.imageUrl;
   const [aspect, setAspect] = useState<number>(
@@ -562,8 +570,11 @@ const PageImageElementComponent: React.FC<{
             if (w && h && w > 0 && h > 0) {
               const ratio = h / w;
               pageDimensionsCache.set(url, ratio);
-              chapterAspectEstimate = ratio;
-              if (isVertical && (!aspect || Math.abs(aspect - ratio) > 0.05)) {
+              chapterAspectEstimate = Math.max(1.2, Math.min(1.65, ratio));
+              // Always apply the real ratio so the cell height stays consistent across
+              // unmount/remount. The vertical FlatList uses maintainVisibleContentPosition,
+              // so a page above the viewport growing/shrinking no longer shifts what you're reading.
+              if (isVertical && (!aspect || Math.abs(aspect - ratio) > 0.02)) {
                 setAspect(ratio);
               }
             }
@@ -595,7 +606,7 @@ const PageImageElement = React.memo(PageImageElementComponent, (prev, next) => {
     prev.page.error === next.page.error &&
     prev.page.retryKey === next.page.retryKey &&
     prev.targetWidth === next.targetWidth &&
-    prev.targetHeight === next.targetHeight &&
+    (prev.isVertical || prev.targetHeight === next.targetHeight) &&
     prev.isVertical === next.isVertical &&
     prev.fitMode === next.fitMode &&
     prev.downsamplePages === next.downsamplePages &&
@@ -607,7 +618,7 @@ export const ReaderScreen: React.FC = () => {
   const route = useRoute<ReaderRouteProp>();
   const navigation = useNavigation<ReaderNavigationProp>();
   const { theme } = useTheme();
-  const { library, updateProgress, addToLibrary, removeFromLibrary } = useLibrary();
+  const { library, history, updateProgress, addToLibrary, removeFromLibrary } = useLibrary();
   const { downloads } = useDownloads();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const isLandscape = screenWidth > screenHeight;
@@ -646,6 +657,24 @@ export const ReaderScreen: React.FC = () => {
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const hasScrolledToInitialPage = useRef(false);
 
+  const applyOrientationLock = useCallback(
+    async (locked: boolean) => {
+      try {
+        if (locked) {
+          const lockType = isLandscape
+            ? ScreenOrientation.OrientationLock.LANDSCAPE
+            : ScreenOrientation.OrientationLock.PORTRAIT;
+          await ScreenOrientation.lockAsync(lockType);
+        } else {
+          await ScreenOrientation.unlockAsync();
+        }
+      } catch (e) {
+        console.warn('[Reader] Failed to apply orientation lock:', e);
+      }
+    },
+    [isLandscape]
+  );
+
   // Load Reader Settings for Manga
   useEffect(() => {
     let isMounted = true;
@@ -658,6 +687,7 @@ export const ReaderScreen: React.FC = () => {
         setSettingsScope(isCustom ? 'manga' : 'global');
         setIsCustomSetting(isCustom);
         setOrientationLocked(settings.rotationLocked);
+        applyOrientationLock(settings.rotationLocked);
         prevReaderModeRef.current = settings.readerMode;
       }
     };
@@ -688,10 +718,14 @@ export const ReaderScreen: React.FC = () => {
   // Update from the settings sheet - honours the Global / Manga scope selector
   const handleModalUpdateSetting = useCallback(
     async <K extends keyof ReaderSettingsValues>(key: K, value: ReaderSettingsValues[K]) => {
-      if (key === 'readerMode') {
-        isModeSwitchingRef.current = true;
-      }
       if (settingsScope === 'manga') {
+        if (key === 'readerMode') {
+          isModeSwitchingRef.current = true;
+        }
+        if (key === 'rotationLocked') {
+          setOrientationLocked(Boolean(value));
+          applyOrientationLock(Boolean(value));
+        }
         const updated = { ...readerSettings, [key]: value };
         setReaderSettings(updated);
         setIsCustomSetting(true);
@@ -700,11 +734,20 @@ export const ReaderScreen: React.FC = () => {
         const updatedGlobal = { ...globalSettings, [key]: value };
         setGlobalSettings(updatedGlobal);
         await saveReaderSettings(updatedGlobal);
-        // Also apply to current reader view immediately
-        setReaderSettings((prev) => ({ ...prev, [key]: value }));
+        // Only apply to current reader view if this manga does NOT have custom settings
+        if (!isCustomSetting) {
+          if (key === 'readerMode') {
+            isModeSwitchingRef.current = true;
+          }
+          if (key === 'rotationLocked') {
+            setOrientationLocked(Boolean(value));
+            applyOrientationLock(Boolean(value));
+          }
+          setReaderSettings((prev) => ({ ...prev, [key]: value }));
+        }
       }
     },
-    [settingsScope, readerSettings, globalSettings, mangaId]
+    [settingsScope, readerSettings, globalSettings, isCustomSetting, mangaId, applyOrientationLock]
   );
 
   // Apply Globally
@@ -720,13 +763,17 @@ export const ReaderScreen: React.FC = () => {
   const handleResetToGlobal = useCallback(async () => {
     await resetMangaReaderSettings(mangaId);
     const { settings } = await getReaderSettings();
+    if (settings.readerMode !== readerSettings.readerMode) {
+      isModeSwitchingRef.current = true;
+    }
     setReaderSettings(settings);
     setGlobalSettings(settings);
     setSettingsScope('global');
     setIsCustomSetting(false);
     setOrientationLocked(settings.rotationLocked);
+    applyOrientationLock(settings.rotationLocked);
     prevReaderModeRef.current = settings.readerMode;
-  }, [mangaId]);
+  }, [mangaId, readerSettings.readerMode, applyOrientationLock]);
 
   // Orientation Lock Toggle (HUD rotationLockButtonview)
   const toggleOrientationLock = useCallback(async () => {
@@ -804,6 +851,7 @@ export const ReaderScreen: React.FC = () => {
 
   // Load Chapter Data
   useEffect(() => {
+    hasScrolledToInitialPage.current = false;
     loadData();
   }, [mangaId, chapterId]);
 
@@ -860,24 +908,90 @@ export const ReaderScreen: React.FC = () => {
       // 1. Check if chapter is downloaded locally
       const downloadedChapter = downloads.find((d) => d.chapterId === chapterId);
       if (downloadedChapter && downloadedChapter.pages.length > 0) {
+        const effectiveSourceId = downloadedChapter.sourceId || sourceId || '';
+        const existingManga =
+          library.find((e) => e.manga.id === mangaId)?.manga ||
+          history.find((e) => e.manga.id === mangaId)?.manga;
+
+        let cachedMeta = null;
+        let cachedChaps = null;
+        if (effectiveSourceId) {
+          [cachedMeta, cachedChaps] = await Promise.all([
+            getCachedMangaMetadata(mangaId, effectiveSourceId).catch(() => null),
+            getCachedChapterList(mangaId, effectiveSourceId).catch(() => null),
+          ]);
+        }
+
+        let resolvedChapters: Chapter[] =
+          existingManga?.chapters && existingManga.chapters.length > 0
+            ? existingManga.chapters
+            : cachedChaps?.chapters && cachedChaps.chapters.length > 0
+            ? cachedChaps.chapters.map((ch) => ({
+                id: ch.id,
+                mangaId: mangaId,
+                number: ch.number,
+                title: ch.title,
+                pages: [],
+                releaseDate: ch.releaseDate,
+                isRead: false,
+              }))
+            : [];
+
+        if (resolvedChapters.length === 0 && effectiveSourceId) {
+          try {
+            const onlineChapters = await getChapters(effectiveSourceId, mangaId);
+            if (onlineChapters && onlineChapters.length > 0) {
+              resolvedChapters = onlineChapters.map((ch, idx) => ({
+                id: ch.id,
+                mangaId: mangaId,
+                number: ch.chapNum ?? idx + 1,
+                title: ch.name || `Chapter ${ch.chapNum ?? idx + 1}`,
+                pages: [],
+                releaseDate: ch.time || new Date().toISOString(),
+                isRead: false,
+              }));
+            }
+          } catch {}
+        }
+
+        // Ensure all locally downloaded chapters for this manga are included in chapters list
+        const mangaDownloads = downloads.filter((d) => d.mangaId === downloadedChapter.mangaId);
+        if (mangaDownloads.length > 0) {
+          const existingIds = new Set(resolvedChapters.map((c) => c.id));
+          for (const dl of mangaDownloads) {
+            if (!existingIds.has(dl.chapterId)) {
+              resolvedChapters.push({
+                id: dl.chapterId,
+                mangaId: dl.mangaId,
+                number: dl.chapterNumber ?? 1,
+                title: dl.chapterTitle,
+                pages: [],
+                releaseDate: dl.downloadedAt,
+                isRead: false,
+              });
+            }
+          }
+        }
+
         const mangaData: Manga = {
           id: downloadedChapter.mangaId,
-          title: downloadedChapter.mangaTitle,
-          author: '',
-          description: '',
-          coverImage: downloadedChapter.mangaCover,
-          genres: [],
-          status: 'ongoing',
-          chapters: [],
-          lastUpdated: new Date().toISOString(),
-          source: downloadedChapter.sourceId || sourceId || '',
+          title: downloadedChapter.mangaTitle || existingManga?.title || cachedMeta?.title || 'Manga',
+          author: existingManga?.author || cachedMeta?.author || '',
+          artist: existingManga?.artist || cachedMeta?.artist,
+          description: existingManga?.description || cachedMeta?.description || '',
+          coverImage: downloadedChapter.mangaCover || existingManga?.coverImage || cachedMeta?.coverImage || '',
+          genres: existingManga?.genres?.length ? existingManga.genres : (cachedMeta?.genres || []),
+          status: existingManga?.status || cachedMeta?.status || 'ongoing',
+          chapters: resolvedChapters,
+          lastUpdated: existingManga?.lastUpdated || new Date().toISOString(),
+          source: effectiveSourceId || existingManga?.source || '',
         };
         setManga(mangaData);
 
         const chapterData: Chapter = {
           id: downloadedChapter.chapterId,
           mangaId: downloadedChapter.mangaId,
-          number: downloadedChapter.chapterNumber || 1,
+          number: downloadedChapter.chapterNumber ?? 1,
           title: downloadedChapter.chapterTitle,
           pages: [],
           releaseDate: downloadedChapter.downloadedAt,
@@ -898,6 +1012,23 @@ export const ReaderScreen: React.FC = () => {
 
         setPages(preloadedPages);
         setLoading(false);
+
+        // Save initial progress for downloaded chapter
+        const initPageNum = (initialPage || 0) + 1;
+        const initPercent = preloadedPages.length > 0 ? Math.round((initPageNum / preloadedPages.length) * 100) : 0;
+        try {
+          updateProgress(
+            {
+              mangaId: mangaData.id,
+              chapterId: chapterData.id,
+              pageNumber: initPageNum,
+              totalPages: preloadedPages.length,
+              percentage: initPercent,
+              lastRead: new Date().toISOString(),
+            },
+            mangaData
+          );
+        } catch {}
         return;
       }
 
@@ -1276,6 +1407,14 @@ export const ReaderScreen: React.FC = () => {
     return groups;
   }, [pages, isDoublePageMode, readerSettings.markFirstPageAsSingle]);
 
+  const currentPageRef = useRef(currentPage);
+  currentPageRef.current = currentPage;
+  const pageGroupsRef = useRef(pageGroups);
+  pageGroupsRef.current = pageGroups;
+  const pagesRef = useRef(pages);
+  pagesRef.current = pages;
+  const prevIsLandscapeRef = useRef(isLandscape);
+
   // Initial page scrolling
   useEffect(() => {
     if (
@@ -1289,10 +1428,10 @@ export const ReaderScreen: React.FC = () => {
       const targetPage = Math.min(initialPage, pages.length - 1);
       hasScrolledToInitialPage.current = true;
 
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         try {
           if (readerSettings.readerMode === 'horizontal') {
-            const targetGroupIndex = pageGroups.findIndex(
+            const targetGroupIndex = pageGroupsRef.current.findIndex(
               (g) => targetPage + 1 >= g.startPageNumber && targetPage + 1 <= g.endPageNumber
             );
             const scrollIndex = targetGroupIndex !== -1 ? targetGroupIndex : targetPage;
@@ -1316,8 +1455,9 @@ export const ReaderScreen: React.FC = () => {
           setCurrentPage(targetPage);
         }
       }, 300);
+      return () => clearTimeout(timer);
     }
-  }, [pages.length, loading, initialPage, readerSettings.readerMode, pageGroups, screenWidth, screenHeight]);
+  }, [pages.length, loading, initialPage, readerSettings.readerMode]);
 
   // Adjacent Chapters
   const getAdjacentChapters = useCallback(() => {
@@ -1404,24 +1544,32 @@ export const ReaderScreen: React.FC = () => {
     [pages.length, scrubberTrackWidth, readerSettings.readerDirection, goToPage]
   );
 
-  // Auto re-align scroll position when screen rotates, dimensions change, or reader mode switches
+  // Auto re-align scroll position ONLY when screen orientation rotates or reader mode switches
+  // (Never run on status bar hide/show height fluctuations, which would snap vertical scrolling!)
   useEffect(() => {
-    if (pages.length === 0 || !flatListRef.current) return;
     const isModeChanged = prevReaderModeRef.current !== readerSettings.readerMode;
-    if (isModeChanged) {
-      prevReaderModeRef.current = readerSettings.readerMode;
-      isModeSwitchingRef.current = true;
-    }
+    const isOrientationChanged = prevIsLandscapeRef.current !== isLandscape;
+    prevReaderModeRef.current = readerSettings.readerMode;
+    prevIsLandscapeRef.current = isLandscape;
+
+    if (!isModeChanged && !isOrientationChanged) return;
+
+    const currentPages = pagesRef.current;
+    if (currentPages.length === 0 || !flatListRef.current) return;
+    isModeSwitchingRef.current = true;
 
     const timer = setTimeout(() => {
-      if (!flatListRef.current || pages.length === 0) {
+      const latestPages = pagesRef.current;
+      const latestGroups = pageGroupsRef.current;
+      const latestPage = currentPageRef.current;
+      if (!flatListRef.current || latestPages.length === 0) {
         isModeSwitchingRef.current = false;
         return;
       }
       try {
-        const target = Math.max(0, Math.min(currentPage, pages.length - 1));
+        const target = Math.max(0, Math.min(latestPage, latestPages.length - 1));
         if (readerSettings.readerMode === 'horizontal') {
-          const targetGroupIndex = pageGroups.findIndex(
+          const targetGroupIndex = latestGroups.findIndex(
             (g) => target + 1 >= g.startPageNumber && target + 1 <= g.endPageNumber
           );
           const scrollIndex = targetGroupIndex !== -1 ? targetGroupIndex : target;
@@ -1438,7 +1586,7 @@ export const ReaderScreen: React.FC = () => {
         }
       } catch {
         flatListRef.current?.scrollToOffset({
-          offset: currentPage * (readerSettings.readerMode === 'horizontal' ? screenWidth : screenHeight),
+          offset: latestPage * (readerSettings.readerMode === 'horizontal' ? screenWidth : screenHeight),
           animated: false,
         });
       } finally {
@@ -1446,10 +1594,10 @@ export const ReaderScreen: React.FC = () => {
           isModeSwitchingRef.current = false;
         }, 300);
       }
-    }, isModeChanged ? 100 : 0);
+    }, isModeChanged ? 100 : 50);
 
     return () => clearTimeout(timer);
-  }, [screenWidth, screenHeight, isLandscape, pageGroups, readerSettings.readerMode, currentPage, pages.length]);
+  }, [isLandscape, readerSettings.readerMode, screenWidth, screenHeight]);
 
   // Page turns / groups navigation
   const goToNextPage = useCallback(() => {
@@ -1569,8 +1717,6 @@ export const ReaderScreen: React.FC = () => {
   );
 
   // Warm the cache for the next few pages so they are decoded before the user gets there
-  const pagesRef = useRef(pages);
-  pagesRef.current = pages;
   const prefetchAhead = useCallback((fromIndex: number) => {
     const list = pagesRef.current;
     for (let i = fromIndex + 1; i <= fromIndex + 3 && i < list.length; i++) {
@@ -1666,13 +1812,15 @@ export const ReaderScreen: React.FC = () => {
     const shouldNavigate = !cancelled && st.ready && !!edge;
     st.atTop = false;
     st.atBottom = false;
-    Animated.spring(pullTranslateAnim, {
-      toValue: 0,
-      useNativeDriver: true,
-      friction: 8,
-      tension: 40,
-    }).start();
-    if (st.edge) setPull(null, false, 0);
+    if (edge) {
+      Animated.spring(pullTranslateAnim, {
+        toValue: 0,
+        useNativeDriver: true,
+        friction: 8,
+        tension: 40,
+      }).start();
+      setPull(null, false, 0);
+    }
     if (shouldNavigate && !isTransitioning) {
       if (edge === 'top') goToPreviousChapter();
       else goToNextChapter();
@@ -1708,6 +1856,8 @@ export const ReaderScreen: React.FC = () => {
         } else if ('pageNumber' in item) {
           newPage = (item as PreloadedPage).pageNumber - 1;
         }
+        if (currentPageRef.current === newPage) return;
+        currentPageRef.current = newPage;
         setCurrentPage(newPage);
         prefetchAhead(newPage);
         pendingPageRef.current = newPage;
@@ -1720,7 +1870,7 @@ export const ReaderScreen: React.FC = () => {
             saveProgressRef.current(pendingPageRef.current);
             pendingPageRef.current = null;
           }
-        }, 400);
+        }, 1200);
       }
     }
   }).current;
@@ -1850,15 +2000,27 @@ export const ReaderScreen: React.FC = () => {
   );
 
   // Render Vertical Single Page
+  // Stable callbacks: handleReaderPress changes every page (it depends on currentPage), which used
+  // to rebuild renderItem and force FlatList to re-render every visible cell mid-scroll.
+  const readerPressRef = useRef(handleReaderPress);
+  readerPressRef.current = handleReaderPress;
+  const longPressRef = useRef(handlePageLongPress);
+  longPressRef.current = handlePageLongPress;
+  const retryRef = useRef(retrySinglePage);
+  retryRef.current = retrySinglePage;
+  const stableReaderPress = useCallback((e: GestureResponderEvent) => readerPressRef.current(e), []);
+  const verticalExtraData = useMemo(
+    () => ({ screenWidth, isLandscape, isPillarboxed }),
+    [screenWidth, isLandscape, isPillarboxed]
+  );
+
   const renderVerticalPage = useCallback(
     ({ item }: { item: PreloadedPage }) => {
       const horizontalPadding = readerSettings.pagePadding ? 16 : 0;
       const targetWidth = screenWidth - (pillarboxMargin * 2) - horizontalPadding;
 
       return (
-        <TouchableOpacity
-          activeOpacity={1}
-          onPress={handleReaderPress}
+        <View
           style={{
             width: screenWidth,
             alignItems: 'center',
@@ -1869,29 +2031,27 @@ export const ReaderScreen: React.FC = () => {
           <PageImageElement
             page={item}
             targetWidth={targetWidth}
-            targetHeight={screenHeight}
-            onPress={handleReaderPress}
-            onLongPress={() => handlePageLongPress(item)}
-            onRetry={() => retrySinglePage(item.pageNumber - 1)}
+            targetHeight={0}
+            onPress={stableReaderPress}
+            onLongPress={() => longPressRef.current(item)}
+            onRetry={() => retryRef.current(item.pageNumber - 1)}
             totalPages={pages.length}
             fitMode="contain"
             isVertical={true}
             downsamplePages={readerSettings.downsamplePages}
+            currentPageRef={currentPageRef}
           />
-        </TouchableOpacity>
+        </View>
       );
     },
     [
       screenWidth,
-      screenHeight,
       pillarboxMargin,
       readerSettings.pagePadding,
       readerSettings.downsamplePages,
       readerBgColor,
       pages.length,
-      handleReaderPress,
-      handlePageLongPress,
-      retrySinglePage,
+      stableReaderPress,
     ]
   );
 
@@ -1942,7 +2102,7 @@ export const ReaderScreen: React.FC = () => {
       onTouchEnd={() => handlePullTouchEnd(false)}
       onTouchCancel={() => handlePullTouchEnd(true)}
     >
-      <StatusBar hidden={!showControls} barStyle="light-content" />
+      <StatusBar hidden={!showControls} translucent barStyle="light-content" />
 
       {/* FlatList Container with Pull-to-change Rubber Band */}
       <View style={{ flex: 1, backgroundColor: readerBgColor, overflow: 'hidden' }}>
@@ -1972,11 +2132,12 @@ export const ReaderScreen: React.FC = () => {
           {readerSettings.readerMode === 'horizontal' ? (
             <FlatList
               ref={flatListRef}
-              key={`reader-h-${isLandscape ? 'land' : 'port'}-${isDoublePageMode ? 'double' : 'single'}`}
+              key={`reader-h-${isLandscape ? 'land' : 'port'}-${isDoublePageMode ? 'double' : 'single'}-${isRtl ? 'rtl' : 'ltr'}`}
               data={pageGroups}
               renderItem={renderHorizontalPageGroup}
               keyExtractor={(item) => item.id}
               horizontal
+              inverted={isRtl}
               pagingEnabled
               showsHorizontalScrollIndicator={false}
               onViewableItemsChanged={onViewableItemsChanged}
@@ -1989,7 +2150,7 @@ export const ReaderScreen: React.FC = () => {
               updateCellsBatchingPeriod={50}
               bounces
               scrollEventThrottle={16}
-              extraData={{ screenWidth, screenHeight, isLandscape, isDoublePageMode, isPillarboxed }}
+              extraData={{ screenWidth, screenHeight, isLandscape, isDoublePageMode, isPillarboxed, isRtl }}
             />
           ) : (
             <FlatList
@@ -2002,12 +2163,13 @@ export const ReaderScreen: React.FC = () => {
               showsVerticalScrollIndicator={false}
               onViewableItemsChanged={onViewableItemsChanged}
               viewabilityConfig={viewabilityConfig}
-              initialNumToRender={4}
+              initialNumToRender={5}
               maxToRenderPerBatch={6}
               windowSize={11}
-              removeClippedSubviews={Platform.OS === 'android'}
+              removeClippedSubviews={false}
               updateCellsBatchingPeriod={30}
-              extraData={{ screenWidth, screenHeight, isLandscape, isPillarboxed }}
+              maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+              extraData={verticalExtraData}
               onScroll={handleVerticalScroll}
               onScrollToIndexFailed={(info) => {
                 flatListRef.current?.scrollToOffset({
@@ -2100,7 +2262,14 @@ export const ReaderScreen: React.FC = () => {
             style={[styles.bottomBarAnimated, { opacity: fadeAnim }]}
             pointerEvents="box-none"
           >
-            <View style={styles.bottomRow} pointerEvents="auto">
+            <View
+              style={[
+                styles.bottomRow,
+                readerSettings.settingButtonLocation === 'right' &&
+                  readerSettings.chapterChangeArrows !== 'left' && { flexDirection: 'row-reverse' },
+              ]}
+              pointerEvents="auto"
+            >
               {readerSettings.chapterChangeArrows === 'left' ? (
                 <View style={styles.pagePill}>
                   <TouchableOpacity

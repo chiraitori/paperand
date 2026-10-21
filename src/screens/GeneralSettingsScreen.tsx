@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
     View,
     Text,
@@ -8,7 +8,7 @@ import {
     Switch,
     Platform,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import * as LocalAuthentication from 'expo-local-authentication';
@@ -42,6 +42,13 @@ export const GeneralSettingsScreen: React.FC = () => {
     useEffect(() => {
         loadSettings();
     }, []);
+
+    useFocusEffect(
+        useCallback(() => {
+            setCurrentLang(getCurrentLanguage());
+            loadSettings();
+        }, [])
+    );
 
     const loadSettings = async () => {
         const loaded = await getGeneralSettings();

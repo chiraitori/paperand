@@ -19,15 +19,15 @@ interface DownloadContextType {
     downloads: DownloadedChapter[];
     queue: DownloadJob[];
     downloadChapter: (manga: Manga, chapter: Chapter) => Promise<void>;
-    deleteDownload: (chapterId: string) => Promise<void>;
-    cancelDownload: (chapterId: string) => void;
+    deleteDownload: (chapterId: string, mangaId?: string) => Promise<void>;
+    cancelDownload: (chapterId: string, mangaId?: string) => void;
     pauseAll: () => void;
     resumeAll: () => void;
     isPaused: boolean;
-    isChapterDownloaded: (chapterId: string) => boolean;
-    isDownloading: (chapterId: string) => boolean;
-    isQueued: (chapterId: string) => boolean;
-    getDownloadProgress: (chapterId: string) => number;
+    isChapterDownloaded: (chapterId: string, mangaId?: string) => boolean;
+    isDownloading: (chapterId: string, mangaId?: string) => boolean;
+    isQueued: (chapterId: string, mangaId?: string) => boolean;
+    getDownloadProgress: (chapterId: string, mangaId?: string) => number;
     isOnWifi: () => Promise<boolean>;
 }
 
@@ -36,8 +36,11 @@ const DownloadContext = createContext<DownloadContextType | undefined>(undefined
 export const DownloadProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const [downloads, setDownloads] = useState<DownloadedChapter[]>([]);
     const [queue, setQueue] = useState<DownloadJob[]>([]);
+    const [isPaused, setIsPaused] = useState<boolean>(downloadService.isAllPaused());
     const prevQueueRef = useRef<DownloadJob[]>([]);
     const currentMangaTitleRef = useRef<string>('');
+    const cellularPromptPromiseRef = useRef<Promise<boolean> | null>(null);
+    const cellularConfirmedUntilRef = useRef<number>(0);
 
     useEffect(() => {
         // Initialize notifications
@@ -47,13 +50,14 @@ export const DownloadProvider: React.FC<{ children: ReactNode }> = ({ children }
         // Subscribe to queue updates
         const unsubscribe = downloadService.subscribe((updatedQueue) => {
             const prevQueue = prevQueueRef.current;
+            setIsPaused(downloadService.isAllPaused());
 
             // Check if any job was removed (completed or failed)
-            const currentChapterIds = new Set(updatedQueue.map(j => j.chapterId));
+            const currentJobKeys = new Set(updatedQueue.map(j => `${j.mangaId}::${j.chapterId}`));
 
             // Find jobs that were in prev but not in current (completed/failed)
             const completedJobs = prevQueue.filter(j =>
-                j.status === 'downloading' && !currentChapterIds.has(j.chapterId)
+                j.status === 'downloading' && !currentJobKeys.has(`${j.mangaId}::${j.chapterId}`)
             );
 
             // Reload downloads if any job completed
@@ -118,7 +122,16 @@ export const DownloadProvider: React.FC<{ children: ReactNode }> = ({ children }
     }, []);
 
     const showCellularConfirmation = (): Promise<boolean> => {
-        return new Promise((resolve) => {
+        // If user recently confirmed cellular download (within 60s), don't spam alerts for batch downloads
+        if (Date.now() < cellularConfirmedUntilRef.current) {
+            return Promise.resolve(true);
+        }
+        // Coalesce concurrent cellular prompts into a single Alert
+        if (cellularPromptPromiseRef.current) {
+            return cellularPromptPromiseRef.current;
+        }
+
+        const promptPromise = new Promise<boolean>((resolve) => {
             Alert.alert(
                 t('downloadManager.cellularTitle') || 'Download on Cellular?',
                 t('downloadManager.cellularMessage') || 'You are on cellular data. Downloading may use significant data. Continue?',
@@ -126,16 +139,32 @@ export const DownloadProvider: React.FC<{ children: ReactNode }> = ({ children }
                     {
                         text: t('common.cancel') || 'Cancel',
                         style: 'cancel',
-                        onPress: () => resolve(false),
+                        onPress: () => {
+                            cellularPromptPromiseRef.current = null;
+                            resolve(false);
+                        },
                     },
                     {
                         text: t('downloadManager.continue') || 'Download',
-                        onPress: () => resolve(true),
+                        onPress: () => {
+                            cellularConfirmedUntilRef.current = Date.now() + 60000;
+                            cellularPromptPromiseRef.current = null;
+                            resolve(true);
+                        },
                     },
                 ],
-                { cancelable: true, onDismiss: () => resolve(false) }
+                {
+                    cancelable: true,
+                    onDismiss: () => {
+                        cellularPromptPromiseRef.current = null;
+                        resolve(false);
+                    },
+                }
             );
         });
+
+        cellularPromptPromiseRef.current = promptPromise;
+        return promptPromise;
     };
 
     const downloadChapter = async (manga: Manga, chapter: Chapter) => {
@@ -159,41 +188,45 @@ export const DownloadProvider: React.FC<{ children: ReactNode }> = ({ children }
         await loadDownloads(); // Refresh list after download
     };
 
-    const deleteDownload = async (chapterId: string) => {
-        await downloadService.deleteChapter(chapterId);
+    const deleteDownload = async (chapterId: string, mangaId?: string) => {
+        await downloadService.deleteChapter(chapterId, mangaId);
         await loadDownloads();
     };
 
-    const isChapterDownloaded = (chapterId: string) => {
-        return downloads.some(d => d.chapterId === chapterId);
+    const isChapterDownloaded = (chapterId: string, mangaId?: string) => {
+        return downloads.some(d => d.chapterId === chapterId && (!mangaId || d.mangaId === mangaId));
     };
 
-    const isDownloading = (chapterId: string) => {
-        return queue.some(j => j.chapterId === chapterId && j.status === 'downloading');
+    const isDownloading = (chapterId: string, mangaId?: string) => {
+        return queue.some(
+            j => j.chapterId === chapterId && (!mangaId || j.mangaId === mangaId) && j.status === 'downloading'
+        );
     };
 
-    const isQueued = (chapterId: string) => {
-        return queue.some(j => j.chapterId === chapterId && j.status === 'queued');
+    const isQueued = (chapterId: string, mangaId?: string) => {
+        return queue.some(
+            j => j.chapterId === chapterId && (!mangaId || j.mangaId === mangaId) && (j.status === 'queued' || j.status === 'paused')
+        );
     };
 
-    const getDownloadProgress = (chapterId: string) => {
-        const job = queue.find(j => j.chapterId === chapterId);
-        return job && job.total > 0 ? job.progress / job.total : 0;
+    const getDownloadProgress = (chapterId: string, mangaId?: string) => {
+        const job = queue.find(j => j.chapterId === chapterId && (!mangaId || j.mangaId === mangaId));
+        return job && job.total > 0 ? Math.min(1, Math.max(0, job.progress / job.total)) : 0;
     };
 
-    const cancelDownload = (chapterId: string) => {
-        downloadService.cancelDownload(chapterId);
+    const cancelDownload = (chapterId: string, mangaId?: string) => {
+        downloadService.cancelDownload(chapterId, mangaId);
     };
 
     const pauseAll = () => {
         downloadService.pauseAll();
+        setIsPaused(true);
     };
 
     const resumeAll = () => {
         downloadService.resumeAll();
+        setIsPaused(false);
     };
-
-    const isPaused = downloadService.isAllPaused();
 
     return (
         <DownloadContext.Provider value={{

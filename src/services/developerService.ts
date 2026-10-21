@@ -257,12 +257,14 @@ const addLog = (level: LogEntry['level'], args: any[]) => {
  * Get all captured logs
  */
 export const getLogs = (): LogEntry[] => {
-  const structuredLogs = logger.getLogs().map(entry => ({
-    timestamp: entry.timestamp,
-    level: (entry.level === 'error' ? 'error' : entry.level === 'warn' ? 'warn' : 'log') as LogEntry['level'],
-    message: `[${entry.tag}] ${entry.message}${entry.details ? ` - ${entry.details}` : ''}`,
-  }));
-  return [...logs, ...structuredLogs];
+  const structuredLogs = logger.getLogs()
+    .filter(entry => entry.tag !== 'Console')
+    .map(entry => ({
+      timestamp: entry.timestamp,
+      level: (entry.level === 'error' ? 'error' : entry.level === 'warn' ? 'warn' : 'log') as LogEntry['level'],
+      message: `[${entry.tag}] ${entry.message}${entry.details ? ` - ${entry.details}` : ''}`,
+    }));
+  return [...logs, ...structuredLogs].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 };
 
 /**

@@ -34,7 +34,7 @@ export const CategoryScreen: React.FC = () => {
   const { width, height } = useWindowDimensions();
 
   const [results, setResults] = useState<SourceManga[]>(initialItems || []);
-  const [loading, setLoading] = useState(initialItems?.length === 0);
+  const [loading, setLoading] = useState(!initialItems || initialItems.length === 0);
   const [loadingMore, setLoadingMore] = useState(false);
   const [metadata, setMetadata] = useState<any>(initialMetadata ?? null);
   const [hasMoreResults, setHasMoreResults] = useState(
@@ -109,7 +109,11 @@ export const CategoryScreen: React.FC = () => {
         if (isFirstLoad) {
           setResults(result.results);
         } else {
-          setResults(prev => [...prev, ...result.results]);
+          setResults(prev => {
+            const seen = new Set(prev.map(m => m.id || m.mangaId));
+            const uniqueNew = result.results.filter(m => !seen.has(m.id || m.mangaId));
+            return [...prev, ...uniqueNew];
+          });
         }
       }
 
@@ -130,12 +134,12 @@ export const CategoryScreen: React.FC = () => {
   const loadMoreItems = useCallback(() => {
     if (loadingMore || loading || !hasMoreResults) return;
     loadItems(false);
-  }, [loadingMore, loading, hasMoreResults]);
+  }, [loadingMore, loading, hasMoreResults, metadata, sourceId, sectionId, tagId, searchQuery]);
 
   const navigateToManga = (manga: SourceManga) => {
     navigation.navigate('MangaDetail', {
       mangaId: manga.mangaId || manga.id,
-      sourceId: manga.extensionId,
+      sourceId: manga.extensionId || sourceId,
     });
   };
 

@@ -4,6 +4,7 @@ import * as IntentLauncher from 'expo-intent-launcher';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
 
 // GitHub repository configuration
 const GITHUB_OWNER = 'chiraitori';
@@ -14,6 +15,7 @@ const GITHUB_API_URL = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_RE
 const STORAGE_KEYS = {
   LAST_CHECK_TIME: '@update_last_check',
   SKIPPED_VERSION: '@update_skipped_version',
+  APK_DOWNLOAD_META: '@update_apk_download_meta',
 };
 
 // Debug mode - set to true to test update modal with mock data
@@ -41,6 +43,23 @@ export interface UpdateCheckResult {
   error: string | null;
 }
 
+export interface ApkDownloadMetadata {
+  url: string;
+  fileUri: string;
+  expectedSize: number | null;
+  downloadedBytes: number;
+  totalBytes: number;
+  completed: boolean;
+}
+
+export interface ApkDownloadStateSnapshot {
+  state: 'idle' | 'downloading' | 'paused' | 'downloaded';
+  progress: number;
+  downloadedBytes: number;
+  totalBytes: number;
+  fileUri: string | null;
+}
+
 /**
  * Get the current app version from expo config
  */
@@ -53,11 +72,15 @@ export const getCurrentVersion = (): string => {
  * Returns: 1 if v1 > v2, -1 if v1 < v2, 0 if equal
  */
 export const compareVersions = (v1: string, v2: string): number => {
-  // Remove any pre-release tags for comparison (e.g., -rc, -beta)
-  const cleanVersion = (v: string) => v.replace(/-.*$/, '');
+  const stripBuild = (v: string) => (v || '').replace(/^v/, '').replace(/\+.*$/, '');
+  const clean1 = stripBuild(v1);
+  const clean2 = stripBuild(v2);
 
-  const parts1 = cleanVersion(v1).split('.').map(Number);
-  const parts2 = cleanVersion(v2).split('.').map(Number);
+  const [core1, ...tagParts1] = clean1.split('-');
+  const [core2, ...tagParts2] = clean2.split('-');
+
+  const parts1 = (core1 || '').split('.').map((n) => parseInt(n, 10) || 0);
+  const parts2 = (core2 || '').split('.').map((n) => parseInt(n, 10) || 0);
 
   for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
     const num1 = parts1[i] || 0;
@@ -69,11 +92,18 @@ export const compareVersions = (v1: string, v2: string): number => {
 
   // If base versions are equal, check pre-release tags
   // Release version (no tag) > pre-release version (with tag)
-  const hasTag1 = v1.includes('-');
-  const hasTag2 = v2.includes('-');
+  const tag1 = tagParts1.join('-');
+  const tag2 = tagParts2.join('-');
+  const hasTag1 = tag1.length > 0;
+  const hasTag2 = tag2.length > 0;
 
   if (!hasTag1 && hasTag2) return 1;
   if (hasTag1 && !hasTag2) return -1;
+  if (hasTag1 && hasTag2) {
+    const cmp = tag1.localeCompare(tag2, undefined, { numeric: true, sensitivity: 'base' });
+    if (cmp > 0) return 1;
+    if (cmp < 0) return -1;
+  }
 
   return 0;
 };
@@ -476,55 +506,441 @@ export const checkForUpdate = async (force: boolean = false): Promise<UpdateChec
  */
 export type DownloadProgressCallback = (progress: number, downloadedBytes: number, totalBytes: number) => void;
 
+// Persistent & In-Memory Resumable APK Download Manager
+let activeDownloadResumable: FileSystem.DownloadResumable | null = null;
+let activeDownloadPromise: Promise<string | null> | null = null;
+let activeDownloadUrl: string | null = null;
+let isDownloadPausedByUser = false;
+let isDownloadCancelledByUser = false;
+const progressListeners = new Set<DownloadProgressCallback>();
+let lastKnownProgress = { progress: 0, downloadedBytes: 0, totalBytes: 0 };
+
+const getApkFileUri = (): string => {
+  const baseDir = FileSystem.documentDirectory || FileSystem.cacheDirectory || '';
+  return `${baseDir}paperand-update.apk`;
+};
+
+const loadApkDownloadMeta = async (): Promise<ApkDownloadMetadata | null> => {
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEYS.APK_DOWNLOAD_META);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
+const saveApkDownloadMeta = async (meta: ApkDownloadMetadata): Promise<void> => {
+  try {
+    await AsyncStorage.setItem(STORAGE_KEYS.APK_DOWNLOAD_META, JSON.stringify(meta));
+  } catch {}
+};
+
+const notifyProgressListeners = (progress: number, downloadedBytes: number, totalBytes: number) => {
+  lastKnownProgress = { progress, downloadedBytes, totalBytes };
+  progressListeners.forEach((cb) => {
+    try {
+      cb(progress, downloadedBytes, totalBytes);
+    } catch {}
+  });
+};
+
 /**
- * Download APK file for Android
+ * Subscribe to ongoing APK download progress (used when UpdateModal re-opens)
+ */
+export const subscribeToApkDownload = (cb: DownloadProgressCallback): (() => void) => {
+  progressListeners.add(cb);
+  if (lastKnownProgress.downloadedBytes > 0 || lastKnownProgress.totalBytes > 0) {
+    cb(lastKnownProgress.progress, lastKnownProgress.downloadedBytes, lastKnownProgress.totalBytes);
+  }
+  return () => {
+    progressListeners.delete(cb);
+  };
+};
+
+/**
+ * Check the current state of an APK download (in-memory or partial/completed on disk)
+ */
+export const getApkDownloadState = async (
+  url: string | null,
+  expectedSize?: number | null
+): Promise<ApkDownloadStateSnapshot> => {
+  if (!url || Platform.OS !== 'android') {
+    return { state: 'idle', progress: 0, downloadedBytes: 0, totalBytes: 0, fileUri: null };
+  }
+
+  const fileUri = getApkFileUri();
+
+  // 1. Check if actively downloading in memory right now
+  if (activeDownloadPromise && activeDownloadUrl === url) {
+    return {
+      state: 'downloading',
+      progress: lastKnownProgress.progress,
+      downloadedBytes: lastKnownProgress.downloadedBytes,
+      totalBytes: lastKnownProgress.totalBytes || expectedSize || 0,
+      fileUri,
+    };
+  }
+
+  // 2. Check disk & persisted metadata
+  try {
+    const [meta, fileInfo] = await Promise.all([
+      loadApkDownloadMeta(),
+      FileSystem.getInfoAsync(fileUri),
+    ]);
+
+    if (meta && meta.url === url && fileInfo.exists) {
+      const diskSize = (fileInfo as any).size || 0;
+      const targetTotal = meta.totalBytes || expectedSize || 0;
+
+      if (meta.completed && diskSize > 0 && (!expectedSize || diskSize >= expectedSize)) {
+        return {
+          state: 'downloaded',
+          progress: 1,
+          downloadedBytes: diskSize,
+          totalBytes: diskSize,
+          fileUri,
+        };
+      }
+
+      if (diskSize > 0 && (!targetTotal || diskSize < targetTotal)) {
+        const progress = targetTotal > 0 ? Math.min(0.99, Math.max(0, diskSize / targetTotal)) : 0;
+        lastKnownProgress = { progress, downloadedBytes: diskSize, totalBytes: targetTotal };
+        return {
+          state: 'paused',
+          progress,
+          downloadedBytes: diskSize,
+          totalBytes: targetTotal,
+          fileUri,
+        };
+      }
+    }
+  } catch {}
+
+  return { state: 'idle', progress: 0, downloadedBytes: 0, totalBytes: expectedSize || 0, fileUri: null };
+};
+
+/**
+ * Pause the active APK download without deleting the partial file on disk
+ */
+export const pauseApkDownload = async (): Promise<void> => {
+  isDownloadPausedByUser = true;
+  if (activeDownloadResumable) {
+    try {
+      await activeDownloadResumable.pauseAsync();
+    } catch {}
+  }
+};
+
+/**
+ * Cancel and delete the partial APK download file
+ */
+export const cancelApkDownload = async (): Promise<void> => {
+  isDownloadCancelledByUser = true;
+  isDownloadPausedByUser = false;
+  if (activeDownloadResumable) {
+    try {
+      await activeDownloadResumable.cancelAsync();
+    } catch {}
+    activeDownloadResumable = null;
+  }
+  activeDownloadPromise = null;
+  activeDownloadUrl = null;
+  lastKnownProgress = { progress: 0, downloadedBytes: 0, totalBytes: 0 };
+  try {
+    const fileUri = getApkFileUri();
+    const info = await FileSystem.getInfoAsync(fileUri);
+    if (info.exists) {
+      await FileSystem.deleteAsync(fileUri, { idempotent: true });
+    }
+    await AsyncStorage.removeItem(STORAGE_KEYS.APK_DOWNLOAD_META);
+  } catch {}
+};
+
+/**
+ * Wait until network connection is restored (e.g., during Wi-Fi switch or temporary drop)
+ */
+const waitForNetworkConnection = (timeoutMs: number = 45000): Promise<boolean> => {
+  return new Promise((resolve) => {
+    let settled = false;
+    let unsubscribe: (() => void) | null = null;
+
+    const finish = (connected: boolean) => {
+      if (settled) return;
+      settled = true;
+      if (unsubscribe) unsubscribe();
+      clearTimeout(timer);
+      resolve(connected);
+    };
+
+    const timer = setTimeout(() => finish(false), timeoutMs);
+
+    NetInfo.fetch()
+      .then((state) => {
+        if (state.isConnected && state.isInternetReachable !== false) {
+          finish(true);
+        } else {
+          unsubscribe = NetInfo.addEventListener((nextState) => {
+            if (nextState.isConnected && nextState.isInternetReachable !== false) {
+              // Give the new network interface 800ms to stabilize routing before resuming HTTP Range request
+              setTimeout(() => finish(true), 800);
+            }
+          });
+        }
+      })
+      .catch(() => finish(true));
+  });
+};
+
+/**
+ * Download APK file for Android with full HTTP Range resumption across Wi-Fi changes and modal closes
  */
 export const downloadApk = async (
   url: string,
-  onProgress?: DownloadProgressCallback
+  onProgress?: DownloadProgressCallback,
+  expectedSize?: number | null
 ): Promise<string | null> => {
   if (Platform.OS !== 'android') {
     console.log('APK download is only supported on Android');
     return null;
   }
 
-  try {
-    const fileName = 'paperand-update.apk';
-    const fileUri = `${FileSystem.cacheDirectory}${fileName}`;
+  if (onProgress) {
+    progressListeners.add(onProgress);
+  }
 
-    // Delete existing file if present
-    const fileInfo = await FileSystem.getInfoAsync(fileUri);
-    if (fileInfo.exists) {
-      await FileSystem.deleteAsync(fileUri);
+  // If the exact same APK URL is already downloading in the background, attach to it
+  if (activeDownloadPromise && activeDownloadUrl === url) {
+    if (onProgress && (lastKnownProgress.downloadedBytes > 0 || lastKnownProgress.totalBytes > 0)) {
+      onProgress(lastKnownProgress.progress, lastKnownProgress.downloadedBytes, lastKnownProgress.totalBytes);
+    }
+    try {
+      return await activeDownloadPromise;
+    } finally {
+      if (onProgress) {
+        progressListeners.delete(onProgress);
+      }
+    }
+  }
+
+  isDownloadPausedByUser = false;
+  isDownloadCancelledByUser = false;
+  activeDownloadUrl = url;
+
+  const runDownload = async (): Promise<string | null> => {
+    const fileUri = getApkFileUri();
+    let lastSavedMetaBytes = 0;
+
+    // Inspect existing file & metadata to see if we should resume or start fresh
+    const existingMeta = await loadApkDownloadMeta();
+    const initialInfo = await FileSystem.getInfoAsync(fileUri);
+
+    if (initialInfo.exists) {
+      const initialDiskSize = (initialInfo as any).size || 0;
+      const isSameUrl = existingMeta?.url === url;
+
+      if (isSameUrl && existingMeta?.completed && initialDiskSize > 0 && (!expectedSize || initialDiskSize >= expectedSize)) {
+        // Already completely downloaded!
+        notifyProgressListeners(1, initialDiskSize, initialDiskSize);
+        return fileUri;
+      }
+
+      const maxAllowedSize = expectedSize || existingMeta?.totalBytes || 0;
+      if (!isSameUrl || (maxAllowedSize > 0 && initialDiskSize > maxAllowedSize)) {
+        // Different release URL or corrupted oversized file -> delete and start fresh
+        await FileSystem.deleteAsync(fileUri, { idempotent: true });
+        await saveApkDownloadMeta({
+          url,
+          fileUri,
+          expectedSize: expectedSize ?? null,
+          downloadedBytes: 0,
+          totalBytes: expectedSize || 0,
+          completed: false,
+        });
+      }
+    } else {
+      await saveApkDownloadMeta({
+        url,
+        fileUri,
+        expectedSize: expectedSize ?? null,
+        downloadedBytes: 0,
+        totalBytes: expectedSize || 0,
+        completed: false,
+      });
     }
 
-    // Create download resumable with progress callback
-    const downloadResumable = FileSystem.createDownloadResumable(
-      url,
-      fileUri,
-      {},
-      (downloadProgress) => {
-        const progress = downloadProgress.totalBytesWritten / downloadProgress.totalBytesExpectedToWrite;
-        if (onProgress) {
-          onProgress(
-            progress,
-            downloadProgress.totalBytesWritten,
-            downloadProgress.totalBytesExpectedToWrite
-          );
+    const MAX_NETWORK_RESUME_ATTEMPTS = 6;
+    let attempt = 0;
+
+    // Listen for network interface switches (e.g. Wi-Fi A -> Wi-Fi B or Wi-Fi -> Cellular)
+    // If network changes mid-flight, OkHttp's socket on the old interface may stall; cancelling the socket
+    // cleanly triggers the retry loop below, which immediately resumes from `fileInfo.size` on the new network!
+    let lastNetworkType: string | null = null;
+    const netUnsubscribe = NetInfo.addEventListener((state) => {
+      const currentType = `${state.type}_${state.isConnected}`;
+      if (lastNetworkType && lastNetworkType !== currentType && activeDownloadResumable && !isDownloadPausedByUser) {
+        // Network changed while downloading - pause the current socket so the loop resumes on the new interface
+        activeDownloadResumable.pauseAsync().catch(() => {});
+      }
+      lastNetworkType = currentType;
+    });
+
+    try {
+      while (attempt < MAX_NETWORK_RESUME_ATTEMPTS) {
+        if (isDownloadCancelledByUser || isDownloadPausedByUser) {
+          return null;
+        }
+
+        const currentFileInfo = await FileSystem.getInfoAsync(fileUri);
+        const currentDiskBytes = currentFileInfo.exists ? ((currentFileInfo as any).size || 0) : 0;
+        const storedMeta = await loadApkDownloadMeta();
+        const knownTotal = storedMeta?.totalBytes || expectedSize || 0;
+
+        // If the partial file already reached the full size, mark completed and return
+        if (knownTotal > 0 && currentDiskBytes >= knownTotal) {
+          await saveApkDownloadMeta({
+            url,
+            fileUri,
+            expectedSize: expectedSize ?? null,
+            downloadedBytes: currentDiskBytes,
+            totalBytes: currentDiskBytes,
+            completed: true,
+          });
+          notifyProgressListeners(1, currentDiskBytes, currentDiskBytes);
+          return fileUri;
+        }
+
+        const resumeData = currentDiskBytes > 0 ? String(currentDiskBytes) : undefined;
+        if (currentDiskBytes > 0 && knownTotal > 0) {
+          const resumedProgress = Math.min(0.99, Math.max(0, currentDiskBytes / knownTotal));
+          notifyProgressListeners(resumedProgress, currentDiskBytes, knownTotal);
+        }
+
+        const downloadResumable = FileSystem.createDownloadResumable(
+          url,
+          fileUri,
+          {},
+          (downloadProgress) => {
+            const written = Math.max(0, downloadProgress.totalBytesWritten || 0);
+            const rawExpected = downloadProgress.totalBytesExpectedToWrite;
+            const total =
+              rawExpected && rawExpected > 0
+                ? rawExpected
+                : knownTotal > 0
+                ? knownTotal
+                : 0;
+
+            const rawRatio = total > 0 ? written / total : 0;
+            const safeProgress = Math.min(1, Math.max(0, Number.isFinite(rawRatio) ? rawRatio : 0));
+
+            notifyProgressListeners(safeProgress, written, total);
+
+            // Periodically persist progress metadata (every ~512KB)
+            if (written - lastSavedMetaBytes >= 512 * 1024 || (total > 0 && written >= total)) {
+              lastSavedMetaBytes = written;
+              saveApkDownloadMeta({
+                url,
+                fileUri,
+                expectedSize: expectedSize ?? null,
+                downloadedBytes: written,
+                totalBytes: total,
+                completed: false,
+              });
+            }
+          },
+          resumeData
+        );
+
+        activeDownloadResumable = downloadResumable;
+
+        try {
+          const result = resumeData
+            ? await downloadResumable.resumeAsync()
+            : await downloadResumable.downloadAsync();
+
+          if (isDownloadCancelledByUser || isDownloadPausedByUser) {
+            return null;
+          }
+
+          // Check HTTP status (200 OK or 206 Partial Content)
+          if (result && result.uri && (!result.status || (result.status >= 200 && result.status < 300))) {
+            const finalInfo = await FileSystem.getInfoAsync(result.uri);
+            const finalSize = finalInfo.exists ? ((finalInfo as any).size || lastKnownProgress.downloadedBytes) : lastKnownProgress.downloadedBytes;
+
+            await saveApkDownloadMeta({
+              url,
+              fileUri: result.uri,
+              expectedSize: expectedSize ?? null,
+              downloadedBytes: finalSize,
+              totalBytes: finalSize,
+              completed: true,
+            });
+            notifyProgressListeners(1, finalSize, finalSize);
+            return result.uri;
+          }
+
+          // If result is null/undefined because NetInfo paused the socket during a Wi-Fi switch,
+          // wait for the new network to stabilize and loop to resume from currentDiskBytes!
+          if (!result && !isDownloadPausedByUser && !isDownloadCancelledByUser) {
+            attempt++;
+            const connected = await waitForNetworkConnection(45000);
+            if (!connected) {
+              throw new Error('Network connection lost. Tap Resume when back online.');
+            }
+            continue;
+          }
+
+          return null;
+        } catch (err) {
+          if (isDownloadCancelledByUser || isDownloadPausedByUser) {
+            return null;
+          }
+
+          attempt++;
+          // Persist whatever bytes are on disk right now so nothing is lost
+          try {
+            const partialInfo = await FileSystem.getInfoAsync(fileUri);
+            if (partialInfo.exists && (partialInfo as any).size > 0) {
+              await saveApkDownloadMeta({
+                url,
+                fileUri,
+                expectedSize: expectedSize ?? null,
+                downloadedBytes: (partialInfo as any).size,
+                totalBytes: lastKnownProgress.totalBytes || expectedSize || 0,
+                completed: false,
+              });
+            }
+          } catch {}
+
+          if (attempt >= MAX_NETWORK_RESUME_ATTEMPTS) {
+            console.error('Error downloading APK after resume attempts:', err);
+            throw err;
+          }
+
+          // Wait for network to reconnect (e.g. Wi-Fi switch) before resuming
+          const connected = await waitForNetworkConnection(45000);
+          if (!connected) {
+            throw err;
+          }
         }
       }
-    );
 
-    const result = await downloadResumable.downloadAsync();
-
-    if (result?.uri) {
-      return result.uri;
+      return null;
+    } finally {
+      netUnsubscribe();
+      activeDownloadResumable = null;
     }
+  };
 
-    return null;
-  } catch (error) {
-    console.error('Error downloading APK:', error);
-    throw error;
+  activeDownloadPromise = runDownload();
+
+  try {
+    return await activeDownloadPromise;
+  } finally {
+    activeDownloadPromise = null;
+    activeDownloadUrl = null;
+    if (onProgress) {
+      progressListeners.delete(onProgress);
+    }
   }
 };
 
@@ -559,7 +975,7 @@ export const installApk = async (fileUri: string): Promise<void> => {
  * Format bytes to human readable string
  */
 export const formatBytes = (bytes: number): string => {
-  if (bytes === 0) return '0 Bytes';
+  if (!bytes || bytes <= 0 || !Number.isFinite(bytes)) return '0 Bytes';
 
   const k = 1024;
   const sizes = ['Bytes', 'KB', 'MB', 'GB'];
@@ -629,6 +1045,10 @@ export const updateService = {
   skipVersion: async (version: string) => skipVersion(version),
   isVersionSkipped: async (version: string) => isVersionSkipped(version),
   resetSkippedVersion: async () => clearSkippedVersion(),
+  getApkDownloadState: async (url: string, expectedSize?: number | null) =>
+    getApkDownloadState(url, expectedSize),
+  pauseApkDownload: async () => pauseApkDownload(),
+  cancelApkDownload: async () => cancelApkDownload(),
+  subscribeToApkDownload: (cb: (progress: number, downloadedBytes: number, totalBytes: number) => void) =>
+    subscribeToApkDownload(cb),
 };
-
-

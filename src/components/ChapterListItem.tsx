@@ -188,10 +188,13 @@ export const ChapterListItem: React.FC<ChapterListItemProps> = ({
 };
 
 const formatDate = (dateString: string): string => {
+  if (!dateString) return '';
   const date = new Date(dateString);
+  if (isNaN(date.getTime())) return '';
   const now = new Date();
-  const diffTime = Math.abs(now.getTime() - date.getTime());
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  const startOfNow = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startOfDate = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const diffDays = Math.max(0, Math.floor((startOfNow - startOfDate) / (1000 * 60 * 60 * 24)));
 
   if (diffDays === 0) return 'Today';
   if (diffDays === 1) return 'Yesterday';

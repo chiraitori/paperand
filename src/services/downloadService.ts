@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo, { NetInfoStateType } from '@react-native-community/netinfo';
 import { Chapter, DownloadedChapter, DownloadJob } from '../types';
 import { getChapterPages, decryptDrmImage, fetchImageThroughExtension } from './sourceService';
+import { getGeneralSettings } from './settingsService';
 
 const DOWNLOADS_DIR_NAME = 'downloads';
 const METADATA_KEY = '@paperback_downloads';
@@ -10,7 +11,6 @@ const METADATA_KEY = '@paperback_downloads';
 // Parallel download settings based on network
 const PARALLEL_CHAPTERS_WIFI = 3;
 const PARALLEL_CHAPTERS_CELLULAR = 1;
-const PARALLEL_PAGES_PER_CHAPTER = 2;
 
 // Parse DRM URL to get extensionId and actual URL
 const parseDrmUrl = (url: string): { extensionId: string; actualUrl: string } | null => {
@@ -36,16 +36,18 @@ const base64ToArrayBuffer = (base64: string): Uint8Array => {
     return bytes;
 };
 
+const getJobKey = (mangaId: string, chapterId: string): string => `${mangaId}::${chapterId}`;
+
 class DownloadService {
     private downloadQueue: DownloadJob[] = [];
     private pendingQueue: { manga: { id: string; title: string; coverImage: string; source?: string }; chapter: Chapter }[] = [];
     private activeDownloads: Record<string, boolean> = {};
     private cancelledDownloads: Set<string> = new Set();
-    private pausedDownloads: Set<string> = new Set();
     private isPaused = false;
     private listeners: ((queue: DownloadJob[]) => void)[] = [];
     private downloadsDir: Directory;
     private isProcessing = false;
+    private metadataWriteChain: Promise<void> = Promise.resolve();
 
     constructor() {
         this.downloadsDir = new Directory(Paths.document, DOWNLOADS_DIR_NAME);
@@ -56,6 +58,12 @@ class DownloadService {
         try {
             const netInfo = await NetInfo.fetch();
             if (netInfo.type === NetInfoStateType.wifi) {
+                try {
+                    const settings = await getGeneralSettings();
+                    if (settings?.parallelDownloads && settings.parallelDownloads > 0) {
+                        return settings.parallelDownloads;
+                    }
+                } catch {}
                 return PARALLEL_CHAPTERS_WIFI;
             }
             return PARALLEL_CHAPTERS_CELLULAR;
@@ -99,14 +107,16 @@ class DownloadService {
         this.notifyListeners();
     }
 
-    async removeDownload(chapterId: string): Promise<void> {
-        await this.deleteChapter(chapterId);
+    async removeDownload(chapterId: string, mangaId?: string): Promise<void> {
+        await this.deleteChapter(chapterId, mangaId);
     }
 
-    getDownloadProgress(chapterId: string): number {
-        const job = this.downloadQueue.find(j => j.chapterId === chapterId);
+    getDownloadProgress(chapterId: string, mangaId?: string): number {
+        const job = this.downloadQueue.find(
+            j => j.chapterId === chapterId && (!mangaId || j.mangaId === mangaId)
+        );
         if (!job || !job.total) return 0;
-        return (job.progress / job.total) * 100;
+        return Math.min(100, Math.max(0, (job.progress / job.total) * 100));
     }
 
     onQueueChanged(listener: (queue: DownloadJob[]) => void) {
@@ -114,11 +124,11 @@ class DownloadService {
     }
 
     async pauseDownloads(): Promise<void> {
-        this.isPaused = true;
+        this.pauseAll();
     }
 
     async resumeDownloads(): Promise<void> {
-        this.isPaused = false;
+        this.resumeAll();
     }
 
     async addToQueue(
@@ -137,15 +147,32 @@ class DownloadService {
         }
     }
 
+    /**
+     * Thread-safe serialized metadata update to prevent parallel downloads from overwriting each other
+     */
+    private enqueueMetadataUpdate(updater: (existing: DownloadedChapter[]) => DownloadedChapter[]): Promise<void> {
+        this.metadataWriteChain = this.metadataWriteChain
+            .then(async () => {
+                const existing = await this.getDownloadedChapters();
+                const updated = updater(existing);
+                await this.saveDownloadedChapters(updated);
+            })
+            .catch((err) => {
+                console.error('Metadata update error:', err);
+            });
+        return this.metadataWriteChain;
+    }
+
     async downloadChapter(
         manga: { id: string; title: string; coverImage: string; source?: string },
         chapter: Chapter,
         onProgress?: (progress: number) => void
     ) {
+        const key = getJobKey(manga.id, chapter.id);
         // Check if already downloading or queued
-        if (this.activeDownloads[chapter.id]) return;
-        if (this.pendingQueue.some(p => p.chapter.id === chapter.id)) return;
-        if (this.downloadQueue.some(j => j.chapterId === chapter.id)) return;
+        if (this.activeDownloads[key] || this.activeDownloads[chapter.id]) return;
+        if (this.pendingQueue.some(p => p.manga.id === manga.id && p.chapter.id === chapter.id)) return;
+        if (this.downloadQueue.some(j => j.mangaId === manga.id && j.chapterId === chapter.id)) return;
 
         const sourceId = manga.source;
         if (!sourceId) {
@@ -153,10 +180,14 @@ class DownloadService {
             return;
         }
 
+        // Clear any leftover cancellation flag for this chapter
+        this.cancelledDownloads.delete(key);
+        this.cancelledDownloads.delete(chapter.id);
+
         // Add to pending queue
         this.pendingQueue.push({ manga, chapter });
         
-        // Add job to visible queue with 'queued' status
+        // Add job to visible queue
         const job: DownloadJob = {
             chapterId: chapter.id,
             mangaId: manga.id,
@@ -166,26 +197,39 @@ class DownloadService {
             sourceId: sourceId,
             total: 0,
             progress: 0,
-            status: 'queued',
+            status: this.isPaused ? 'paused' : 'queued',
         };
         this.updateQueue(job);
 
-        // Start processing queue
-        this.processQueue();
+        // Start processing queue if not paused
+        if (!this.isPaused) {
+            this.processQueue();
+        }
     }
 
     // Cancel a specific download
-    async cancelDownload(chapterId: string): Promise<void> {
-        // Mark as cancelled
+    async cancelDownload(chapterId: string, mangaId?: string): Promise<void> {
+        if (!chapterId) return;
         this.cancelledDownloads.add(chapterId);
+        if (mangaId) {
+            this.cancelledDownloads.add(getJobKey(mangaId, chapterId));
+            delete this.activeDownloads[getJobKey(mangaId, chapterId)];
+        }
         delete this.activeDownloads[chapterId];
         
         // Remove from pending queue
-        this.pendingQueue = this.pendingQueue.filter(p => p.chapter.id !== chapterId);
+        this.pendingQueue = this.pendingQueue.filter(
+            p => !(p.chapter.id === chapterId && (!mangaId || p.manga.id === mangaId))
+        );
         
         // Remove from visible queue
-        const index = this.downloadQueue.findIndex(j => j.chapterId === chapterId);
+        const index = this.downloadQueue.findIndex(
+            j => j.chapterId === chapterId && (!mangaId || j.mangaId === mangaId)
+        );
         if (index >= 0) {
+            const removed = this.downloadQueue[index];
+            this.cancelledDownloads.add(getJobKey(removed.mangaId, removed.chapterId));
+            delete this.activeDownloads[getJobKey(removed.mangaId, removed.chapterId)];
             this.downloadQueue.splice(index, 1);
             this.notifyListeners();
         }
@@ -210,10 +254,11 @@ class DownloadService {
     // Resume all downloads
     resumeAll() {
         this.isPaused = false;
-        // Update all paused jobs back to queued
+        // Update all paused jobs back to downloading (if active) or queued
         this.downloadQueue.forEach(job => {
             if (job.status === 'paused') {
-                job.status = 'queued';
+                const key = getJobKey(job.mangaId, job.chapterId);
+                job.status = (this.activeDownloads[key] || this.activeDownloads[job.chapterId]) ? 'downloading' : 'queued';
             }
         });
         this.notifyListeners();
@@ -231,13 +276,35 @@ class DownloadService {
         return [...this.downloadQueue];
     }
 
+    private isChapterCancelled(mangaId: string, chapterId: string): boolean {
+        return this.cancelledDownloads.has(chapterId) || this.cancelledDownloads.has(getJobKey(mangaId, chapterId));
+    }
+
+    private clearCancelledFlag(mangaId: string, chapterId: string) {
+        this.cancelledDownloads.delete(chapterId);
+        this.cancelledDownloads.delete(getJobKey(mangaId, chapterId));
+    }
+
+    /**
+     * Wait while downloads are paused (unless cancelled)
+     */
+    private async waitWhilePaused(mangaId: string, chapterId: string): Promise<boolean> {
+        while (this.isPaused) {
+            if (this.isChapterCancelled(mangaId, chapterId)) {
+                return false;
+            }
+            await new Promise(resolve => setTimeout(resolve, 300));
+        }
+        return !this.isChapterCancelled(mangaId, chapterId);
+    }
+
     private async processQueue() {
         if (this.isProcessing) return;
         if (this.isPaused) return;
         this.isProcessing = true;
 
         try {
-            while (this.pendingQueue.length > 0) {
+            while (this.pendingQueue.length > 0 && !this.isPaused) {
                 const maxParallel = await this.getMaxParallelDownloads();
                 const activeCount = Object.keys(this.activeDownloads).length;
                 const slotsAvailable = maxParallel - activeCount;
@@ -262,10 +329,13 @@ class DownloadService {
         chapter: Chapter
     ) {
         const sourceId = manga.source!;
-        this.activeDownloads[chapter.id] = true;
+        const key = getJobKey(manga.id, chapter.id);
+        this.activeDownloads[key] = true;
         
-        // Update job status to downloading
-        const existingJob = this.downloadQueue.find(j => j.chapterId === chapter.id);
+        // Update job status to downloading (or paused if currently paused)
+        const existingJob = this.downloadQueue.find(
+            j => j.mangaId === manga.id && j.chapterId === chapter.id
+        );
         const job: DownloadJob = {
             chapterId: chapter.id,
             mangaId: manga.id,
@@ -275,17 +345,19 @@ class DownloadService {
             sourceId: sourceId,
             total: 0,
             progress: 0,
-            status: 'downloading',
+            status: this.isPaused ? 'paused' : 'downloading',
         };
         this.updateQueue(job);
 
         try {
-            // Check if cancelled
-            if (this.cancelledDownloads.has(chapter.id)) {
-                this.cancelledDownloads.delete(chapter.id);
-                console.log('[Download] Download was cancelled before starting');
-                return; // Exit silently without error
+            // Wait if paused before starting
+            if (!(await this.waitWhilePaused(manga.id, chapter.id))) {
+                this.clearCancelledFlag(manga.id, chapter.id);
+                return;
             }
+
+            job.status = 'downloading';
+            this.updateQueue({ ...job });
 
             // Fetch page URLs from the source
             console.log('[Download] Fetching pages for', chapter.id, 'from source', sourceId);
@@ -296,6 +368,7 @@ class DownloadService {
             }
 
             job.total = pageUrls.length;
+            job.status = this.isPaused ? 'paused' : 'downloading';
             this.updateQueue({ ...job });
 
             // Create chapter directory: downloads/mangaId/chapterId/
@@ -308,9 +381,25 @@ class DownloadService {
             let size = 0;
 
             for (let i = 0; i < pageUrls.length; i++) {
+                // Wait if paused during page loop
+                if (this.isPaused) {
+                    job.status = 'paused';
+                    this.updateQueue({ ...job });
+                    const shouldContinue = await this.waitWhilePaused(manga.id, chapter.id);
+                    if (!shouldContinue) {
+                        this.clearCancelledFlag(manga.id, chapter.id);
+                        if (chapterDir.exists) {
+                            chapterDir.delete();
+                        }
+                        return;
+                    }
+                    job.status = 'downloading';
+                    this.updateQueue({ ...job });
+                }
+
                 // Check for cancellation during download
-                if (this.cancelledDownloads.has(chapter.id)) {
-                    this.cancelledDownloads.delete(chapter.id);
+                if (this.isChapterCancelled(manga.id, chapter.id)) {
+                    this.clearCancelledFlag(manga.id, chapter.id);
                     // Clean up partial download
                     if (chapterDir.exists) {
                         chapterDir.delete();
@@ -356,7 +445,18 @@ class DownloadService {
                 }
 
                 job.progress = i + 1;
+                job.status = this.isPaused ? 'paused' : 'downloading';
                 this.updateQueue({ ...job });
+            }
+
+            // Do not mark chapter as completed if pages failed to download
+            if (localPages.length === 0 || localPages.length < pageUrls.length) {
+                if (chapterDir.exists) {
+                    try {
+                        chapterDir.delete();
+                    } catch {}
+                }
+                throw new Error(`Incomplete chapter download (${localPages.length}/${pageUrls.length} pages)`);
             }
 
             const downloadedChapter: DownloadedChapter = {
@@ -372,8 +472,12 @@ class DownloadService {
                 size,
             };
 
-            const existing = await this.getDownloadedChapters();
-            await this.saveDownloadedChapters([...existing, downloadedChapter]);
+            await this.enqueueMetadataUpdate((existing) => {
+                const filtered = existing.filter(
+                    c => !(c.mangaId === manga.id && c.chapterId === chapter.id)
+                );
+                return [...filtered, downloadedChapter];
+            });
 
             job.status = 'completed';
             this.updateQueue({ ...job });
@@ -382,33 +486,38 @@ class DownloadService {
             job.status = 'failed';
             this.updateQueue({ ...job });
         } finally {
+            delete this.activeDownloads[key];
             delete this.activeDownloads[chapter.id];
         }
     }
 
-    async deleteChapter(chapterId: string) {
+    async deleteChapter(chapterId: string, mangaId?: string) {
         try {
-            const chapters = await this.getDownloadedChapters();
-            const chapter = chapters.find(c => c.chapterId === chapterId);
-
-            if (chapter) {
-                // Delete chapter directory (synchronous method)
-                const chapterDir = new Directory(this.downloadsDir, chapter.mangaId, chapter.chapterId);
-                if (chapterDir.exists) {
-                    chapterDir.delete();
+            await this.enqueueMetadataUpdate((chapters) => {
+                const toDelete = chapters.filter(
+                    c => c.chapterId === chapterId && (!mangaId || c.mangaId === mangaId)
+                );
+                for (const chapter of toDelete) {
+                    try {
+                        const chapterDir = new Directory(this.downloadsDir, chapter.mangaId, chapter.chapterId);
+                        if (chapterDir.exists) {
+                            chapterDir.delete();
+                        }
+                    } catch {}
                 }
-
-                // Update metadata
-                const newChapters = chapters.filter(c => c.chapterId !== chapterId);
-                await this.saveDownloadedChapters(newChapters);
-            }
+                return chapters.filter(
+                    c => !(c.chapterId === chapterId && (!mangaId || c.mangaId === mangaId))
+                );
+            });
         } catch (error) {
             console.error('Failed to delete chapter:', error);
         }
     }
 
     private updateQueue(job: DownloadJob) {
-        const index = this.downloadQueue.findIndex(j => j.chapterId === job.chapterId);
+        const index = this.downloadQueue.findIndex(
+            j => j.mangaId === job.mangaId && j.chapterId === job.chapterId
+        );
         if (index >= 0) {
             if (job.status === 'completed' || job.status === 'failed') {
                 this.downloadQueue.splice(index, 1);

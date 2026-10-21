@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Image,
   Platform,
+  Linking,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -16,6 +17,7 @@ import { useTheme } from '../context/ThemeContext';
 import { RootStackParamList } from '../types';
 import { ExtensionSource, ExtensionRepository, DEFAULT_REPOSITORIES, getTagColor } from '../services/extensionService';
 import { getInstalledExtensionIconUrl } from '../services/extensionStorageService';
+import { clearExtensionCache } from '../services/sourceService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { t } from '../services/i18nService';
 import { AppDialog } from '../components/AppDialog';
@@ -99,6 +101,7 @@ export const ExtensionsScreen: React.FC = () => {
             const updated = installedExtensions.filter((e) => e.id !== ext.id);
             setInstalledExtensions(updated);
             await AsyncStorage.setItem(INSTALLED_EXTENSIONS_KEY, JSON.stringify(updated));
+            await clearExtensionCache(ext.id);
           },
         },
       ]
@@ -169,16 +172,36 @@ export const ExtensionsScreen: React.FC = () => {
             </Text>
             <View style={styles.tagsRow}>
               {/* Action buttons */}
-              <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#007AFF' }]}>
+              <TouchableOpacity
+                style={[styles.actionBtn, { backgroundColor: '#007AFF' }]}
+                onPress={() => !isEditing && navigation.navigate('ExtensionDetail', { extension: ext })}
+              >
                 <Ionicons name="list" size={12} color="#FFF" />
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#FF2D55' }]}>
+              <TouchableOpacity
+                style={[styles.actionBtn, { backgroundColor: '#FF2D55' }]}
+                onPress={() => !isEditing && navigation.navigate('ExtensionDetail', { extension: ext })}
+              >
                 <Ionicons name="paper-plane" size={12} color="#FFF" />
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#1C1C1E' }]}>
+              <TouchableOpacity
+                style={[styles.actionBtn, { backgroundColor: '#1C1C1E' }]}
+                onPress={() => !isEditing && navigation.navigate('ExtensionSettings', { extensionId: ext.id, extensionName: ext.name })}
+              >
                 <Ionicons name="options" size={12} color="#FFF" />
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#5856D6' }]}>
+              <TouchableOpacity
+                style={[styles.actionBtn, { backgroundColor: '#5856D6' }]}
+                onPress={() => {
+                  if (isEditing) return;
+                  const url = (ext as any).websiteUrl || (ext as any).websiteBaseURL || (ext as any).website || ext.repoBaseUrl;
+                  if (url) {
+                    Linking.openURL(url).catch(err => console.error('Failed to open extension URL:', err));
+                  } else {
+                    navigation.navigate('ExtensionDetail', { extension: ext });
+                  }
+                }}
+              >
                 <Ionicons name="globe-outline" size={12} color="#FFF" />
               </TouchableOpacity>
               {/* Tags */}

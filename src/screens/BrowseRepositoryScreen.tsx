@@ -124,8 +124,17 @@ export const BrowseRepositoryScreen: React.FC = () => {
         sourceJs: sourceJs, // Store the actual extension code
       };
 
-      const newInstalled = [...installedExtensions, installedExt];
-      setInstalledExtensions(newInstalled);
+      const stored = await AsyncStorage.getItem(INSTALLED_EXTENSIONS_KEY);
+      const currentInstalled: InstalledExtension[] = stored ? JSON.parse(stored) : [];
+      const newInstalled = [
+        ...currentInstalled.filter(item => item.id !== installedExt.id),
+        installedExt,
+      ];
+
+      setInstalledExtensions(prev => [
+        ...prev.filter(item => item.id !== installedExt.id),
+        installedExt,
+      ]);
 
       // Save to storage
       await AsyncStorage.setItem(
@@ -153,10 +162,17 @@ export const BrowseRepositoryScreen: React.FC = () => {
     try {
       const sourceJs = await downloadExtensionBundle({ ...ext, repoBaseUrl });
       if (!sourceJs) throw new Error(`Failed to download ${ext.bundleFilename}`);
-      const updated = installedExtensions.map(item =>
-        item.id === ext.id ? { ...item, ...ext, repoId, repoBaseUrl, sourceJs } : item
-      );
-      setInstalledExtensions(updated);
+      const reloadedExt: InstalledExtension = { ...ext, repoId, repoBaseUrl, sourceJs };
+      const stored = await AsyncStorage.getItem(INSTALLED_EXTENSIONS_KEY);
+      const currentInstalled: InstalledExtension[] = stored ? JSON.parse(stored) : [];
+      const updated = [
+        ...currentInstalled.filter(item => item.id !== ext.id),
+        reloadedExt,
+      ];
+      setInstalledExtensions(prev => [
+        ...prev.filter(item => item.id !== ext.id),
+        reloadedExt,
+      ]);
       await AsyncStorage.setItem(INSTALLED_EXTENSIONS_KEY, JSON.stringify(updated));
       await clearExtensionCache(ext.id);
       reloaded = true;

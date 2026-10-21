@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -57,6 +57,14 @@ export const DeveloperScreen: React.FC = () => {
   const [liveActivityPage, setLiveActivityPage] = useState(1);
   const [downloadActivityId, setDownloadActivityId] = useState<string | null>(null);
   const [downloadCount, setDownloadCount] = useState(0);
+  const spotifyUnsubscribeRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    return () => {
+      spotifyUnsubscribeRef.current?.();
+      spotifyUnsubscribeRef.current = null;
+    };
+  }, []);
 
   // Load settings on mount
   useEffect(() => {
@@ -192,8 +200,9 @@ export const DeveloperScreen: React.FC = () => {
       console.log('[Spotify] Configuring with clientId:', clientId);
       spotifyRemoteService.configure(clientId, 'paperand-spotify://callback');
 
-      // Add connection listener
-      const unsubscribe = spotifyRemoteService.addConnectionListener((connected) => {
+      // Add connection listener (clean up any existing listener first)
+      spotifyUnsubscribeRef.current?.();
+      spotifyUnsubscribeRef.current = spotifyRemoteService.addConnectionListener((connected) => {
         setSpotifyConnected(connected);
       });
 
@@ -266,6 +275,8 @@ export const DeveloperScreen: React.FC = () => {
 
   const disconnectSpotify = async () => {
     try {
+      spotifyUnsubscribeRef.current?.();
+      spotifyUnsubscribeRef.current = null;
       await spotifyRemoteService.disconnect();
       setSpotifyConnected(false);
       setSpotifyTrack(null);

@@ -132,7 +132,9 @@ export const saveCustomTheme = async (theme: CustomTheme): Promise<void> => {
     // Check if theme with same name exists, replace it
     const existingIndex = themes.findIndex(t => t.name === theme.name);
     if (existingIndex >= 0) {
-      themes[existingIndex] = theme;
+      const preservedId = themes[existingIndex].id;
+      theme.id = preservedId;
+      themes[existingIndex] = { ...theme, id: preservedId };
     } else {
       themes.push(theme);
     }
