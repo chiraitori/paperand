@@ -1,6 +1,6 @@
 {
   "name": "paperback-android",
-  "version": "0.0.31",
+  "version": "0.0.32",
   "main": "index.ts",
   "scripts": {
     "start": "expo start",
@@ -14,7 +14,11 @@
     "test": "jest",
     "test:extension-loader": "node scripts/verify-extension-loader.mjs",
     "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage"
+    "test:coverage": "jest --coverage",
+    "build:apk:arm64": "eas build --platform android --profile preview-arm64 --local",
+    "build:apk:armeabi": "eas build --platform android --profile preview-armeabi --local",
+    "build:apk:x86_64": "eas build --platform android --profile preview-x86_64 --local",
+    "build:apk:universal": "eas build --platform android --profile preview --local"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

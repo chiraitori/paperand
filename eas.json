@@ -25,6 +25,30 @@
         "credentialsSource": "remote"
       }
     },
+    "preview-arm64": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleRelease -PreactNativeArchitectures=arm64-v8a",
+        "credentialsSource": "local"
+      }
+    },
+    "preview-armeabi": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleRelease -PreactNativeArchitectures=armeabi-v7a",
+        "credentialsSource": "local"
+      }
+    },
+    "preview-x86_64": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleRelease -PreactNativeArchitectures=x86_64",
+        "credentialsSource": "local"
+      }
+    },
     "preview-simulator": {
       "distribution": "internal",
       "ios": {

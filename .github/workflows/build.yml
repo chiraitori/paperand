@@ -8,13 +8,13 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to build (e.g., 0.0.4-rc)'
+        description: 'Version to build (e.g., 0.0.32)'
         required: false
         default: ''
 
 jobs:
-  build-android:
-    name: Build Android
+  prepare:
+    name: Prepare Version
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -54,6 +54,30 @@ jobs:
           echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "APP_VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
           echo "Building version $VERSION (versionCode/buildNumber $VERSION_CODE)"
+
+  build-android:
+    name: Build Android (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    needs: [prepare]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64-v8a
+            name: arm64-v8a
+            profile: preview-arm64
+          - arch: armeabi-v7a
+            name: armeabi-v7a
+            profile: preview-armeabi
+          - arch: x86_64
+            name: x86_64
+            profile: preview-x86_64
+          - arch: universal
+            name: universal
+            profile: preview
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v1
@@ -99,6 +123,9 @@ jobs:
           EOF
 
       - name: Verify resolved Expo version
+        env:
+          APP_VERSION: ${{ needs.prepare.outputs.version }}
+          APP_VERSION_CODE: ${{ needs.prepare.outputs.version_code }}
         run: |
           npx expo config --type public --json > /tmp/expo-config.json
           jq '{version, androidVersionCode: .android.versionCode, iosBuildNumber: .ios.buildNumber}' /tmp/expo-config.json
@@ -106,25 +133,31 @@ jobs:
           test "$(jq -r '.android.versionCode' /tmp/expo-config.json)" = "$APP_VERSION_CODE"
           test "$(jq -r '.ios.buildNumber' /tmp/expo-config.json)" = "$APP_VERSION_CODE"
 
-      - name: Build Android APK
-        run: eas build --platform android --profile preview --local --non-interactive --output ./build/paperand-${{ steps.version.outputs.version }}.apk
+      - name: Build Android APK (${{ matrix.name }})
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
-          APP_VERSION: ${{ steps.version.outputs.version }}
-          APP_VERSION_CODE: ${{ steps.version.outputs.version_code }}
+          APP_VERSION: ${{ needs.prepare.outputs.version }}
+          APP_VERSION_CODE: ${{ needs.prepare.outputs.version_code }}
+        run: |
+          mkdir -p build
+          OUTPUT_APK="./build/paperand-${{ needs.prepare.outputs.version }}-${{ matrix.arch }}.apk"
+          eas build --platform android --profile ${{ matrix.profile }} --local --non-interactive --output "$OUTPUT_APK"
+          if [ "${{ matrix.arch }}" == "universal" ]; then
+            cp "$OUTPUT_APK" "./build/paperand-${{ needs.prepare.outputs.version }}.apk"
+          fi
 
-      - name: Upload Android APK Artifact
+      - name: Upload Android APK Artifact (${{ matrix.name }})
         uses: actions/upload-artifact@v4
         with:
-          name: android-apk
-          path: ./build/paperand-${{ steps.version.outputs.version }}.apk
+          name: android-apk-${{ matrix.arch }}
+          path: ./build/*.apk
           retention-days: 30
 
   fetch-ios:
     name: Fetch iOS from Codemagic
     runs-on: ubuntu-latest
-    needs: [build-android]
+    needs: [prepare]
     if: startsWith(github.ref, 'refs/tags/')
     outputs:
       ipa_downloaded: ${{ steps.download.outputs.downloaded }}
@@ -135,7 +168,7 @@ jobs:
           CODEMAGIC_TOKEN: ${{ secrets.CODEMAGIC_TOKEN }}
           CODEMAGIC_APP_ID: ${{ secrets.CODEMAGIC_APP_ID }}
         run: |
-          VERSION="${{ needs.build-android.outputs.version }}"
+          VERSION="${{ needs.prepare.outputs.version }}"
           TAG="v${VERSION}"
           
           echo "Looking for Codemagic build with tag: $TAG"
@@ -197,7 +230,7 @@ jobs:
           else
             echo "downloaded=false" >> $GITHUB_OUTPUT
           fi
-          
+
       - name: Upload iOS Artifact
         if: steps.download.outputs.downloaded == 'true'
         uses: actions/upload-artifact@v4
@@ -208,7 +241,7 @@ jobs:
 
   release:
     name: Create Release
-    needs: [build-android, fetch-ios]
+    needs: [prepare, build-android, fetch-ios]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
@@ -219,11 +252,12 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Download Android Artifact
+      - name: Download Android Artifacts
         uses: actions/download-artifact@v4
         with:
-          name: android-apk
+          pattern: android-apk-*
           path: ./release
+          merge-multiple: true
 
       - name: Download iOS Artifact
         if: needs.fetch-ios.outputs.ipa_downloaded == 'true'
@@ -236,7 +270,7 @@ jobs:
       - name: Generate Release Notes
         id: notes
         run: |
-          VERSION="${{ needs.build-android.outputs.version }}"
+          VERSION="${{ needs.prepare.outputs.version }}"
           VERSION_BADGE="${VERSION//-/--}"
           
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
@@ -249,11 +283,11 @@ jobs:
           cat > release_notes.md << 'NOTES_EOF'
           <div align="center">
           
-          # 📱 Paperand v${{ needs.build-android.outputs.version }}
+          # 📱 Paperand vVERSION_PLACEHOLDER
           
           ### _Ad-Free Manga Reader for iOS & Android_
           
-          <img src="https://img.shields.io/badge/version-VERSION_PLACEHOLDER-blue?style=for-the-badge" alt="Version"/>
+          <img src="https://img.shields.io/badge/version-VERSION_BADGE_PLACEHOLDER-blue?style=for-the-badge" alt="Version"/>
           <img src="https://img.shields.io/badge/platform-iOS%20%7C%20Android-green?style=for-the-badge" alt="Platform"/>
           <img src="https://img.shields.io/badge/built%20with-Expo-4630EB?style=for-the-badge" alt="Built with Expo"/>
           
@@ -265,7 +299,6 @@ jobs:
           
           NOTES_EOF
           
-          sed -i "s/VERSION_PLACEHOLDER/$VERSION_BADGE/g" release_notes.md
           echo "$COMMITS" >> release_notes.md
           
           cat >> release_notes.md << 'NOTES_EOF'
@@ -274,10 +307,21 @@ jobs:
           
           ## 📥 Downloads
           
+          ### 🤖 Android (Device Architecture Builds)
+          
+          > 💡 **Tip:** Most modern Android phones & tablets use **arm64-v8a**. Downloading the specific architecture APK drastically reduces download size and disk usage!
+          
+          | Architecture | Target Device | Download File | Estimated Size |
+          |---|---|---|---|
+          | ⚡ **arm64-v8a** *(Recommended)* | Modern phones & tablets (64-bit ARM) | `paperand-VERSION_PLACEHOLDER-arm64-v8a.apk` | **~25 MB** (Smallest) |
+          | 📱 **armeabi-v7a** | Older & budget phones (32-bit ARM) | `paperand-VERSION_PLACEHOLDER-armeabi-v7a.apk` | **~22 MB** |
+          | 💻 **x86_64** | Emulators, PC, Chromebooks | `paperand-VERSION_PLACEHOLDER-x86_64.apk` | **~28 MB** |
+          | 🌐 **Universal** | All Android devices | `paperand-VERSION_PLACEHOLDER-universal.apk` / `paperand-VERSION_PLACEHOLDER.apk` | ~70 MB |
+          
+          ### 🍎 iOS
           | Platform | File | Installation |
-          |----------|------|--------------|
-          | 🤖 **Android** | `paperand-${{ needs.build-android.outputs.version }}.apk` | Direct install |
-          | 🍎 **iOS** | `paperand-${{ needs.build-android.outputs.version }}.ipa` | Sideload with AltStore/Sideloadly |
+          |---|---|---|
+          | 🍎 **iOS** | `paperand-VERSION_PLACEHOLDER.ipa` | Sideload with AltStore / Sideloadly / TrollStore |
           
           ---
           
@@ -288,17 +332,19 @@ jobs:
           </div>
           NOTES_EOF
 
+          sed -i "s/VERSION_BADGE_PLACEHOLDER/$VERSION_BADGE/g" release_notes.md
+          sed -i "s/VERSION_PLACEHOLDER/$VERSION/g" release_notes.md
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: v${{ needs.build-android.outputs.version }}
-          name: 📱 Paperand v${{ needs.build-android.outputs.version }}
+          tag_name: v${{ needs.prepare.outputs.version }}
+          name: 📱 Paperand v${{ needs.prepare.outputs.version }}
           body_path: release_notes.md
           draft: false
-          prerelease: ${{ contains(needs.build-android.outputs.version, 'rc') || contains(needs.build-android.outputs.version, 'alpha') || contains(needs.build-android.outputs.version, 'beta') }}
+          prerelease: ${{ contains(needs.prepare.outputs.version, 'rc') || contains(needs.prepare.outputs.version, 'alpha') || contains(needs.prepare.outputs.version, 'beta') }}
           files: |
-            ./release/paperand-${{ needs.build-android.outputs.version }}.apk
-            ./release/paperand-${{ needs.build-android.outputs.version }}.ipa
+            ./release/*.apk
+            ./release/*.ipa
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
