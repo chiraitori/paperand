@@ -23,6 +23,7 @@ import { getGeneralSettings, GeneralSettings, defaultSettings } from '../service
 import { t } from '../services/i18nService';
 import { AppDialog } from '../components/AppDialog';
 import { useDialog } from '../hooks/useDialog';
+import { useResponsive } from '../hooks/useResponsive';
 import Constants from 'expo-constants';
 
 const isExpoGo = Constants.appOwnership === 'expo';
@@ -30,7 +31,8 @@ const isExpoGo = Constants.appOwnership === 'expo';
 type HistoryScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 export const HistoryScreen: React.FC = () => {
-  const { theme } = useTheme();
+  const { theme, palette } = useTheme();
+  const { pad } = useResponsive();
   const { history, clearHistory, addToLibrary, removeFromLibrary, toggleFavorite, isInLibrary, isFavorite } = useLibrary();
   const navigation = useNavigation<HistoryScreenNavigationProp>();
   const { dialogVisible, dialogConfig, showDialog, hideDialog } = useDialog();
@@ -285,7 +287,7 @@ export const HistoryScreen: React.FC = () => {
   if (!authChecked) {
     return (
       <View style={[styles.container, { backgroundColor: theme.background }]}>
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingHorizontal: pad }]}>
           <Text style={[styles.title, { color: theme.text }]}>History</Text>
         </View>
       </View>
@@ -296,7 +298,7 @@ export const HistoryScreen: React.FC = () => {
   if (settings.historyAuth && !isAuthenticated) {
     return (
       <View style={[styles.container, { backgroundColor: theme.background }]}>
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingHorizontal: pad }]}>
           <Text style={[styles.title, { color: theme.text }]}>{t('history.title')}</Text>
         </View>
         <View style={styles.lockedContainer}>
@@ -321,7 +323,7 @@ export const HistoryScreen: React.FC = () => {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingHorizontal: pad }]}>
         <View style={styles.headerSpacer} />
         <Text style={[styles.title, { color: theme.text }]}>{t('history.title')}</Text>
         {readingHistory.length > 0 && isAuthenticated ? (
@@ -350,9 +352,9 @@ export const HistoryScreen: React.FC = () => {
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
           renderItem={({ item: section }) => (
-            <View style={styles.sectionContainer}>
+            <View style={[styles.sectionContainer, { paddingHorizontal: pad }]}>
               <Text style={styles.sectionTitle}>{section.title}</Text>
-              <View style={styles.sectionCard}>
+              <View style={[styles.sectionCard, { backgroundColor: palette.card }]}>
                 {section.data.map((entry, index) => {
                   const chapter = entry.manga.chapters.find(ch => ch.id === entry.progress?.chapterId);
                   const chapterDisplay = chapter
@@ -466,7 +468,7 @@ const styles = StyleSheet.create({
   clearText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#FA233B',
+    color: '#FD6A68',
   },
   listContent: {
     paddingBottom: 100,
@@ -484,7 +486,6 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
   sectionCard: {
-    backgroundColor: '#1C1C1E',
     borderRadius: 12,
     overflow: 'hidden',
   },

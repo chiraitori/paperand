@@ -1,0 +1,77 @@
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+apply plugin: 'maven-publish'
+
+group = 'expo.modules.paperbackquickjs'
+version = '1.0.0'
+
+android {
+    namespace "expo.modules.paperbackquickjs"
+    buildToolsVersion safeExtGet("buildToolsVersion", "36.0.0")
+    compileSdkVersion safeExtGet("compileSdkVersion", 36)
+    ndkVersion safeExtGet("ndkVersion", "27.1.12297006")
+
+    defaultConfig {
+        minSdkVersion safeExtGet("minSdkVersion", 24)
+        targetSdkVersion safeExtGet("targetSdkVersion", 36)
+
+        // QuickJS is compiled from source; the APK only needs the ABIs the
+        // devices actually run (arm64 phones, x86_64 emulators).
+        ndk {
+            abiFilters 'arm64-v8a', 'x86_64'
+        }
+
+        externalNativeBuild {
+            cmake {
+                arguments "-DANDROID_STL=none"
+                cFlags "-O2"
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path file('src/main/cpp/CMakeLists.txt')
+            version "3.22.1"
+        }
+    }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = false
+        }
+    }
+
+    publishing {
+        singleVariant("release") {
+            withSourcesJar()
+        }
+    }
+
+    lintOptions {
+        abortOnError false
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+}
+
+repositories {
+    mavenCentral()
+    google()
+}
+
+dependencies {
+    implementation project(':expo-modules-core')
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:${safeExtGet('kotlinVersion', '1.9.24')}"
+}
+
+def safeExtGet(prop, fallback) {
+    rootProject.ext.has(prop) ? rootProject.ext.get(prop) : fallback
+}

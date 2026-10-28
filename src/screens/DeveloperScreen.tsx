@@ -316,7 +316,7 @@ export const DeveloperScreen: React.FC = () => {
         backgroundColor: '#1a1a2e',
         titleColor: '#FFFFFF',
         subtitleColor: '#AAAAAA',
-        progressViewTint: '#FA6432',
+        progressViewTint: '#FD6A68',
         progressViewLabelColor: '#FFFFFF',
         deepLinkUrl: '/reader',
       };

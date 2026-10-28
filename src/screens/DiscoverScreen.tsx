@@ -19,6 +19,7 @@ import { AppState, AppStateStatus } from 'react-native';
 import { getCookies as getNativeCookies, launchBypassActivity } from 'cloudflare-bypass';
 import { setCookiesForDomain } from '../services/cookieStore';
 import { useTheme } from '../context/ThemeContext';
+import { useResponsive } from '../hooks/useResponsive';
 import { useLibrary } from '../context/LibraryContext';
 import { LoadingIndicator } from '../components';
 import {
@@ -58,17 +59,21 @@ const GENRE_COLORS = [
 ];
 
 export const DiscoverScreen: React.FC = () => {
-  const { theme } = useTheme();
+  const { theme, palette } = useTheme();
   const { addToLibrary, isInLibrary } = useLibrary();
   const navigation = useNavigation<DiscoverScreenNavigationProp>();
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
 
-  // Paperback responsive cover dimensions on rotation
-  const numDiscoverCols = isLandscape ? 6 : (width > 600 ? 5 : (width > 400 ? 3 : 2.5));
-  const CARD_WIDTH = Math.round((width - 32 - (Math.floor(numDiscoverCols) - 1) * 10) / numDiscoverCols);
-  const GENRE_CARD_WIDTH = isLandscape ? Math.round((width - 64) / 5) : Math.round((width - 56) / 3);
-  const FEATURED_WIDTH = isLandscape ? Math.min(width - 48, 680) : width - 32;
+  // Covers keep their phone width at any window size; a wide window (tablet,
+  // unfolded foldable) simply gets more columns instead of bigger covers.
+  const { pad, cardWidth, gap } = useResponsive();
+  const CARD_WIDTH = cardWidth;
+  // The content column: full width on a phone, a 700 dp readable column
+  // centred on anything wider (`pad` is the centring gutter).
+  const CARD_ROW_GAP = gap;
+  const GENRE_CARD_WIDTH = Math.round((width - pad * 2 - 16) / 3);
+  const FEATURED_WIDTH = width - pad * 2;
   const [installedExtensions, setInstalledExtensions] = useState<InstalledExtension[]>([]);
   const [activeSource, setActiveSource] = useState<string>('');
   const [sections, setSections] = useState<HomeSection[]>([]);
@@ -322,7 +327,7 @@ export const DiscoverScreen: React.FC = () => {
           horizontal
           showsHorizontalScrollIndicator={false}
           style={styles.tabsContainer}
-          contentContainerStyle={styles.tabsContent}
+          contentContainerStyle={[styles.tabsContent, { paddingHorizontal: Math.max(0, pad - 16) }]}
         >
           {installedExtensions.map(ext => (
             <TouchableOpacity
@@ -355,7 +360,7 @@ export const DiscoverScreen: React.FC = () => {
     const renderFeaturedItem = (manga: SourceManga, index: number) => (
       <TouchableOpacity
         key={`featured-${manga.id}-${index}`}
-        style={[styles.featuredContainer, { width: FEATURED_WIDTH }]}
+        style={[styles.featuredContainer, { width: FEATURED_WIDTH, marginHorizontal: pad }]}
         onPress={() => navigateToManga(manga)}
         activeOpacity={0.9}
       >
@@ -397,7 +402,7 @@ export const DiscoverScreen: React.FC = () => {
                   }}
                   activeOpacity={0.8}
                 >
-                  <Ionicons name={isInLibrary(manga.id) ? "bookmark" : "bookmark-outline"} size={16} color="#FA233B" />
+                  <Ionicons name={isInLibrary(manga.id) ? "bookmark" : "bookmark-outline"} size={16} color="#FD6A68" />
                   <Text style={styles.addButtonText}>
                     {isInLibrary(manga.id) ? (t('discover.inLibrary') || 'In Library') : t('discover.addToLibrary')}
                   </Text>
@@ -407,7 +412,7 @@ export const DiscoverScreen: React.FC = () => {
                   onPress={() => navigateToManga(manga)}
                   activeOpacity={0.8}
                 >
-                  <Ionicons name="book" size={16} color="#FA233B" />
+                  <Ionicons name="book" size={16} color="#FD6A68" />
                   <Text style={styles.readButtonText}>{t('discover.readNow')}</Text>
                 </TouchableOpacity>
               </View>
@@ -444,12 +449,12 @@ export const DiscoverScreen: React.FC = () => {
     return (
       <TouchableOpacity
         key={tag.id}
-        style={[styles.genreCard, { width: GENRE_CARD_WIDTH }]}
+        style={[styles.genreCard, { width: GENRE_CARD_WIDTH, backgroundColor: palette.accent }]}
         onPress={() => navigateToGenre(tag)}
         activeOpacity={0.8}
       >
         <View style={styles.genreArrowBadge}>
-          <Ionicons name="arrow-forward" size={13} color="#FA5565" />
+          <Ionicons name="arrow-forward" size={13} color={palette.accent} />
         </View>
         <Text style={styles.genreText} numberOfLines={1}>{tag.label}</Text>
       </TouchableOpacity>
@@ -463,15 +468,15 @@ export const DiscoverScreen: React.FC = () => {
 
     return (
       <View style={styles.section}>
-        <View style={styles.sectionHeader}>
+        <View style={[styles.sectionHeader, { paddingHorizontal: pad }]}>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>{t('discover.genres')}</Text>
           {tags.length > 6 && (
-            <TouchableOpacity style={styles.expandButton} onPress={navigateToAllGenres} activeOpacity={0.7}>
-              <Ionicons name="expand-outline" size={16} color="#FA8072" />
+            <TouchableOpacity style={[styles.expandButton, { backgroundColor: palette.cardAlt }]} onPress={navigateToAllGenres} activeOpacity={0.7}>
+              <Ionicons name="expand-outline" size={16} color={palette.accent} />
             </TouchableOpacity>
           )}
         </View>
-        <View style={styles.genresGrid}>
+        <View style={[styles.genresGrid, { paddingHorizontal: pad }]}>
           {displayTags.map((tag, index) => renderGenreCard(tag, index))}
         </View>
       </View>
@@ -518,12 +523,12 @@ export const DiscoverScreen: React.FC = () => {
     return (
       <TouchableOpacity
         key={`${sectionId}-${manga.id}-${index}`}
-        style={[styles.genreCard, { width: GENRE_CARD_WIDTH }]}
+        style={[styles.genreCard, { width: GENRE_CARD_WIDTH, backgroundColor: palette.accent }]}
         onPress={() => navigateToManga(manga)}
         activeOpacity={0.8}
       >
         <View style={styles.genreArrowBadge}>
-          <Ionicons name="arrow-forward" size={13} color="#FA5565" />
+          <Ionicons name="arrow-forward" size={13} color={palette.accent} />
         </View>
         <Text style={styles.genreText} numberOfLines={1}>{manga.title}</Text>
       </TouchableOpacity>
@@ -558,15 +563,15 @@ export const DiscoverScreen: React.FC = () => {
         <View style={styles.sectionHeader}>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>{section.title}</Text>
           {section.containsMoreItems && (
-            <TouchableOpacity style={styles.expandButton} onPress={() => navigateToCategory(section)} activeOpacity={0.7}>
-              <Ionicons name="expand-outline" size={16} color="#FA8072" />
+            <TouchableOpacity style={[styles.expandButton, { backgroundColor: palette.cardAlt }]} onPress={() => navigateToCategory(section)} activeOpacity={0.7}>
+              <Ionicons name="expand-outline" size={16} color={palette.accent} />
             </TouchableOpacity>
           )}
         </View>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.mangaList}
+          contentContainerStyle={[styles.mangaList, { paddingHorizontal: pad }]}
         >
           {section.items.map((manga: SourceManga, index: number) => renderMangaCard(manga, section.id, index))}
         </ScrollView>
@@ -577,7 +582,7 @@ export const DiscoverScreen: React.FC = () => {
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingHorizontal: pad }]}>
         <View style={styles.headerSpacer} />
         <Text style={[styles.headerTitle, { color: theme.text }]}>{t('discover.title')}</Text>
         <View style={styles.headerActions}>
@@ -589,7 +594,7 @@ export const DiscoverScreen: React.FC = () => {
             accessibilityHint="Open the active extension website to sign in or complete verification"
             hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
           >
-            <Ionicons name={activeSource.toLowerCase().includes('paperback') ? "cloud-outline" : "globe-outline"} size={26} color="#FA233B" />
+            <Ionicons name={activeSource.toLowerCase().includes('paperback') ? "cloud-outline" : "globe-outline"} size={26} color="#FD6A68" />
           </TouchableOpacity>
         </View>
       </View>
@@ -792,7 +797,6 @@ const styles = StyleSheet.create({
   genreCard: {
     height: 95,
     borderRadius: 14,
-    backgroundColor: '#FA5565',
     padding: 12,
     justifyContent: 'space-between',
   },
@@ -831,7 +835,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#2C1E20',
   },
   mangaList: {
     paddingHorizontal: 16,

@@ -3,6 +3,7 @@ import { useColorScheme } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ThemeColors, ThemeMode } from '../types';
 import { lightTheme, darkTheme } from '../constants/theme';
+import { Palette, paletteFor, paletteFromCustomTheme } from '../theme/palette';
 import { 
   CustomTheme, 
   getCustomThemes, 
@@ -15,6 +16,7 @@ import {
 
 interface ThemeContextType {
   theme: ThemeColors;
+  palette: Palette;
   themeMode: ThemeMode;
   isDark: boolean;
   setThemeMode: (mode: ThemeMode) => void;
@@ -121,20 +123,22 @@ export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   // Determine the theme to use
   let theme: ThemeColors;
-  if (activeCustomThemeId) {
-    const customTheme = customThemes.find(t => t.id === activeCustomThemeId);
-    if (customTheme) {
-      theme = isDark ? customTheme.dark : customTheme.light;
-    } else {
-      theme = isDark ? darkTheme : lightTheme;
-    }
+  let palette: Palette;
+  const customTheme = activeCustomThemeId
+    ? customThemes.find(t => t.id === activeCustomThemeId)
+    : undefined;
+  if (customTheme) {
+    theme = isDark ? customTheme.dark : customTheme.light;
+    palette = paletteFromCustomTheme(theme, isDark);
   } else {
     theme = isDark ? darkTheme : lightTheme;
+    palette = paletteFor(isDark);
   }
 
   return (
     <ThemeContext.Provider value={{ 
       theme, 
+      palette,
       themeMode, 
       isDark, 
       setThemeMode,
@@ -157,3 +161,9 @@ export const useTheme = (): ThemeContextType => {
   }
   return context;
 };
+
+/**
+ * Semantic colours (window/card/label/accent...) of the current theme.
+ * Screens should read colours from here rather than inlining hex literals.
+ */
+export const usePalette = (): Palette => useTheme().palette;

@@ -304,7 +304,7 @@ export const BrowseAllRepositoriesScreen: React.FC = () => {
           style={[
             styles.actionButton,
             {
-              backgroundColor: '#FA233B',
+              backgroundColor: '#FD6A68',
             },
           ]}
           onPress={() => (isInstalled ? handleReload(ext, repoId, repoBaseUrl) : handleInstall(ext, repoId, repoBaseUrl))}

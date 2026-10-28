@@ -22,6 +22,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { usePreventScreenCapture } from 'expo-screen-capture'; // Keep for type, using imperative API
 import { useTheme } from '../context/ThemeContext';
+import { useResponsive } from '../hooks/useResponsive';
 import { useLibrary } from '../context/LibraryContext';
 import { MangaCard, EmptyState, MangaPreviewModal, MangaCardWithPreview, LibraryUpdaterModal, NativeDropdown } from '../components';
 import { LibraryUpdateResult } from '../types';
@@ -35,7 +36,7 @@ const isExpoGo = Constants.appOwnership === 'expo';
 type LibraryScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 export const LibraryScreen: React.FC = () => {
-  const { theme } = useTheme();
+  const { theme, palette } = useTheme();
   const {
     library,
     favorites,
@@ -69,6 +70,7 @@ export const LibraryScreen: React.FC = () => {
   const [sortType, setSortType] = useState<'name' | 'lastUpdated' | 'dateFollowed' | 'lastRead' | 'unreadChapters'>('lastUpdated');
   const [sortOrder, setSortOrder] = useState<'ascending' | 'descending'>('descending');
   const { width, height } = useWindowDimensions();
+  const { pad } = useResponsive();
 
   // Preview modal state
   const [previewVisible, setPreviewVisible] = useState(false);
@@ -314,7 +316,7 @@ export const LibraryScreen: React.FC = () => {
   if (!authChecked) {
     return (
       <View style={[styles.container, { backgroundColor: theme.background }]}>
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingHorizontal: pad }]}>
           <Text style={[styles.title, { color: theme.text }]}>{t('library.title')}</Text>
         </View>
       </View>
@@ -357,7 +359,7 @@ export const LibraryScreen: React.FC = () => {
           accessibilityRole="button"
           accessibilityLabel="Check library updates"
         >
-          <Ionicons name="arrow-down-circle-outline" size={26} color="#FA233B" />
+          <Ionicons name="arrow-down-circle-outline" size={26} color="#FD6A68" />
         </TouchableOpacity>
 
         <Text style={[styles.title, { color: theme.text }]}>{t('library.title')}</Text>
@@ -368,11 +370,11 @@ export const LibraryScreen: React.FC = () => {
           accessibilityRole="button"
           accessibilityLabel="Library options"
         >
-          <Ionicons name="ellipsis-horizontal-circle-outline" size={26} color="#FA233B" />
+          <Ionicons name="ellipsis-horizontal-circle-outline" size={26} color="#FD6A68" />
         </TouchableOpacity>
       </View>
 
-      <View style={styles.searchBarContainer}>
+      <View style={[styles.searchBarContainer, { paddingHorizontal: pad }]}>
         <View style={styles.searchBar}>
           <Ionicons name="search" size={16} color="#8E8E93" />
           <TextInput
@@ -395,7 +397,7 @@ export const LibraryScreen: React.FC = () => {
         horizontal
         showsHorizontalScrollIndicator={false}
         style={styles.filterScrollView}
-        contentContainerStyle={styles.filterContainer}
+        contentContainerStyle={[styles.filterContainer, { paddingHorizontal: pad, paddingRight: pad }]}
       >
         {allFilters.map(filter => (
           <TouchableOpacity
@@ -468,7 +470,7 @@ export const LibraryScreen: React.FC = () => {
           renderItem={renderItem}
           keyExtractor={item => item.manga.id}
           numColumns={numColumns}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, { paddingHorizontal: pad }]}
           columnWrapperStyle={numColumns > 1 ? styles.row : undefined}
           showsVerticalScrollIndicator={false}
           refreshControl={
@@ -519,7 +521,7 @@ export const LibraryScreen: React.FC = () => {
           activeOpacity={1} 
           onPress={() => setOptionsMenuVisible(false)}
         >
-          <View style={[styles.optionsCard, { backgroundColor: '#1C1C1E', borderColor: '#2C2C2E' }]}>
+          <View style={[styles.optionsCard, { backgroundColor: palette.card, borderColor: palette.separator }]}>
             <Text style={styles.optionsTitle}>SORT BY</Text>
             {[
               { label: 'Recently Updated', value: 'lastUpdated' },
@@ -536,11 +538,11 @@ export const LibraryScreen: React.FC = () => {
                   setOptionsMenuVisible(false);
                 }}
               >
-                <Text style={[styles.optionLabel, sortType === opt.value && { color: '#FA233B', fontWeight: '600' }]}>
+                <Text style={[styles.optionLabel, sortType === opt.value && { color: '#FD6A68', fontWeight: '600' }]}>
                   {opt.label}
                 </Text>
                 {sortType === opt.value && (
-                  <Ionicons name="checkmark" size={18} color="#FA233B" />
+                  <Ionicons name="checkmark" size={18} color="#FD6A68" />
                 )}
               </TouchableOpacity>
             ))}
@@ -559,11 +561,11 @@ export const LibraryScreen: React.FC = () => {
                   setOptionsMenuVisible(false);
                 }}
               >
-                <Text style={[styles.optionLabel, sortOrder === opt.value && { color: '#FA233B', fontWeight: '600' }]}>
+                <Text style={[styles.optionLabel, sortOrder === opt.value && { color: '#FD6A68', fontWeight: '600' }]}>
                   {opt.label}
                 </Text>
                 {sortOrder === opt.value && (
-                  <Ionicons name="checkmark" size={18} color="#FA233B" />
+                  <Ionicons name="checkmark" size={18} color="#FD6A68" />
                 )}
               </TouchableOpacity>
             ))}
@@ -576,7 +578,7 @@ export const LibraryScreen: React.FC = () => {
                 setCategoryModalVisible(true);
               }}
             >
-              <Ionicons name="folder-open-outline" size={18} color="#FA233B" style={{ marginRight: 8 }} />
+              <Ionicons name="folder-open-outline" size={18} color="#FD6A68" style={{ marginRight: 8 }} />
               <Text style={styles.actionRowText}>Add Category / Collection</Text>
             </TouchableOpacity>
           </View>
@@ -667,7 +669,6 @@ const styles = StyleSheet.create({
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1C1C1E',
     borderRadius: 10,
     paddingHorizontal: 10,
     height: 36,
@@ -717,7 +718,7 @@ const styles = StyleSheet.create({
   },
   actionRowText: {
     fontSize: 16,
-    color: '#FA233B',
+    color: '#FD6A68',
     fontWeight: '500',
   },
   filterScrollView: {
@@ -786,7 +787,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   filterButton: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
   },

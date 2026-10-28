@@ -32,7 +32,7 @@ interface InstalledExtension extends ExtensionSource {
 }
 
 export const ExtensionsScreen: React.FC = () => {
-  const { theme } = useTheme();
+  const { theme, palette } = useTheme();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { dialogVisible, dialogConfig, showDialog, hideDialog } = useDialog();
   const [loading, setLoading] = useState(true);
@@ -153,7 +153,7 @@ export const ExtensionsScreen: React.FC = () => {
           disabled={isEditing}
         >
           {/* Extension Icon */}
-          <View style={[styles.iconContainer, { backgroundColor: '#1C1C1E' }]}>
+          <View style={[styles.iconContainer, { backgroundColor: palette.cardAlt }]}>
             {iconUrl ? (
               <Image
                 source={{ uri: iconUrl }}
@@ -185,7 +185,7 @@ export const ExtensionsScreen: React.FC = () => {
                 <Ionicons name="paper-plane" size={12} color="#FFF" />
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.actionBtn, { backgroundColor: '#1C1C1E' }]}
+                style={[styles.actionBtn, { backgroundColor: palette.cardAlt }]}
                 onPress={() => !isEditing && navigation.navigate('ExtensionSettings', { extensionId: ext.id, extensionName: ext.name })}
               >
                 <Ionicons name="options" size={12} color="#FFF" />

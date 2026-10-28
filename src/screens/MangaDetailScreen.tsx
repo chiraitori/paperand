@@ -124,7 +124,7 @@ const LinkifiedText: React.FC<{
           return (
             <Text
               key={index}
-              style={[{ color: '#FA6432', textDecorationLine: 'underline' }, linkStyle]}
+              style={[{ color: '#FD6A68', textDecorationLine: 'underline' }, linkStyle]}
               onPress={() => handleLinkPress(part.url!)}
             >
               {part.content}

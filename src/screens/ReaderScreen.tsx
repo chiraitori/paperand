@@ -323,7 +323,7 @@ const InfoModal: React.FC<{
                 </Text>
                 <View style={styles.infoHeroMetaRow}>
                   <View style={styles.infoHeroStatusWrap}>
-                    <View style={[styles.infoStatusDot, { backgroundColor: isCompleted ? '#34C759' : '#FA6432' }]} />
+                    <View style={[styles.infoStatusDot, { backgroundColor: isCompleted ? '#34C759' : '#FD6A68' }]} />
                     <Text style={styles.infoHeroMetaText}>
                       {isCompleted ? 'Completed' : 'Ongoing'}
                     </Text>
@@ -358,7 +358,7 @@ const InfoModal: React.FC<{
                 <Ionicons
                   name={isBookmarked ? 'bookmark' : 'bookmark-outline'}
                   size={22}
-                  color={isBookmarked ? '#FA233B' : '#FFFFFF'}
+                  color={isBookmarked ? '#FD6A68' : '#FFFFFF'}
                 />
               </TouchableOpacity>
               <TouchableOpacity style={styles.infoSquareButton} onPress={handleShare} activeOpacity={0.7}>
@@ -438,7 +438,7 @@ const InfoModal: React.FC<{
                         activeOpacity={0.6}
                       >
                         <View style={styles.infoChapterInfo}>
-                          <Text style={[styles.infoChapterName, isCurrent && { color: '#FA233B' }]} numberOfLines={1}>
+                          <Text style={[styles.infoChapterName, isCurrent && { color: '#FD6A68' }]} numberOfLines={1}>
                             Ch. {ch.number}{ch.title ? ` - ${ch.title}` : ''}
                           </Text>
                           <View style={styles.infoChapterSub}>
@@ -476,6 +476,81 @@ const DEFAULT_PAGE_ASPECT = 1.42;
 
 let chapterAspectEstimate = DEFAULT_PAGE_ASPECT;
 
+/**
+ * Picks the right text tint for whatever chapter background is in use:
+ * iOS uses `#D1D1D6` on dark pages and `#6C6C70` on light ones.
+ */
+function isLightBackground(color: string): boolean {
+  const match = /^#?([0-9a-f]{6})$/i.exec(color.trim());
+  if (!match) return false;
+  const value = parseInt(match[1], 16);
+  const r = (value >> 16) & 0xff;
+  const g = (value >> 8) & 0xff;
+  const b = value & 0xff;
+  return (r * 299 + g * 587 + b * 114) / 1000 > 160;
+}
+
+/**
+ * The reserved page sheet shown while a page is still downloading.
+ *
+ * iOS `ImageData` always occupies a page-shaped slot (`reservePageAspectRatio`,
+ * default 1.5) and paints the chapter background inside it, so a page that has
+ * not arrived yet still looks like a page: a slot the size of the final image
+ * with a 12-spoke spinner in the middle. The sheet shares the chapter
+ * background colour, so it reads as the page itself rather than as a card.
+ */
+const PageLoadPlaceholder: React.FC<{
+  width: number;
+  height: number;
+  backgroundColor: string;
+  offsetLeft: number;
+  offsetTop: number;
+  label?: string | null;
+}> = ({ width, height, backgroundColor, offsetLeft, offsetTop, label }) => (
+  <View
+    pointerEvents="none"
+    style={[
+      styles.fakePage,
+      {
+        width,
+        height,
+        left: offsetLeft,
+        top: offsetTop,
+        backgroundColor,
+      },
+    ]}
+  >
+    <ActivityIndicator size="large" color="#8E8E93" />
+    {label ? (
+      <Text
+        style={[
+          styles.fakePageProgress,
+          { color: isLightBackground(backgroundColor) ? '#6C6C70' : '#D1D1D6' },
+        ]}
+      >
+        {label}
+      </Text>
+    ) : null}
+  </View>
+);
+
+// Failure chrome of the iOS reader: Retry / Log Error, 10 pt radius buttons.
+const PageErrorActions: React.FC<{ retryLabel: string; logLabel: string; onRetry: () => void; onLogError: () => void }> = ({
+  retryLabel,
+  logLabel,
+  onRetry,
+  onLogError,
+}) => (
+  <View style={styles.pageErrorActionsRow}>
+    <TouchableOpacity style={styles.pageErrorButton} onPress={onRetry} activeOpacity={0.8}>
+      <Text style={styles.pageErrorButtonText}>{retryLabel}</Text>
+    </TouchableOpacity>
+    <TouchableOpacity style={styles.pageErrorButton} onPress={onLogError} activeOpacity={0.8}>
+      <Text style={styles.pageErrorButtonText}>{logLabel}</Text>
+    </TouchableOpacity>
+  </View>
+);
+
 // Single page image. The slot keeps a stable size (cached or estimated aspect ratio) and the
 // bitmap is decoded off the JS thread by expo-image, so the list never remounts or re-flows
 // while pages stream in - that remount/re-layout churn is what made scrolling stutter.
@@ -490,6 +565,7 @@ const PageImageElementComponent: React.FC<{
   fitMode?: 'contain' | 'cover';
   isVertical?: boolean;
   downsamplePages?: boolean;
+  pageBackground: string;
   currentPageRef?: React.MutableRefObject<number>;
 }> = ({
   page,
@@ -502,6 +578,7 @@ const PageImageElementComponent: React.FC<{
   fitMode = 'contain',
   isVertical = false,
   downsamplePages = true,
+  pageBackground,
   currentPageRef,
 }) => {
   const url = page.resolvedUrl || page.imageUrl;
@@ -509,6 +586,11 @@ const PageImageElementComponent: React.FC<{
     () => page.aspectRatio || pageDimensionsCache.get(url) || chapterAspectEstimate
   );
   const [loadError, setLoadError] = useState(false);
+  // expo-image decodes off the JS thread and reports nothing until the bitmap
+  // is ready, so the slot would stay blank while the bytes stream in. Track the
+  // mount/lifecycle here and paint the reserved page sheet in the meantime.
+  const [imageLoading, setImageLoading] = useState(true);
+  const { palette, isDark } = useTheme();
   const requestHeaders = useMemo(() => getImageRequestHeaders(url), [url]);
   const source = useMemo(
     () => (requestHeaders ? { uri: url, headers: requestHeaders } : { uri: url }),
@@ -525,25 +607,36 @@ const PageImageElementComponent: React.FC<{
 
   useEffect(() => {
     setLoadError(false);
+    setImageLoading(true);
   }, [url, page.retryKey]);
 
   const slotHeight = isVertical ? Math.round(targetWidth * (aspect || DEFAULT_PAGE_ASPECT)) : targetHeight;
   const showError = loadError || !!page.error;
 
+  // Page-shaped area the image will occupy under `contain` (or the reserved
+  // full-width slot in long-strip mode).
+  const safeAspect = aspect && aspect > 0.1 ? aspect : DEFAULT_PAGE_ASPECT;
+  let pageWidth = targetWidth;
+  let pageBoxHeight = slotHeight;
+  if (!isVertical) {
+    pageWidth = Math.min(targetWidth, targetHeight / safeAspect);
+    pageBoxHeight = pageWidth * safeAspect;
+  }
+
+  const loadingLabel: string | null = null;
+
   if (showError) {
     return (
-      <TouchableOpacity
-        activeOpacity={1}
-        onPress={(e) => onPressRef.current(e)}
-        style={[styles.pagePlaceholder, { width: targetWidth, height: slotHeight }]}
-      >
-        <Ionicons name="image-outline" size={48} color="#555" />
-        <Text style={styles.pageErrorText}>{t('reader.failedToLoadPage', { page: page.pageNumber })}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={() => onRetryRef.current()} activeOpacity={0.7}>
-          <Ionicons name="refresh" size={16} color="#fff" />
-          <Text style={styles.retryButtonText}>{t('common.retry')}</Text>
-        </TouchableOpacity>
-      </TouchableOpacity>
+      <View style={[styles.pagePlaceholder, { width: targetWidth, height: slotHeight, backgroundColor: pageBackground }]}>
+        <PageErrorActions
+          retryLabel={t('common.retry')}
+          logLabel={t('reader.logError', { defaultValue: 'Log Error' })}
+          onRetry={() => onRetryRef.current()}
+          onLogError={() => {
+            console.warn('[Reader] Page failed:', page.pageNumber, page.resolvedUrl || page.imageUrl);
+          }}
+        />
+      </View>
     );
   }
 
@@ -564,7 +657,9 @@ const PageImageElementComponent: React.FC<{
           cachePolicy="memory-disk"
           allowDownscaling={downsamplePages}
           transition={0}
+          onLoadStart={() => setImageLoading(true)}
           onLoad={(e) => {
+            setImageLoading(false);
             const w = e?.source?.width;
             const h = e?.source?.height;
             if (w && h && w > 0 && h > 0) {
@@ -585,13 +680,15 @@ const PageImageElementComponent: React.FC<{
           }}
         />
       ) : null}
-      {page.loading ? (
-        <View style={styles.pageSpinner} pointerEvents="none">
-          <ActivityIndicator size="large" color="#FA6432" />
-          <Text style={styles.pagePlaceholderText}>
-            {t('reader.loadingPage', { page: page.pageNumber, total: totalPages })}
-          </Text>
-        </View>
+      {page.loading || imageLoading ? (
+        <PageLoadPlaceholder
+          width={pageWidth}
+          height={pageBoxHeight}
+          label={loadingLabel}
+          backgroundColor={pageBackground}
+          offsetLeft={(targetWidth - pageWidth) / 2}
+          offsetTop={isVertical ? 0 : (slotHeight - pageBoxHeight) / 2}
+        />
       ) : null}
     </TouchableOpacity>
   );
@@ -610,6 +707,7 @@ const PageImageElement = React.memo(PageImageElementComponent, (prev, next) => {
     prev.isVertical === next.isVertical &&
     prev.fitMode === next.fitMode &&
     prev.downsamplePages === next.downsamplePages &&
+    prev.pageBackground === next.pageBackground &&
     prev.totalPages === next.totalPages
   );
 });
@@ -617,7 +715,7 @@ const PageImageElement = React.memo(PageImageElementComponent, (prev, next) => {
 export const ReaderScreen: React.FC = () => {
   const route = useRoute<ReaderRouteProp>();
   const navigation = useNavigation<ReaderNavigationProp>();
-  const { theme } = useTheme();
+  const { theme, palette, isDark } = useTheme();
   const { library, history, updateProgress, addToLibrary, removeFromLibrary } = useLibrary();
   const { downloads } = useDownloads();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
@@ -1940,6 +2038,7 @@ export const ReaderScreen: React.FC = () => {
                   fitMode="contain"
                   isVertical={false}
                   downsamplePages={readerSettings.downsamplePages}
+                  pageBackground={readerBgColor}
                 />
               </View>
               <View style={{ width: halfWidth, height: screenHeight, justifyContent: 'center', alignItems: 'center' }}>
@@ -1954,6 +2053,7 @@ export const ReaderScreen: React.FC = () => {
                   fitMode="contain"
                   isVertical={false}
                   downsamplePages={readerSettings.downsamplePages}
+                  pageBackground={readerBgColor}
                 />
               </View>
             </View>
@@ -1980,6 +2080,7 @@ export const ReaderScreen: React.FC = () => {
             fitMode="contain"
             isVertical={false}
             downsamplePages={readerSettings.downsamplePages}
+            pageBackground={readerBgColor}
           />
         </TouchableOpacity>
       );
@@ -2039,6 +2140,7 @@ export const ReaderScreen: React.FC = () => {
             fitMode="contain"
             isVertical={true}
             downsamplePages={readerSettings.downsamplePages}
+            pageBackground={readerBgColor}
             currentPageRef={currentPageRef}
           />
         </View>
@@ -2055,12 +2157,33 @@ export const ReaderScreen: React.FC = () => {
     ]
   );
 
-  // Loading State
+  // Loading State - keep a page-shaped sheet on screen instead of a bare
+  // spinner, matching the iOS reader's reserved `ImageData` slot.
   if (loading && pages.length === 0) {
+    const sheetWidth = Math.min(screenWidth, screenHeight / DEFAULT_PAGE_ASPECT);
+    const sheetHeight = sheetWidth * DEFAULT_PAGE_ASPECT;
     return (
-      <View style={[styles.container, { backgroundColor: readerBgColor, justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color="#FA6432" />
-        <Text style={{ color: '#888', marginTop: 16, fontSize: 14 }}>{t('common.loading')}...</Text>
+      <View
+        style={[styles.container, { backgroundColor: readerBgColor, justifyContent: 'center', alignItems: 'center' }]}
+      >
+        <StatusBar hidden={false} translucent barStyle={isDark ? 'light-content' : 'dark-content'} />
+        <View
+          testID="reader-chapter-loading"
+          style={[
+            styles.fakePage,
+            {
+              position: 'relative',
+              width: sheetWidth,
+              height: sheetHeight,
+              backgroundColor: readerBgColor,
+            },
+          ]}
+        >
+          <ActivityIndicator size="large" color="#8E8E93" />
+        </View>
+        <TouchableOpacity style={styles.backButtonFloat} onPress={() => navigation.goBack()}>
+          <Ionicons name="arrow-back" size={24} color={isLightBackground(readerBgColor) ? '#000' : '#fff'} />
+        </TouchableOpacity>
       </View>
     );
   }
@@ -2070,7 +2193,7 @@ export const ReaderScreen: React.FC = () => {
     return (
       <View style={[styles.container, { backgroundColor: readerBgColor }]}>
         <TouchableOpacity style={styles.backButtonFloat} onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
+          <Ionicons name="arrow-back" size={24} color={isLightBackground(readerBgColor) ? '#000' : '#fff'} />
         </TouchableOpacity>
         <View style={styles.errorContainer}>
           <Ionicons name="alert-circle-outline" size={56} color="#666" />
@@ -2300,7 +2423,7 @@ export const ReaderScreen: React.FC = () => {
                   <MaterialCommunityIcons
                     name={orientationLocked ? 'screen-rotation-lock' : 'screen-rotation'}
                     size={22}
-                    color={orientationLocked ? '#FA233B' : '#fff'}
+                    color={orientationLocked ? '#FD6A68' : '#fff'}
                   />
                 </TouchableOpacity>
                 <TouchableOpacity
@@ -2401,7 +2524,35 @@ const styles = StyleSheet.create({
   pagePlaceholder: {
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#121212',
+  },
+  // Reserved page sheet drawn while the bitmap downloads (iOS `ImageData`).
+  fakePage: {
+    position: 'absolute',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fakePageProgress: {
+    marginTop: 20,
+    fontSize: 13,
+    lineHeight: 16,
+  },
+  pageErrorActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 15,
+    marginTop: 18,
+  },
+  pageErrorButton: {
+    minWidth: 96,
+    alignItems: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 10,
+    backgroundColor: '#5A2A29',
+  },
+  pageErrorButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
   },
   pagePlaceholderText: {
     color: '#666',
@@ -2419,7 +2570,7 @@ const styles = StyleSheet.create({
     marginTop: 14,
     paddingVertical: 8,
     paddingHorizontal: 18,
-    backgroundColor: '#FA6432',
+    backgroundColor: '#FD6A68',
     borderRadius: 20,
     gap: 6,
   },
@@ -2450,7 +2601,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 20,
     borderRadius: 22,
-    backgroundColor: '#FA6432',
+    backgroundColor: '#FD6A68',
     gap: 8,
   },
   errorBypassButton: {
@@ -2714,12 +2865,12 @@ const styles = StyleSheet.create({
   transitionChapterTitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#FA6432',
+    color: '#FD6A68',
     marginTop: 4,
     textAlign: 'center',
   },
   transitionButton: {
-    backgroundColor: '#FA6432',
+    backgroundColor: '#FD6A68',
     paddingVertical: 10,
     paddingHorizontal: 22,
     borderRadius: 8,
@@ -2838,7 +2989,7 @@ const styles = StyleSheet.create({
   },
   infoSquareButtonActive: {
     borderWidth: 1,
-    borderColor: '#FA233B',
+    borderColor: '#FD6A68',
   },
   infoSection: {
     paddingHorizontal: 16,
@@ -2935,7 +3086,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#1C1C1E',
   },
   infoChapterRowCurrent: {
-    backgroundColor: 'rgba(250,35,59,0.08)',
+    backgroundColor: 'rgba(253,106,104,0.08)',
     marginHorizontal: -16,
     paddingHorizontal: 16,
   },
@@ -2957,7 +3108,7 @@ const styles = StyleSheet.create({
   infoChapterPage: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#FA233B',
+    color: '#FD6A68',
   },
   infoChapterLang: {
     fontSize: 13,

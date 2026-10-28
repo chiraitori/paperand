@@ -121,17 +121,19 @@ describe('ReaderScreen', () => {
   });
 
   it('renders loading state initially', async () => {
-    const { getByText } = render(<TestReaderScreen />);
-    
-    expect(getByText('Loading...')).toBeTruthy();
+    const { getByTestId } = render(<TestReaderScreen />);
+
+    // The chapter is still resolving: a page-shaped sheet with the iOS spinner
+    // stands in for the page instead of a "Loading..." label.
+    expect(getByTestId('reader-chapter-loading')).toBeTruthy();
   });
 
   it('loads and displays pages correctly', async () => {
-    const { findByText, queryByText } = render(<TestReaderScreen />);
-    
+    const { findByText, queryByTestId } = render(<TestReaderScreen />);
+
     // Wait for loading to complete
     await waitFor(() => {
-      expect(queryByText('Loading...')).toBeNull();
+      expect(queryByTestId('reader-chapter-loading')).toBeNull();
     }, { timeout: 3000 });
     
     // Check that page indicator shows correct page count

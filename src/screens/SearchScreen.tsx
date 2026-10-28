@@ -6,7 +6,6 @@ import {
   TextInput,
   FlatList,
   TouchableOpacity,
-  Dimensions,
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
@@ -16,6 +15,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
+import { useResponsive } from '../hooks/useResponsive';
 import { useLibrary } from '../context/LibraryContext';
 import { EmptyState, LoadingIndicator, MangaPreviewModal } from '../components';
 import { getInstalledExtensions, searchManga, InstalledExtension, SourceManga, SearchResult } from '../services/sourceService';
@@ -27,12 +27,6 @@ import { t } from '../services/i18nService';
 type SearchScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type SearchScreenRouteProp = RouteProp<RootStackParamList, 'Search'>;
 
-const { width } = Dimensions.get('window');
-const NUM_COLUMNS = 3;
-const GRID_PADDING = 16;
-const GRID_GAP = 10;
-const CARD_WIDTH = (width - GRID_PADDING * 2 - GRID_GAP * (NUM_COLUMNS - 1)) / NUM_COLUMNS;
-const CARD_HEIGHT = CARD_WIDTH * 1.4;
 const RECENT_SEARCHES_KEY = '@recent_searches';
 
 interface SourceSearchResult {
@@ -43,7 +37,14 @@ interface SourceSearchResult {
 }
 
 export const SearchScreen: React.FC = () => {
-  const { theme } = useTheme();
+  const { theme, palette } = useTheme();
+  // Grid geometry follows the window: a wide screen adds columns instead of
+  // stretching three covers across it (same rule as the Kotlin port).
+  const { pad, columns, cardWidth } = useResponsive();
+  const NUM_COLUMNS = columns;
+  const CARD_WIDTH = cardWidth;
+  const CARD_HEIGHT = Math.round(cardWidth * 1.4);
+  const GRID_GAP = 12;
   const { addToLibrary, removeFromLibrary, toggleFavorite, isInLibrary, isFavorite } = useLibrary();
   const navigation = useNavigation<SearchScreenNavigationProp>();
   const route = useRoute<SearchScreenRouteProp>();
@@ -367,9 +368,9 @@ export const SearchScreen: React.FC = () => {
       >
         <View style={[
           styles.sourceIconContainer,
-          activeSource === null && { borderColor: '#FA233B', borderWidth: 2 }
+          activeSource === null && { borderColor: '#FD6A68', borderWidth: 2 }
         ]}>
-          <Ionicons name="globe-outline" size={40} color={activeSource === null ? "#FA233B" : "#8E8E93"} />
+          <Ionicons name="globe-outline" size={40} color={activeSource === null ? "#FD6A68" : "#8E8E93"} />
         </View>
         <Text style={[
           styles.sourceName,
@@ -391,12 +392,12 @@ export const SearchScreen: React.FC = () => {
           >
             <View style={[
               styles.sourceIconContainer,
-              isSelected && { borderColor: '#FA233B', borderWidth: 2 }
+              isSelected && { borderColor: '#FD6A68', borderWidth: 2 }
             ]}>
               {iconUrl ? (
                 <Image source={{ uri: iconUrl }} style={styles.sourceIconImage} contentFit="contain" />
               ) : (
-                <Ionicons name="image-outline" size={40} color="#FA233B" />
+                <Ionicons name="image-outline" size={40} color="#FD6A68" />
               )}
             </View>
             <Text style={[
@@ -416,7 +417,7 @@ export const SearchScreen: React.FC = () => {
 
     return (
       <View style={styles.recentContainer}>
-        <View style={styles.recentCard}>
+        <View style={[styles.recentCard, { backgroundColor: palette.card }]}>
           <View style={styles.recentHeader}>
             <Text style={styles.recentTitle}>RECENT SEARCHES</Text>
             <TouchableOpacity onPress={clearRecentSearches} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -449,6 +450,7 @@ export const SearchScreen: React.FC = () => {
       <TouchableOpacity
         style={[
           styles.gridItem,
+          { width: CARD_WIDTH },
           columnIndex < NUM_COLUMNS - 1 && { marginRight: GRID_GAP },
           !isLastRow && { marginBottom: GRID_GAP },
         ]}
@@ -459,7 +461,7 @@ export const SearchScreen: React.FC = () => {
       >
         <Image
           source={{ uri: item.image }}
-          style={styles.gridCover}
+          style={[styles.gridCover, { width: CARD_WIDTH, height: CARD_HEIGHT }]}
           contentFit="cover"
         />
         <Text style={[styles.gridTitle, { color: theme.text }]} numberOfLines={1}>
@@ -477,7 +479,7 @@ export const SearchScreen: React.FC = () => {
   const renderMangaCard = (manga: SourceManga, index: number) => (
     <TouchableOpacity
       key={`${manga.extensionId}-${manga.id}-${index}`}
-      style={styles.horizontalCard}
+      style={[styles.horizontalCard, { width: CARD_WIDTH }]}
       onPress={() => navigateToManga(manga)}
       onLongPress={() => handleLongPress(manga)}
       delayLongPress={300}
@@ -485,7 +487,7 @@ export const SearchScreen: React.FC = () => {
     >
       <Image
         source={{ uri: manga.image }}
-        style={styles.horizontalCover}
+        style={[styles.horizontalCover, { width: CARD_WIDTH, height: CARD_HEIGHT }]}
         contentFit="cover"
       />
       <Text style={[styles.horizontalTitle, { color: theme.text }]} numberOfLines={2}>
@@ -514,20 +516,20 @@ export const SearchScreen: React.FC = () => {
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.multiSourceContainer}>
       {multiSourceResults.map((sourceResult) => (
         <View key={sourceResult.extensionId} style={styles.sourceSection}>
-          <View style={styles.sourceSectionHeader}>
+          <View style={[styles.sourceSectionHeader, { paddingHorizontal: pad }]}>
             <Text style={[styles.sourceSectionTitle, { color: theme.text }]}>
               {sourceResult.extensionName}
             </Text>
             {sourceResult.results.length > 0 && (
-              <TouchableOpacity style={styles.expandButton} onPress={() => navigateToViewMore(sourceResult)} activeOpacity={0.7}>
-                <Ionicons name="expand-outline" size={16} color="#FA8072" />
+              <TouchableOpacity style={[styles.expandButton, { backgroundColor: palette.cardAlt }]} onPress={() => navigateToViewMore(sourceResult)} activeOpacity={0.7}>
+                <Ionicons name="expand-outline" size={16} color={palette.accent} />
               </TouchableOpacity>
             )}
           </View>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.horizontalList}
+            contentContainerStyle={[styles.horizontalList, { paddingHorizontal: pad }]}
           >
             {sourceResult.results.slice(0, 10).map((manga, index) => renderMangaCard(manga, index))}
           </ScrollView>
@@ -547,7 +549,7 @@ export const SearchScreen: React.FC = () => {
           onPress={() => performSearch(query)}
           disabled={!query.trim()}
         >
-          <Text style={[styles.searchButton, { color: query.trim() ? '#FA233B' : '#545458' }]}>
+          <Text style={[styles.searchButton, { color: query.trim() ? '#FD6A68' : '#545458' }]}>
             Search
           </Text>
         </TouchableOpacity>
@@ -593,7 +595,7 @@ export const SearchScreen: React.FC = () => {
             renderItem={renderResultItem}
             keyExtractor={(item, index) => `${item.id}-${index}`}
             numColumns={NUM_COLUMNS}
-            contentContainerStyle={styles.resultsGrid}
+            contentContainerStyle={[styles.resultsGrid, { paddingHorizontal: pad }]}
             showsVerticalScrollIndicator={false}
             onEndReached={loadMoreResults}
             onEndReachedThreshold={0.5}
@@ -707,7 +709,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 8,
-    backgroundColor: '#1C1C1E',
     overflow: 'hidden',
     padding: 14,
   },
@@ -737,7 +738,6 @@ const styles = StyleSheet.create({
   },
   recentCard: {
     borderRadius: 12,
-    backgroundColor: '#1C1C1E',
     overflow: 'hidden',
   },
   recentHeader: {
@@ -756,7 +756,7 @@ const styles = StyleSheet.create({
   clearText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#FA233B',
+    color: '#FD6A68',
     letterSpacing: 0.5,
   },
   recentItem: {
@@ -775,21 +775,20 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 8,
-    backgroundColor: '#2C1E20',
     justifyContent: 'center',
     alignItems: 'center',
   },
   resultsGrid: {
-    paddingHorizontal: GRID_PADDING,
+    paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 100,
   },
   gridItem: {
-    width: CARD_WIDTH,
+    width: 112,
   },
   gridCover: {
-    width: CARD_WIDTH,
-    height: CARD_HEIGHT,
+    width: 112,
+    height: 157,
     borderRadius: 8,
     backgroundColor: '#333',
   },
@@ -835,11 +834,11 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   horizontalCard: {
-    width: CARD_WIDTH,
+    width: 112,
   },
   horizontalCover: {
-    width: CARD_WIDTH,
-    height: CARD_HEIGHT,
+    width: 112,
+    height: 157,
     borderRadius: 8,
     backgroundColor: '#333',
   },

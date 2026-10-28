@@ -17,6 +17,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
+import { useResponsive } from '../hooks/useResponsive';
 import { useLibrary } from '../context/LibraryContext';
 import { getImageCacheSize, formatCacheSize, clearImageCache, getCacheLimit, setCacheLimit, CACHE_LIMIT_OPTIONS, CacheLimitOption } from '../services/cacheService';
 import { PickerModal, NativeDropdown } from '../components';
@@ -30,6 +31,7 @@ import { getGeneralSettings, updateGeneralSetting, clearAllSearchHistory } from 
 
 export const SettingsScreen: React.FC = () => {
   const { theme } = useTheme();
+  const { pad } = useResponsive();
   const { clearHistory, library, reloadLibrary } = useLibrary() as ReturnType<typeof useLibrary> & {
     reloadLibrary?: () => Promise<void>;
   };
@@ -168,11 +170,11 @@ export const SettingsScreen: React.FC = () => {
   const renderSection = (title: string | null, children: React.ReactNode) => (
     <View style={styles.section}>
       {title && (
-        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
+        <Text style={[styles.sectionTitle, { color: theme.textSecondary, marginLeft: pad }]}>
           {title}
         </Text>
       )}
-      <View style={[styles.sectionContent, { backgroundColor: theme.card }]}>
+      <View style={[styles.sectionContent, { backgroundColor: theme.card, marginHorizontal: pad }]}>
         {children}
       </View>
     </View>
@@ -180,7 +182,7 @@ export const SettingsScreen: React.FC = () => {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingHorizontal: pad }]}>
         <Text style={[styles.title, { color: theme.text }]}>{t('settings.title')}</Text>
       </View>
 
@@ -216,7 +218,7 @@ export const SettingsScreen: React.FC = () => {
             })}
           </>
         )}
-        <Text style={[styles.footerText, { color: theme.textSecondary }]}>
+        <Text style={[styles.footerText, { color: theme.textSecondary, marginHorizontal: pad + 16 }]}>
           {t('settings.hideReadHistoryHint')}
         </Text>
 

@@ -1,0 +1,16 @@
+{
+  "name": "paperback-quickjs",
+  "version": "1.0.0",
+  "description": "QuickJS-NG extension runtime for Paperand (same engine as the Kotlin port)",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "private": true,
+  "expoModule": {
+    "name": "PaperbackQuickJs"
+  },
+  "peerDependencies": {
+    "expo": "*",
+    "react": "*",
+    "react-native": "*"
+  }
+}

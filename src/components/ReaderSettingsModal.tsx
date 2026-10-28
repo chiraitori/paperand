@@ -45,7 +45,7 @@ const CARD_BG = '#1C1C1E';
 const SEGMENT_ACTIVE = '#636366';
 const DIVIDER = '#38383A';
 const MUTED = '#8E8E93';
-const ACCENT = '#FA233B';
+const ACCENT = '#FD6A68';
 const SWITCH_GREEN = '#34C759';
 
 const tr = (key: string, fallback: string): string => {

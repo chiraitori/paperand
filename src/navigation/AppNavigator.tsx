@@ -1,6 +1,6 @@
-import React, { useEffect, useCallback } from 'react';
-import { Alert } from 'react-native';
-import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
+import React, { useEffect, useCallback, useMemo } from 'react';
+import { View } from 'react-native';
+import { NavigationContainer, createNavigationContainerRef, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import * as Linking from 'expo-linking';
 import { useTheme } from '../context/ThemeContext';
@@ -8,6 +8,7 @@ import { BottomTabNavigator } from './BottomTabNavigator';
 import { MangaDetailScreen, ReaderScreen, GeneralSettingsScreen, LanguageSettingsScreen, ThemeSettingsScreen, BackupsScreen, ExtensionsScreen, ExtensionDetailScreen, ExtensionSettingsScreen, AddRepositoryScreen, BrowseRepositoryScreen, BrowseAllRepositoriesScreen, DeveloperScreen, DownloadManagerScreen, CreditsScreen, CategoryScreen, SearchResultsScreen, GenreListScreen, WebViewScreen } from '../screens';
 import { RootStackParamList } from '../types';
 import { parseDeepLink } from '../services/deepLinkService';
+import { readableColumnStyle } from '../hooks/useResponsive';
 
 export const navigationRef = createNavigationContainerRef<RootStackParamList>();
 
@@ -39,7 +40,25 @@ const handleDeepLinkUrl = (url: string) => {
 };
 
 export const AppNavigator: React.FC = () => {
-  const { theme, isDark } = useTheme();
+  const { palette, isDark } = useTheme();
+
+  // Navigation's own surfaces (the area outside the centred column, screen
+  // cards, backdrops during a transition) follow the same palette as the
+  // screens, so a wide window never shows a differently tinted gutter.
+  const navigationTheme = useMemo(
+    () => ({
+      ...(isDark ? DarkTheme : DefaultTheme),
+      colors: {
+        ...(isDark ? DarkTheme : DefaultTheme).colors,
+        primary: palette.accent,
+        background: palette.window,
+        card: palette.window,
+        text: palette.label,
+        border: palette.separator,
+      },
+    }),
+    [isDark, palette]
+  );
 
   // Handle deep links
   useEffect(() => {
@@ -61,30 +80,41 @@ export const AppNavigator: React.FC = () => {
   }, []);
 
   return (
-    <NavigationContainer ref={navigationRef}>
-      <Stack.Navigator
-        screenOptions={{
-          headerShown: false,
-        }}
-      >
-        <Stack.Screen name="Main" component={BottomTabNavigator} />
-        <Stack.Screen name="MangaDetail" component={MangaDetailScreen} />
-        <Stack.Screen name="Reader" component={ReaderScreen} />
-        <Stack.Screen name="GeneralSettings" component={GeneralSettingsScreen} />
-        <Stack.Screen name="LanguageSettings" component={LanguageSettingsScreen} />
-        <Stack.Screen name="ThemeSettings" component={ThemeSettingsScreen} />
-        <Stack.Screen name="Backups" component={BackupsScreen} />
-        <Stack.Screen name="Extensions" component={ExtensionsScreen} />
-        <Stack.Screen name="ExtensionDetail" component={ExtensionDetailScreen} />
-        <Stack.Screen name="ExtensionSettings" component={ExtensionSettingsScreen} />
-        <Stack.Screen
-          name="AddRepository"
-          component={AddRepositoryScreen}
-          options={{
-            presentation: 'transparentModal',
-            animation: 'slide_from_bottom',
+    <View style={{ flex: 1, backgroundColor: palette.window }}>
+      <NavigationContainer ref={navigationRef} theme={navigationTheme}>
+        <Stack.Navigator
+          screenOptions={{
+            headerShown: false,
+            // Every pushed screen paints into a centred readable column: on a
+            // tablet or an unfolded foldable the rows keep their phone width
+            // instead of stretching edge to edge.
+            contentStyle: readableColumnStyle,
           }}
-        />
+        >
+          <Stack.Screen name="Main" component={BottomTabNavigator} />
+          <Stack.Screen name="MangaDetail" component={MangaDetailScreen} />
+          {/* The reader is the one full-bleed screen: pages and the HUD span the
+              whole window, exactly like the Kotlin port. */}
+          <Stack.Screen
+            name="Reader"
+            component={ReaderScreen}
+            options={{ contentStyle: { width: '100%', maxWidth: 100000, alignSelf: 'stretch' } }}
+          />
+          <Stack.Screen name="GeneralSettings" component={GeneralSettingsScreen} />
+          <Stack.Screen name="LanguageSettings" component={LanguageSettingsScreen} />
+          <Stack.Screen name="ThemeSettings" component={ThemeSettingsScreen} />
+          <Stack.Screen name="Backups" component={BackupsScreen} />
+          <Stack.Screen name="Extensions" component={ExtensionsScreen} />
+          <Stack.Screen name="ExtensionDetail" component={ExtensionDetailScreen} />
+          <Stack.Screen name="ExtensionSettings" component={ExtensionSettingsScreen} />
+          <Stack.Screen
+            name="AddRepository"
+            component={AddRepositoryScreen}
+            options={{
+              presentation: 'transparentModal',
+              animation: 'slide_from_bottom',
+            }}
+          />
         <Stack.Screen name="BrowseAllRepositories" component={BrowseAllRepositoriesScreen} />
         <Stack.Screen name="BrowseRepository" component={BrowseRepositoryScreen} />
         <Stack.Screen name="Developer" component={DeveloperScreen} />
@@ -94,7 +124,8 @@ export const AppNavigator: React.FC = () => {
         <Stack.Screen name="SearchResults" component={SearchResultsScreen} />
         <Stack.Screen name="GenreList" component={GenreListScreen} />
         <Stack.Screen name="WebView" component={WebViewScreen} />
-      </Stack.Navigator>
-    </NavigationContainer>
+        </Stack.Navigator>
+      </NavigationContainer>
+    </View>
   );
 };

@@ -14,6 +14,7 @@ import {
   getCookies as getNativeCookies,
 } from 'cloudflare-bypass';
 import { setExtensionBridge, ExtensionBridge } from '../services/sourceService';
+import { createQuickJsBridge, isQuickJsAvailable } from '../services/quickjsBridge';
 import { getCookiesForUrl, getGlobalUserAgent } from '../services/cookieStore';
 
 interface PendingRequest {
@@ -280,7 +281,54 @@ export const ExtensionRunner: React.FC = () => {
     }
   }, []);
 
-  // Create the bridge when WebView signals it's ready
+  // The browser is only a fallback now (0.9 bundles, sources QuickJS cannot
+  // evaluate): the bridge below prefers the QuickJS runtime when it loaded the
+  // source.
+  const webviewBridgeRef = useRef<ExtensionBridge | null>(null);
+  const bridgeRef = useRef<ExtensionBridge | null>(null);
+
+  useEffect(() => {
+    const quickjs = isQuickJsAvailable() ? createQuickJsBridge() : null;
+    if (!quickjs) {
+      console.warn('[ExtensionRunner] QuickJS module unavailable, using the WebView runtime');
+    }
+
+    bridgeRef.current = {
+      loadExtension: async (extensionId, sourceJs, apiVersion, initialState) => {
+        if (quickjs && (await quickjs.loadExtension(extensionId, sourceJs, apiVersion, initialState))) {
+          return true;
+        }
+        const fallback = webviewBridgeRef.current;
+        if (!fallback) return false;
+        return fallback.loadExtension(extensionId, sourceJs, apiVersion, initialState);
+      },
+
+      runExtensionMethod: (extensionId, method, args) => {
+        if (quickjs?.isLoaded(extensionId)) {
+          return quickjs.runExtensionMethod(extensionId, method, args);
+        }
+        const fallback = webviewBridgeRef.current;
+        if (fallback?.isLoaded(extensionId)) {
+          return fallback.runExtensionMethod(extensionId, method, args);
+        }
+        return Promise.reject(new Error(`Extension runtime is not ready for ${extensionId}`));
+      },
+
+      isLoaded: (extensionId: string) =>
+        !!quickjs?.isLoaded(extensionId) || !!webviewBridgeRef.current?.isLoaded(extensionId),
+
+      invalidateExtension: async (extensionId: string) => {
+        await quickjs?.invalidateExtension(extensionId);
+        await webviewBridgeRef.current?.invalidateExtension(extensionId);
+      },
+    };
+
+    // Register immediately: the WebView fallback loads asynchronously (and
+    // needs network for its cheerio bundle), extensions must not wait on it.
+    setExtensionBridge(bridgeRef.current);
+  }, []);
+
+  // Create the WebView fallback bridge once the WebView signals it's ready
   const setupBridge = useCallback(() => {
     const bridge: ExtensionBridge = {
       loadExtension: async (extensionId, sourceJs, apiVersion, initialState) => {
@@ -308,8 +356,9 @@ export const ExtensionRunner: React.FC = () => {
       },
     };
 
-    console.log('[ExtensionRunner] WebView ready, setting up bridge');
-    setExtensionBridge(bridge);
+    console.log('[ExtensionRunner] WebView ready, WebView fallback available');
+    webviewBridgeRef.current = bridge;
+    if (bridgeRef.current) setExtensionBridge(bridgeRef.current);
   }, [sendMessage]);
 
   // Handle WebView load complete

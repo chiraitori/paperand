@@ -46,7 +46,7 @@ const fetchRepoNameFromHtml = async (baseUrl: string): Promise<string | null> =>
 };
 
 export const AddRepositoryScreen: React.FC = () => {
-  const { theme } = useTheme();
+  const { theme, palette } = useTheme();
   const navigation = useNavigation();
   const route = useRoute<RouteProp<RootStackParamList, 'AddRepository'>>();
   const [repoName, setRepoName] = useState(route.params?.name || '');
@@ -227,7 +227,7 @@ export const AddRepositoryScreen: React.FC = () => {
             style={[
               styles.addButton,
               {
-                backgroundColor: allChecked ? '#FA233B' : '#2C1E20',
+                backgroundColor: allChecked ? palette.accent : palette.control,
                 opacity: allChecked ? 1 : 0.6
               }
             ]}

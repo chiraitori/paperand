@@ -47,6 +47,7 @@ yarn-error.*
 /android
 modules/*/android/.gradle/
 modules/*/android/build/
+modules/*/android/.cxx/
 credentials/
 credentials.json
 DemoProjects/
